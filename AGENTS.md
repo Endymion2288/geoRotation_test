@@ -30,7 +30,7 @@ home 空间有限，提交文件应尽可能小，作业日志和数据输出写
 
 EOS 仅保留尽量小的最终结果，避免保存 xAOD 等中间文件；合并或去重批量作业产生的 JSON 等重复输出。大型数据、checkpoints 和冗长 notebook 输出不纳入 Git。
 
-结果采用 `<results>/stageNN_<topic>/<run_id>/`，内含 manifest、日志、紧凑统计和图表；每个 shard 使用独立目录，合并时检查重复事件键和覆盖范围。批量作业将临时 xAOD 和完整 states 放在 worker scratch，在同一作业内提取所需字段后清理；需复现的少量异常事件保留紧凑诊断表及输入定位。
+结果采用 `<results>/stageNN_<topic>/<run_id>/`，内含 manifest、日志、紧凑统计和图表；每个 shard 使用独立目录，合并时检查重复事件键和覆盖范围。当前样本在同一 RDO 文件内也会复用 run/lumi/event；以冻结的输入文件与 entry 作为事件身份，保留生产标识，不据它误删独立事件。批量作业将临时 xAOD 和完整 states 放在 worker scratch，在同一作业内提取所需字段后清理；需复现的少量异常事件保留紧凑诊断表及输入定位。
 
 ## 开发与验证命令
 

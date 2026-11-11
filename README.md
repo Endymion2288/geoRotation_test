@@ -8,9 +8,10 @@
 - [阶段 00 报告](workbook/2026-11-11_stage00_material_review.md)：本次实际核查与验证。
 - [阶段 01 报告](workbook/2026-11-11_stage01_inputs_and_definitions.md)：输入 metadata、50 事件完整性、物理定义和局部 truth 记录。
 - [阶段 02 报告](workbook/2026-11-11_stage02_rotation_and_audit_closure.md)：实际 sensor/field/material/接口检查、观察开关配对与来源审计。
+- [阶段 03 报告](workbook/2026-11-11_stage03_baseline.md)：50,000 事件基线、最终候选路径、动量尾、角度定义与 μ± 电荷误判统计。
 - [Calypso patches 与构建](patches/README.md)；[冻结定义](configs/definitions.json)；[诊断字段](configs/fields.md)。
 - [仓库协作规范](AGENTS.md)。
 
 研究起点：`/eos/home-x/xcheng/FASER/geoRotation_calypso`，commit `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。现有构建为 Athena 24.0.41 / EL9；所有运行产物保存在 `/eos/home-x/xcheng/FASER/geoRotation_test_results`。
 
-S00–S02 的材料、输入和诊断验证已记录；S03 的 50,000 事件 pilot 正在 HTCondor 运行。三个物理问题的总体根因按后续 S04–S06 实验验证。
+S00–S03 已完成并分别提交阶段报告。50,000 事件全部重建完成；Good95 主选择下，100044 的 production-truth 动量比低于 0.5 的比例为 11.357%，μ+/μ− 电荷误判率为 0.1027%/0.6737%。μ± 数字来自不同输入谱，总率差尚未隔离谱与接受度；角度剩余多峰的显著性与三个问题的根因由 S04–S06 检验。

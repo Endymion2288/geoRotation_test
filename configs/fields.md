@@ -4,7 +4,8 @@
 
 | 字段/记录 | 定义、单位与参考面 |
 | --- | --- |
-| `run,lumi,event,collection` | Athena EventContext 的事件键和输出 collection；与 run manifest 的生产、文件 ID 合并构成重放 key |
+| `run,lumi,event,collection` | Athena EventContext 的生产标识和输出 collection；本批 RDO 在同一文件内会复用 run/lumi/event，不能独立用作事件身份 |
+| `dsid,file_index,source_entry` | 冻结的 manifest 文件与 entry 构成稳定事件身份；粒子再加 barcode，诊断再加 collection/stage/seed/candidate/state；bootstrap 按此事件身份分组 |
 | `stage,seed,candidate,state` | 运算阶段、实际 seed loop index、finder 返回时赋予的候选 ID、反向 state traversal 序号；`-1` 表示不适用 |
 | `acts_state_index,acts_previous_index` | ACTS container 内的 state 与 predecessor；需连同 event、seed 和 stage 使用 |
 | `event` 记录 | 每个输入事件恰好一条；seed、cluster、measurement 数及 `event_weight` |

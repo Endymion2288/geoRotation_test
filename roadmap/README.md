@@ -2,9 +2,19 @@
 
 本研究要给出三个可复核的答案：动量低估首次出现在哪个运算或候选选择环节、角度分布的剩余结构来自物理混合还是实现问题、μ− 比 μ+ 更易误判电荷的差异在旋转后是否存在及其来源。完成标准包括事件级因果证据、总体发生率及其统计区间、最小修复或经验证的物理解释，以及独立样本回归。
 
-研究起点为本地旋转版 Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00 材料、S01 输入/定义、S02 旋转与诊断检查已有阶段报告；S03 的 50,000 事件 baseline 正在执行。总体发生率待 S03 合并，峰显著性和根因由 S04–S06 检验。
+研究起点为本地旋转版 Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00 材料、S01 输入/定义、S02 旋转与诊断检查、S03 的 50,000 事件基线已完成。五类样本各 10,000 事件，50/50 shards 成功且归档复算一致；峰显著性和总体根因由 S04–S06 检验。
 
-当前实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)。S02 发现 plane/curvilinear covariance chart 和 refit 起点问题，交付默认关闭的实验修正；当前 default material 的 22 surfaces 与历史 rotated map 的 12 surfaces 分开控制。补充 G4 模拟的退出故障记录于 S01，不影响使用 RDO 建立 production-truth 基线。
+当前实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)。S02 发现 plane/curvilinear covariance chart 和 refit 起点问题，交付默认关闭的实验修正；当前 default material 的 22 surfaces 与历史 rotated map 的 12 surfaces 分开控制。S03 的 10 事件材料配对已显示候选/电荷会变化，总体影响待批量验证。补充 G4 模拟的退出故障记录于 S01，当前 RDO 基线使用 production truth，同 sensor 精确动量尚未测量。
+
+| DSID | Good95 匹配粒子 | production p ratio <0.5 / % | charge misID / % |
+| --- | --- | --- | --- |
+| 100044 | 6965 | 11.357 | 5.298 |
+| 100116 μ+ | 4868 | 1.541 | 0.103 |
+| 100117 μ− | 5047 | 2.180 | 0.674 |
+| 110033 | 12325 | 12.252 | 2.150 |
+| 110051 | 12460 | 33.563 | 13.604 |
+
+以上使用 fiducial+H18、SDO purity≥0.7、Good95；完整 cutflow、区间与匹配歧义检查见 S03。μ−−μ+ 总误判率差为 0.571 个百分点，bootstrap95 为 [0.333,0.829] 个百分点；输入谱不同，尚未隔离算法的电荷不对称或旋转净效应。角度的物理定义已恢复，剩余峰的显著性未测量。
 
 ## 阅读与执行入口
 
@@ -18,11 +28,11 @@
 
 ## 目前证据决定的优先级
 
-1. **先核对测量定义与诊断归属。** 当前 per-layer writer 的 truth 动量大小来自 HepMC 链接；当前 Ntuple 直接写出旋转 frame 的动量，VetoNu 角度仍按旧分量比计算；seed→track 的 `trackGroup` 赋值也存在源码可见的索引问题。它们分别影响“动量低估”“角度峰”和“首次变化”的解释，详见材料文档。
-2. **为每条输出 track 建立完整来源。** 现有 CKF states 不包含最终 refit 的全部过程；必须保存候选选择前后、ACTS↔Trk 转换、refit 成败与 fallback，并记录 forward/backward、IFT 和合并来源。
-3. **分别解释 seed 和 CKF 引入的偏差。** 重现报告中的 good-seed 筛选，同时增加在同一初始 surface 注入 truth 参数与固定 truth hits 的实验。两种实验回答不同问题。
-4. **分离几何旋转与参数调优。** 旋转提交也改变了初始 covariance。先建立完整且一致的旋转对照，再把纯 frame 效应、covariance、measurement error、材料和选择效应分开。
-5. **三分支共享异常事件与统计母样本。** 对 `momentum tail × slope peak × wrong charge` 交集分别定位；既允许公共根因，也允许独立原因。
+1. **按最终候选路径定位具体更新。** S02–S03 已建立独立 seed/candidate lineage。100044 的 791 条最终 tail 中，33/726/32 条在 seed/found/refit 首次已观测到低比值；110051 对应 2065/2014/103。用已选出的 32 条无匹配歧义代表 track 重放完整 states，补齐 CKF 与 refit 的 predicted/filtered/smoothed、候选选择和 fallback。首次观测阶段仍需通过逐运算证据才能归因。
+2. **把已知接口问题和材料配置分别做配对消融。** 原版基线已保存，下一轮单独启用 chart Jacobian、同点 refit plane、严格旋转 current22 material；先固定候选，再放开排序，量化 tail/misID/效率的共同变化。历史 rotated12 map 同时改变表面内容，不能独自代表纯旋转控制。
+3. **分别解释 seed 与后续 CKF。** 重现报告 good-seed 筛选，执行同 surface truth 参数注入与固定 truth hits 两种实验。局部 p truth 需先解决补充 G4 的退出134；已有 production p ratio 包含真实能损，不能直接当作拟合误差。
+4. **优先拆分角度选择迁移与 μ± 输入谱。** physical 与 legacy 分量公式相差很大，且 110051 的 reco-p/truth-p 50–250GeV 窗口分别选中3374/1401粒子；先统一物理面再检验多峰。μ− 的34条wrong中30/4条首次在found/refit，优先追踪符号更新，并比较共同 truth p/位置/方向支持域。
+5. **建立一致旋转控制并扩展模式。** 当前只完成 3-station forward；完整 G0/G1、backward、4-station 与 merge 后续验证。三分支共享 `momentum tail × slope peak × wrong charge` 母样本，保留独立验证文件，分别报告公共和独立机制。
 
 ## 阶段、依赖与验收
 
@@ -31,9 +41,9 @@
 | 阶段 | 依赖与问题 | 实施与起始规模 | 必交付结果与验收 |
 | --- | --- | --- | --- |
 | S00 材料研究 | 输入报告与本地软件 | 阅读 3 份 PDF，检查源码、样本路径与现成构建 | 本路线图、补全 AGENTS、中文 workbook；已完成，验证见阶段报告 |
-| S01 输入与定义冻结 | S00；历史图究竟比较了什么 | 逐类读一个文件的 metadata/schema；每类 10–100 事件检查完整性；冻结 Good Track、fiducial、frame、units、truth surface | 输入 manifest、可运行诊断配置、统一字段字典；所有事件计数闭合；truth 不可得的字段明确列出并落实补充方案 |
-| S02 旋转与诊断闭合 | S01；观察量与 frame 是否可靠 | 固定正常与异常事件，校验 surface/field/material/units/covariance；串行与分块运行；诊断开关配对 | frame 与单位闭合、诊断前后行为一致、event/seed/candidate/state 来源唯一；有问题先保留原版基线再修复 |
-| S03 原版复现与基线 | S01；与 S02 可交错做原始量检查 | 100044、100116、100117、110033、110051；pilot 约每类 10k 事件，完整 states 只留小子样本 | 紧凑重建表、原始及修正定义的图、cutflow、失败率；复现差异能归到样本/条件/代码或记录具体未解项 |
+| S01 输入与定义冻结 | S00；历史图究竟比较了什么 | 已完成 metadata/schema 与每类10事件检查，冻结 Good Track、fiducial、frame、units、truth surface | manifest、诊断入口和字段字典已交付，50事件计数闭合；局部truth记录已写出，补充G4退出134仍待查，见S01报告 |
+| S02 旋转与诊断闭合 | S01；观察量与 frame 是否可靠 | 已完成 sensor/field/material/transport/interface 与观察开关配对；保留原版并提供默认关闭的实验修正 | 来源唯一、观察开关前后输出一致；chart/refit问题与material差异已量化，见S02报告；总体物理影响留待S04–S06 |
+| S03 原版复现与基线 | S01；与 S02 可交错做原始量检查 | 已完成五类各10k事件，50/50 shards exit0；紧凑审计归档后完整复算 | particle表、图、cutflow、区间、32条代表track与资源已交付，见S03报告；历史selection未恢复、同面truth与完整G0未测量均已记录 |
 | S04 动量因果定位 | S02–S03 | [动量实验 M1–M6](02_momentum_bias.md)，先几十条代表 track，再按机制扩展到独立批量验证 | 每个主要 tail 类别的首次数值变化/候选替换、消融效果及区间；seed 与后续 CKF 问题分别闭环 |
 | S05 角度结构定位 | S02–S03；共享 S04 的误差与材料观察 | [角度实验 A1–A5](03_slope_structure.md)，truth 谱与 detector/hit pattern 条件分解 | 峰位置、宽度、占比、稳定性和对应物理/程序来源；剩余结构在 forward model 中可复现或被最小修复消除 |
 | S06 电荷与正负差异 | S02–S03；共享 S04 的 curvature trace | [电荷实验 Q1–Q5](04_charge_misidentification.md)；先 pilot，再扩至每电荷至少约 100k 有效选中粒子或所需精度 | before/after 配对表、误判率/效率/差值区间、谱匹配结果、首次符号翻转与解释；无显著差异时给可排除范围 |
@@ -68,11 +78,11 @@ flowchart TD
 
 最终比较至少提供 `f(p_reco/p_truth<0.5)`、momentum core median/68% width、angle residual/peak fraction、μ± charge misID、truth reconstruction efficiency、duplicates/fakes、refit failure/fallback 及 CPU/I/O。主效应按事件聚类估计不确定度；逐层与多候选记录不作为独立统计样本。
 
-## 首轮落地任务
+## 下一轮落地任务
 
-1. 在 `configs/` 固定五类输入的具体 RDO/PHYS 文件、event range、生产 geometry/conditions，并补齐历史 Good Track 和原始绘图配置。
-2. 在 `scripts/` 与 `configs/` 实现一个可记录普通 CKF 及 refit 的小型入口，显式选择 3-station forward 起始配置，再扩展其余模式；记录原版中默认 masked IFT layers 的实际值。
-3. 先完成 Ntuple frame、per-layer truth 来源、seed ID 与 conversion/covariance 的少量事件闭合，再开展尾部、峰形和误判率的批量测量。
-4. 依据 pilot 实测的运行时间、内存、有效事件率和输出大小选择 HTCondor 资源；提交前实时比较 schedd 负载。
+1. 使用 S03 的 `representative_cases.json` 按 file_index/source_entry 重放，选择器已排除 final matching ambiguity；保存首个异常更新与前后候选，不能用复用的生产 event ID 合并事件。
+2. 用同一批输入分别检验 current22 严格旋转材料、chart Jacobian、refit plane；恢复历史 Good Track/Twiki 配置后再核对 Alma 数字，完整 G0 对照需保持物理先验一致。
+3. 角度统一到 st1/VetoNu plane；μ± 以 truth p/位置/方向做共同支持域与谱平衡。先报告平衡前后发生率和有效样本量，再决定追加批量规模。
+4. 解决补充 G4 正常结束问题，生成同 sensor p；新批量按 S03 实测 CPU/RSS/I/O 配置资源，提交前重新比较 schedd 负载。
 
 每阶段先写 `workbook/YYYY-MM-DD_stageNN_topic.md`，列明事实、假设、配置、统计和产物路径，再提交代码/配置与报告。根因检验使用预先保留的验证事件，最终不以在调参样本上得到更好看的直方图作为验收。

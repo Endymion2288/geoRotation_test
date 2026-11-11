@@ -3,6 +3,7 @@
 import argparse
 from collections import Counter, defaultdict
 import gzip
+import io
 import json
 import math
 from pathlib import Path
@@ -28,6 +29,26 @@ def read_records(path):
     with opener(path, "rt") as stream:
         for line in stream:
             yield json.loads(line)
+
+
+def event_groups(records):
+    """Keep just one event in memory; input event IDs can be reused by production."""
+    group=[]
+    for r in records:
+        assert r["schema"]==2,"Unexpected audit schema"
+        if r["stage"]=="event" and group:
+            yield group
+            group=[]
+        group.append(r)
+    if group:yield group
+
+
+def archive_records(folder,task):
+    with (folder/task["audit_archive"]).open("rb") as source:
+        source.seek(task["compressed_offset"])
+        member=source.read(task["compressed_bytes"])
+    with gzip.open(io.BytesIO(member),"rt") as stream:
+        for line in stream:yield json.loads(line)
 
 
 def pnorm(record):
@@ -57,6 +78,11 @@ def match(record):
     return counts[0][0]
 
 
+def ambiguous_match(record):
+    counts=record.get("matches",[]);total=len(record.get("hits",[]))
+    return bool(total and len(counts)>1 and counts[1][1]/total>=.7)
+
+
 def process_event(key, records, dsid):
     truth = {r["barcode"]: r for r in records if r["stage"] == "truth" and r["signal"]
              and r["status"] == 1
@@ -79,6 +105,9 @@ def process_event(key, records, dsid):
                    fiducial=fiducial, truth_H18=strict_hits, n_final=len(finals),
                    n_good95=sum(good_track(r) for r in finals), n_good100=sum(good_track(r,100.) for r in finals),
                    n_matched_final=final_matches[barcode])
+        row.update(truth_vertex_F_mm=particle.get("vertex_F_mm"),
+                   truth_station_position_F_mm=particle["station_position_F_mm"],
+                   truth_station_direction_F=particle.get("station_direction_F"),truth_hit_counts=particle["hit_counts"])
         for stage in ["seed", "found", "selected", "converted", "refit", "final"]:
             candidates = [r for r in stages[stage] if match(r) == barcode and pnorm(r) is not None]
             if not candidates:
@@ -92,8 +121,21 @@ def process_event(key, records, dsid):
                               slope_y=py/px if px else None, legacy_angle=math.atan(py/pz) if pz else None,
                               legacy_pz_GeV=pz, physical_pz_GeV=px,
                               seed=candidate["seed"], candidate=candidate["candidate"],
+                              position_A_mm=candidate.get("position_A_mm"),
                               good95=good_track(candidate), good100=good_track(candidate,100.), refit=candidate.get("refit"),
                               majority_hits=candidate["matches"][0][1], measurements=candidate.get("measurements"))
+            row[stage].update(matching_ambiguous=ambiguous_match(candidate),
+                              purity=candidate["matches"][0][1]/len(candidate["hits"]))
+        row["final_lineage"]={}
+        if row["final"]:
+            seed_id=row["final"]["seed"];candidate_id=row["final"]["candidate"]
+            for stage in ["seed","found","selected","converted","refit_input","refit","final"]:
+                path=[r for r in stages[stage] if r["seed"]==seed_id and
+                      (stage=="seed" or r["candidate"]==candidate_id) and pnorm(r) is not None]
+                assert len(path)<=1,("Non-unique final lineage",key,seed_id,candidate_id,stage)
+                if path:
+                    r=path[0];q=r.get("charge",math.copysign(1.,r.get("bound",[0]*5)[4]))
+                    row["final_lineage"][stage]=dict(p_ratio=pnorm(r)/truth_p,charge=q,wrong=q*truth_q<0)
         rows.append(row)
     return rows, dict(events=1, sumw=weight, sumw2=weight*weight, truth=len(truth),
                       zero_track_events=int(not finals),
@@ -131,6 +173,10 @@ def summarize(rows):
         summary[selection]["p_ratio_overflow_ge2"]=sum(v>=2 for v in values)
         summary[selection]["p_ratio_nonpositive"]=sum(v<=0 for v in values)
         summary[selection]["wrong_and_tail_half"]=sum(r["final"]["wrong"] and r["final"]["p_ratio"]<.5 for r in selected)
+        unambiguous=[r for r in selected if not r["final"]["matching_ambiguous"]]
+        summary[selection]["matching_ambiguous"]=n-len(unambiguous)
+        summary[selection]["unambiguous"]=dict(n=len(unambiguous),wrong=sum(r["final"]["wrong"] for r in unambiguous),
+            tail_half=sum(r["final"]["p_ratio"]<.5 for r in unambiguous))
         if selected:
             physical=[r["final"]["slope_y"] for r in selected if r["final"]["slope_y"] is not None]
             legacy=[r["final"]["legacy_angle"] for r in selected if r["final"]["legacy_angle"] is not None]
@@ -150,7 +196,7 @@ def summarize(rows):
         # Resample complete events, keeping both Aprime daughters together.
         groups = defaultdict(lambda: np.zeros(3, dtype=int))
         for r in selected:
-            groups[(r.get("file_index",0),r["run"],r["lumi"],r["event"])]+= [1,int(r["final"]["wrong"]),int(r["final"]["p_ratio"]<.5)]
+            groups[(r.get("file_index",0),r.get("source_entry",r["event"]))]+= [1,int(r["final"]["wrong"]),int(r["final"]["p_ratio"]<.5)]
         if groups:
             counts=np.stack(list(groups.values()))
             rng=np.random.default_rng(19023)
@@ -171,7 +217,7 @@ def summarize(rows):
     for r in rows:
         if r["fiducial"] and r["truth_H18"]:
             passed=r["final"] is not None and r["final"]["good95"]
-            truth_groups[(r.get("file_index",0),r["run"],r["lumi"],r["event"])]+=[1,int(passed),int(passed and not r["final"]["wrong"])]
+            truth_groups[(r.get("file_index",0),r.get("source_entry",r["event"]))]+=[1,int(passed),int(passed and not r["final"]["wrong"])]
     if truth_groups:
         counts=np.stack(list(truth_groups.values()));rng=np.random.default_rng(19024)
         estimates=[]
@@ -197,6 +243,17 @@ def summarize(rows):
         n=len(available);k=sum(r["final"]["wrong"] for r in available)
         summary["good95_truth_p_bins_GeV"].append(dict(low=lo,high=hi,n=n,wrong=k,
             misid=k/n if n else None,misid_wilson95=wilson(k,n)))
+    selected=[r for r in fiducial if r["final"] and r["final"]["good95"]]
+    momentum_first=Counter();charge_first=Counter()
+    for r in selected:
+        for field,counts in [("tail_half",momentum_first),("wrong",charge_first)]:
+            if not (r["final"]["p_ratio"]<.5 if field=="tail_half" else r["final"]["wrong"]):continue
+            first=next((stage for stage,v in r["final_lineage"].items() if
+                        (v["p_ratio"]<.5 if field=="tail_half" else v["wrong"])),"unobserved")
+            counts[first]+=1
+    summary["good95_final_lineage"]={"first_low_p_stage_for_final_tail":dict(momentum_first),
+                                     "first_wrong_charge_stage_for_final_wrong":dict(charge_first),
+                                     "interpretation":"Observed stages on the final candidate path; CKF internal update requires full states"}
     return summary
 
 
@@ -218,6 +275,7 @@ def plots(rows, output):
         values=[math.atan(r["truth_slope_y"]) for r in final if r["truth_slope_y"] is not None]
         axes[1].hist(values,bins=np.linspace(-.01,.01,161),histtype="step",linestyle="--",label="Production truth (selected)")
         axes[1].set(xlabel="theta_y [rad]",ylabel="Particles",title="Raw and physical definitions (Good95)")
+        axes[1].locator_params(axis="x",nbins=5)
         axes[1].legend(fontsize=8)
         low = [r for r in final if 50 < r["final"]["p_GeV"] < 250]
         true_low = [r for r in final if 50 < r["truth_p_GeV"] < 250]
@@ -231,47 +289,83 @@ def plots(rows, output):
         plt.close(fig)
 
 
+def charge_comparison(rows):
+    """Independent muon samples, with source-event bootstrap for their difference."""
+    result={}
+    for selection in ["good95","alma_radius100_proxy"]:
+        counts={}
+        for dsid in ["100116","100117"]:
+            sample=[r for r in rows if r["dsid"]==dsid and r["fiducial"] and r["final"]]
+            if selection=="good95":sample=[r for r in sample if r["truth_H18"] and r["final"]["good95"]]
+            else:sample=[r for r in sample if r["final"]["good100"] and r["n_good100"]==1]
+            counts[dsid]=[sum(r["final"]["wrong"] for r in sample),len(sample)]
+        if any(n==0 for k,n in counts.values()):continue
+        kp,np_=counts["100116"];km,nm=counts["100117"]
+        difference=km/nm-kp/np_
+        # Each of these muon samples contains one generated signal per source
+        # event, so event bootstrap is the binomial bootstrap in this case.
+        rng=np.random.default_rng(20311)
+        delta=rng.binomial(nm,km/nm,10000)/nm-rng.binomial(np_,kp/np_,10000)/np_
+        from scipy.stats import fisher_exact
+        result[selection]=dict(muplus=dict(wrong=kp,n=np_),muminus=dict(wrong=km,n=nm),
+            muminus_minus_muplus=difference,event_bootstrap95=np.quantile(delta,[.025,.975]).tolist(),
+            fisher_two_sided_p=float(fisher_exact([[km,nm-km],[kp,np_-kp]])[1]),
+            interpretation="Marginal difference for different input spectra; rotation and causal effects not isolated")
+    return result
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--input",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args()
     args.output.mkdir(parents=True,exist_ok=True)
-    tasks=json.loads((args.input/"tasks.json").read_text())
+    archived=(args.input/"index.json").exists()
+    tasks=json.loads((args.input/"index.json").read_text())["tasks"] if archived else json.loads((args.input/"tasks.json").read_text())
     all_rows=[]; cutflows=defaultdict(Counter); seen=set(); failures=[]; resources=defaultdict(list)
+    raw_ids=defaultdict(Counter)
     for task in tasks:
         folder=args.input/task["shard"]
         record_file=folder/"stages.jsonl.gz"
-        if not (folder/"exit_code.txt").exists() or (folder/"exit_code.txt").read_text().strip()!="0":
+        if not archived and (not (folder/"exit_code.txt").exists() or (folder/"exit_code.txt").read_text().strip()!="0"):
             failures.append(task["shard"]); continue
-        records=defaultdict(list)
-        for r in read_records(record_file):
-            assert r["schema"]==2,("unexpected audit schema",task["shard"])
-            records[(r["run"],r["lumi"],r["event"])].append(r)
-        assert len(records)==task["events"],(task["shard"],len(records),task["events"])
-        manifest=json.loads((folder/"run.json").read_text())
+        manifest=task["run"] if archived else json.loads((folder/"run.json").read_text())
         assert manifest["success"] and manifest["args"]["events"]==task["events"]
         assert manifest["file_index"]==task["file_index"] and manifest["args"]["skip"]==task["skip"]
         usage={"wall_seconds":manifest["wall_seconds"],"events":task["events"],
-               "compact_bytes":record_file.stat().st_size}
-        for line in (folder/"resource.txt").read_text().splitlines():
+               "compact_bytes":task["compressed_bytes"] if archived else record_file.stat().st_size}
+        resource=task["resource"] if archived else (folder/"resource.txt").read_text()
+        for line in resource.splitlines():
             for field,prefix in [("user_seconds","User time (seconds):"),("system_seconds","System time (seconds):"),
                                  ("max_rss_kB","Maximum resident set size (kbytes):")]:
                 if line.strip().startswith(prefix):usage[field]=float(line.split(":")[-1])
         resources[task["dsid"]].append(usage)
-        for ordinal,(key,event) in enumerate(records.items()):
-            uid=(task["dsid"],task["file_index"],*key)
-            assert uid not in seen,("duplicate event",uid)
-            assert sum(r["stage"]=="event" for r in event)==1,("repeated event key in shard",uid)
+        processed=0
+        reader=archive_records(args.input,task) if archived else read_records(record_file)
+        for ordinal,event in enumerate(event_groups(reader)):
+            header=event[0]
+            assert header["stage"]=="event",("Missing event header",task["shard"])
+            key=(header["run"],header["lumi"],header["event"])
+            source_entry=task["skip"]+ordinal
+            uid=(task["dsid"],task["file_index"],source_entry)
+            assert uid not in seen,("overlapping source range",uid)
+            assert all((r["run"],r["lumi"],r["event"])==key for r in event),("inconsistent stage event",uid)
+            lineage=[(r["collection"],r["stage"],r["seed"],r["candidate"],r["state"],r.get("barcode")) for r in event]
+            assert len(set(lineage))==len(lineage),("repeated lineage in source event",uid)
             seen.add(uid)
+            raw_ids[task["dsid"]][(task["file_index"],*key)]+=1
             rows,cutflow=process_event(key,event,task["dsid"])
             for r in rows:
-                r.update(file_index=task["file_index"],source_entry=task["skip"]+ordinal)
+                r.update(file_index=task["file_index"],source_entry=source_entry)
             all_rows.extend(rows); cutflows[task["dsid"]].update(cutflow)
+            processed+=1
+        assert processed==task["events"],(task["shard"],processed,task["events"])
     summary={"schema_version":1,"missing_or_failed_shards":failures,"events":len(seen),"samples":{}}
     for dsid,counts in sorted(cutflows.items()):
         sample=[r for r in all_rows if r["dsid"]==dsid]
         summary["samples"][dsid]={"cutflow":dict(counts),**summarize(sample)}
+        summary["samples"][dsid]["reused_input_event_ids"]={"distinct":len(raw_ids[dsid]),
+            "extra_entries_with_reused_id":sum(n-1 for n in raw_ids[dsid].values())}
         usage=resources[dsid]
         summary["samples"][dsid]["resources"]={"jobs":len(usage),
             "summed_wall_seconds":sum(r["wall_seconds"] for r in usage),
@@ -279,6 +373,7 @@ def main():
             "summed_system_seconds":sum(r.get("system_seconds",0) for r in usage),
             "max_rss_kB":max(r.get("max_rss_kB",0) for r in usage),
             "compact_bytes":sum(r["compact_bytes"] for r in usage)}
+    summary["charge_comparison"]=charge_comparison(all_rows)
     (args.output/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
     with gzip.open(args.output/"particles.jsonl.gz","wt") as stream:
         for r in all_rows: stream.write(json.dumps(r,separators=(",",":"))+"\n")
