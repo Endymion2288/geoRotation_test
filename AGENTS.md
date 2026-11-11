@@ -5,7 +5,7 @@
 - `docs/`：输入参考材料，保留原始 PDF；用户提到的 geoRotation 报告实际文件名为 `geometryRotation.pdf`。
 - `roadmap/README.md`：研究总入口、阶段依赖和完成标准；`roadmap/00_materials_and_source.md` 保存材料证据和源码定位，其他文件分别规定公共实验协议与三个研究分支。
 - `workbook/`：中文阶段报告，包含实际执行、数据和结论。计划写入 roadmap，测量结果写入 workbook。
-- 后续实现按用途新增 `configs/`（Athena 配置和样本 manifest）、`scripts/`（运行、提交、合并入口）、`analysis/`（分析与绘图）、`tests/`（有物理意义的回归检查）；这些目录目前尚无实现，不引用不存在的命令。
+- `configs/`：冻结样本、物理定义、字段字典与 Athena 入口；`scripts/`：metadata、material map 和 Condor 工具；`analysis/`：合并、统计与英文图表；`tests/`：matching、frame、分母等回归检查；`patches/`：外部 Calypso 的可复用补丁。
 - Calypso 源码与构建位于仓库外。诊断配置、分析和提交脚本保存在本仓库；修改 Calypso 时记录其 commit、patch 和构建路径，避免将本仓库结果与另一套安装混用。
 
 ## 运行环境与软件
@@ -51,7 +51,15 @@ git diff --check
 bash /eos/home-x/xcheng/FASER/geoRotation_calypso/build_local.sh 8 > "$georotation_results/manual_checks/build.log" 2>&1
 ```
 
-`verify_local.sh` 提供库加载、组件配置和两个 GeoModel 单测，可按需运行；它的 CTest 还会在外部 build 目录写 `Testing/`。完整重建样本的配置、计数和物理检查按 `roadmap/01_common_protocol.md` 实施。普通 `faser_reco.py` 没有 `-o` 和 diagnostics CLI；运行输出由工作目录决定，默认 `noDiagnostics=True`。需要 states/seed/refit 数据时编写显式的 Athena 配置。
+`verify_local.sh` 提供库加载、组件配置和两个 GeoModel 单测，可按需运行；它的 CTest 还会在外部 build 目录写 `Testing/`。完整重建样本的配置、计数和物理检查按 `roadmap/01_common_protocol.md` 实施。普通 `faser_reco.py` 没有 `-o` 和 diagnostics CLI；本仓库显式入口为：
+
+```bash
+python3 scripts/inspect_inputs.py --samples configs/samples.json --output "$georotation_results/manual_checks/input_metadata.json"
+cd "$georotation_results/manual_checks"
+python3 /eos/home-x/xcheng/FASER/geoRotation_test/configs/tracking_runner.py --dsid 100116 --events 10 --diagnostics
+```
+
+`--audit --states --closure` 需要本仓库记录的 Calypso audit patch 及匹配构建；`--correct-interfaces` 和 `--reset-event-maps` 是独立受控实验，不作为未经说明的默认修复。Python observer 的 `events.jsonl` 用于小样本交叉核对，批量用 `--audit --compact-only` 避免重复输出。回归检查在本仓库根目录运行 `python3 -m unittest discover -s tests -v`。
 
 提交前读取当前 schedd 广告与队列，按实际可见 schedd 进一步查询：
 
@@ -60,7 +68,7 @@ condor_status -schedd -af Name Machine TotalRunningJobs TotalIdleJobs MaxJobsRun
 condor_q -name <schedd> -totals
 ```
 
-结合 EL9、EOS/CVMFS、凭据、资源限制及 idle/running/capacity 选择兼容且负载最低的 schedd。将查询时间、候选负载、选择依据、submit 文件和 cluster ID 写入该阶段 manifest；随后使用 `condor_submit -name <schedd> <submit_file>`。本阶段仅编写路线图，未提交作业。
+结合 EL9、EOS/CVMFS、凭据、资源限制及 idle/running/capacity 选择兼容且负载最低的 schedd。将查询时间、候选负载、选择依据、submit 文件和 cluster ID 写入该阶段 manifest；随后使用 `condor_submit -name <schedd> <submit_file>`。`scripts/prepare_condor.py` 只生成 ranges 与 submit 文件，实际提交及 schedd 选择必须显式执行和记录。
 
 ## 编码规范与计算效率
 

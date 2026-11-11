@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "samples": [
+    {
+      "dsid": "100044",
+      "species": "mu+ 5mrad",
+      "campaign": "mc24",
+      "production_tag": "s0013",
+      "files": [
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/particle_gun/100044/rdo/s0013/FaserMC-MC24_PG_mupl_fasernu_5mrad_flukaE-100044-00000-00099-s0013-RDO.root",
+          "entries": 500000,
+          "size_bytes": 8104170404
+        }
+      ],
+      "total_entries": 500000,
+      "pilot_events": 10000,
+      "available_files": 10,
+      "production_geometry": "FASERNU-04",
+      "production_conditions": "OFLCOND-FASER-04",
+      "production_athena": "22.0.49"
+    },
+    {
+      "dsid": "100116",
+      "species": "mu+ 2D",
+      "campaign": "mc24",
+      "production_tag": "s0012",
+      "files": [
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/particle_gun/100116/rdo/s0012/FaserMC-MC24_PG_mupl_fasernu_2D_fluka-100116-00000-00009-s0012-RDO.root",
+          "entries": 100000,
+          "size_bytes": 908669082
+        }
+      ],
+      "total_entries": 100000,
+      "pilot_events": 10000,
+      "available_files": 5,
+      "production_geometry": "FASERNU-04",
+      "production_conditions": "OFLCOND-FASER-04",
+      "production_athena": "22.0.49"
+    },
+    {
+      "dsid": "100117",
+      "species": "mu- 2D",
+      "campaign": "mc24",
+      "production_tag": "s0012",
+      "files": [
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/particle_gun/100117/rdo/s0012/FaserMC-MC24_PG_mumi_fasernu_2D_fluka-100117-00000-00009-s0012-RDO.root",
+          "entries": 100000,
+          "size_bytes": 941685238
+        }
+      ],
+      "total_entries": 100000,
+      "pilot_events": 10000,
+      "available_files": 5,
+      "production_geometry": "FASERNU-04",
+      "production_conditions": "OFLCOND-FASER-04",
+      "production_athena": "22.0.49"
+    },
+    {
+      "dsid": "110033",
+      "species": "Aprime eps1e-5",
+      "campaign": "mc24",
+      "production_tag": "master_dev",
+      "files": [
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110033/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em5-110033-00000-00001-master_dev-RDO.root",
+          "entries": 2000,
+          "size_bytes": 281804822
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110033/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em5-110033-00002-00003-master_dev-RDO.root",
+          "entries": 2000,
+          "size_bytes": 294787552
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110033/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em5-110033-00004-00005-master_dev-RDO.root",
+          "entries": 2000,
+          "size_bytes": 275797195
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110033/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em5-110033-00006-00007-master_dev-RDO.root",
+          "entries": 2000,
+          "size_bytes": 291262090
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110033/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em5-110033-00008-00009-master_dev-RDO.root",
+          "entries": 2000,
+          "size_bytes": 276054522
+        }
+      ],
+      "total_entries": 10000,
+      "pilot_events": 10000,
+      "available_files": 10,
+      "production_geometry": "FASERNU-04",
+      "production_conditions": "OFLCOND-FASER-04",
+      "production_athena": "24.0.41"
+    },
+    {
+      "dsid": "110051",
+      "species": "Aprime eps1e-4",
+      "campaign": "mc24",
+      "production_tag": "master_dev",
+      "files": [
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00000-00009-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 837216619
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00010-00019-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 841496251
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00020-00029-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 850131815
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00030-00039-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 847791304
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00040-00049-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 852070987
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00050-00059-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 825249483
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00060-00069-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 842044560
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00070-00079-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 849476192
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00080-00089-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 836221061
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00090-00099-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 828729133
+        }
+      ],
+      "total_entries": 10000,
+      "pilot_events": 10000,
+      "available_files": 20,
+      "production_geometry": "FASERNU-04",
+      "production_conditions": "OFLCOND-FASER-04",
+      "production_athena": "24.0.41"
+    }
+  ],
+  "baseline": {
+    "geometry": "FASERNU-04",
+    "conditions": "OFLCOND-FASER-05",
+    "reason": "Match historical rotated reconstruction; production tag04 tested as a separate paired control",
+    "mode": "3station_forward",
+    "masked_layers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  }
+}

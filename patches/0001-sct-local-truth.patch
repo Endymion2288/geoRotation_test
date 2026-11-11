@@ -1,0 +1,45 @@
+diff --git a/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx b/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx
+index 7202f476..4bfe1c4e 100644
+--- a/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx
++++ b/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx
+@@ -20,6 +20,12 @@
+ #include "G4SDManager.hh"
+ #include "G4Geantino.hh"
+ #include "G4ChargedGeantino.hh"
++#include "G4RunManager.hh"
++#include "G4Event.hh"
++#include <cstdlib>
++#include <fstream>
++#include <iomanip>
++#include <thread>
+ 
+ // CLHEP transform
+ #include "CLHEP/Geometry/Transform3D.h"
+@@ -105,6 +111,27 @@ G4bool FaserSctSensorSD::ProcessHits(G4Step* aStep, G4TouchableHistory* /*ROhist
+   this->indexMethod(myTouch, station, plane, row, module, sensor);
+   // get the HepMcParticleLink from the TrackHelper
+   FaserTrackHelper trHelp(aStep->GetTrack());
++  // Optional validation sidecar: true G4 momentum at each sensor step. It does
++  // not change FaserSiHit or its persisted schema. Run one G4 thread per process.
++  static thread_local const char* truthPath=std::getenv("FASER_SCT_LOCAL_TRUTH_FILE");
++  if(truthPath) {
++    static thread_local std::ofstream truth(truthPath);
++    static thread_local bool header=false;
++    if(!header) {
++      truth << "event,track,parent,barcode,pdg,station,layer,row,module,sensor,x_mm,y_mm,z_mm,px_MeV,py_MeV,pz_MeV,post_px_MeV,post_py_MeV,post_pz_MeV\n";
++      truth << std::setprecision(17); header=true;
++    }
++    const auto pos=aStep->GetPreStepPoint()->GetPosition();
++    const auto p=aStep->GetPreStepPoint()->GetMomentum();
++    const auto post=aStep->GetPostStepPoint()->GetMomentum();
++    truth << G4RunManager::GetRunManager()->GetCurrentEvent()->GetEventID() << ','
++          << aStep->GetTrack()->GetTrackID() << ',' << aStep->GetTrack()->GetParentID() << ','
++          << trHelp.GetParticleLink().barcode() << ',' << aStep->GetTrack()->GetDefinition()->GetPDGEncoding() << ','
++          << station << ',' << plane << ',' << row << ',' << module << ',' << sensor << ','
++          << pos.x()/CLHEP::mm << ',' << pos.y()/CLHEP::mm << ',' << pos.z()/CLHEP::mm << ','
++          << p.x()/CLHEP::MeV << ',' << p.y()/CLHEP::MeV << ',' << p.z()/CLHEP::MeV << ','
++          << post.x()/CLHEP::MeV << ',' << post.y()/CLHEP::MeV << ',' << post.z()/CLHEP::MeV << '\n';
++  }
+   m_HitColl->Emplace(lP1,
+                      lP2,
+                      edep,

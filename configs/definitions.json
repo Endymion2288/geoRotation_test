@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "frames": {
+    "F": "Original FASER frame; beam along +z",
+    "A": "Rotated ACTS frame; beam along +x",
+    "R_F_to_A": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+    "physical_slope_y": "py_A/px_A = py_F/pz_F",
+    "physical_theta_y": "atan(py_A/px_A)",
+    "legacy_angle": "atan(py_A/pz_A); retained only to reproduce raw-component plots"
+  },
+  "units": {"position": "mm", "audit_momentum_A": "GeV", "truth_momentum_F": "MeV", "bound_qop": "1/GeV", "trk_qop": "1/MeV", "angle": "rad"},
+  "truth": {
+    "generated_signal": "status=1; 0<barcode<200000; |pdg|=13 for muon DSIDs, |pdg|=11 for Aprime DSIDs",
+    "fiducial": "production vertex radius<100 mm; valid SiHit mean position in stations 1,2,3, each radius<100 mm",
+    "H18": "at least 18 SiHits with the signal barcode in stations 1,2,3 combined",
+    "momentum_reference": "HepMC production vertex; never labelled same-sensor local truth",
+    "station_direction_reference": "average direction from the actual SiHit start/end positions transformed by transformHit; station average is not a fixed plane",
+    "local_momentum_supplement": "FaserSctSensorSD optional FASER_SCT_LOCAL_TRUTH_FILE sidecar records pre/post G4 momentum. Re-simulation needs input BeamTruthEvent and random/geometry/conditions provenance. G4 continuation vertices are separately retained snapshots."
+  },
+  "track_selections": {
+    "Good95": "chi2/ndof<25; distinct station/layer count>=7; ndof+5>=12; maximum fitted-state transverse radius<95 mm",
+    "one_Good95": "exactly one final track passing Good95 in the event",
+    "Alma_historical": "PDF specifies fiducial truth, r_atMaxRadius<100 mm, exactly one Good Track. Historical public Ntuple source uses Good95. Exact Twiki/analysis selection remains a reproduction difference until original selection is recovered."
+  },
+  "matching": {"basis": "SDO contributions of measured cluster RDO identifiers", "purity_minimum": 0.7, "ties": "majority hit count, then deterministic barcode order; flag shared/ambiguous cases", "best_candidate": "majority hit count, number of measurements, chi2, stable candidate ID; charge and momentum excluded"},
+  "anomalies": {"momentum_tail": "p_reco/p_production_truth<0.5", "charge_misid": "q_reco*q_truth<0", "invalid": "missing/NaN/qop=0 counted separately; never replaced by 999999"},
+  "primary_pilot": {"geometry": "FASERNU-04", "conditions": "OFLCOND-FASER-05", "material": "current faser_reco default unrotated alma9 map; historical rotated and strictly rotated current maps are separate controls", "mode": "3-station forward", "masked_layers": [0, 1, 2, 3, 4, 5], "concurrency": "one serial event slot per process; independent HTCondor shards"}
+}
