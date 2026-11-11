@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.root
+*.log
+/build/
+/run/
+/results/
+/outputs/
