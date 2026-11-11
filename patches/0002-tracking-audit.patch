@@ -1,0 +1,772 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+index ee327a21..057629ce 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -34,6 +34,7 @@
+ #include "Acts/TrackFinding/CombinatorialKalmanFilterError.hpp"
+ #include "Acts/EventData/ProxyAccessor.hpp"
+ #include "CircleFitTrackSeedTool.h"
++#include "TrackingClosure.h"
+ 
+ size_t CKF2::TrackInfo::nClusters {0};
+ 
+@@ -69,6 +70,13 @@ StatusCode CKF2::initialize() {
+     ATH_CHECK(m_alignmentDerivativesWriterTool.retrieve());
+   }
+   ATH_CHECK(detStore()->retrieve(m_idHelper,"FaserSCT_ID"));
++  ATH_CHECK(detStore()->retrieve(m_detManager,"SCT"));
++  if (!m_auditFile.value().empty()) {
++    m_audit = std::make_unique<TrackingAudit>(m_auditFile.value(), m_auditStates);
++    if (!m_audit->out) return StatusCode::FAILURE;
++    m_audit->collection = m_trackCollection.key();
++    m_audit->idHelper = m_idHelper;
++  }
+ 
+   // FIXME fix Acts logging level
+   if (m_actsLogging == "VERBOSE") {
+@@ -122,6 +130,11 @@ StatusCode CKF2::execute() {
+   }
+ 
+   Acts::MagneticFieldContext magFieldContext = getMagneticFieldContext(ctx);
++  if(m_audit && m_auditClosure && m_numberOfEvents==1) {
++    m_audit->run=ctx.eventID().run_number(); m_audit->event=ctx.eventID().event_number();
++    m_audit->lumi=ctx.eventID().lumi_block();
++    trackingClosure(*m_audit,gctx,magFieldContext,trackingGeometry,m_detManager,m_idHelper,*m_createTrkTrackTool,*m_kalmanFitterTool1);
++  }
+   Acts::CalibrationContext calibContext;
+ 
+   CHECK(m_trackSeedTool->run(m_maskedLayers, m_backwardPropagation));
+@@ -139,6 +152,27 @@ StatusCode CKF2::execute() {
+   std::shared_ptr<std::vector<std::array<std::vector<const Tracker::FaserSCT_Cluster*>, 3>>> seedClusters = m_trackSeedTool->seedClusters();
+ 
+   TrackInfo::nClusters = sourceLinks->size();
++  if (m_audit) {
++    m_audit->run = ctx.eventID().run_number();
++    m_audit->event = ctx.eventID().event_number();
++    m_audit->lumi = ctx.eventID().lumi_block();
++    const TrackerSimDataCollection* simData = nullptr;
++    ATH_CHECK(evtStore()->retrieve(simData, "SCT_SDO_Map"));
++    m_audit->simData = simData;
++    const xAOD::EventInfo* auditEventInfo=nullptr;
++    ATH_CHECK(evtStore()->retrieve(auditEventInfo,"EventInfo"));
++    m_audit->begin("event");
++    m_audit->out << ",\"seeds\":" << initialParameters->size()
++                 << ",\"clusters\":" << clusters->size()
++                 << ",\"measurements\":" << measurements->size() << ",\"event_weight\":";
++    m_audit->number(auditEventInfo->mcEventWeights().empty() ? 1. : auditEventInfo->mcEventWeights().front());
++    m_audit->end();
++    const McEventCollection* truthEvents=nullptr;
++    const FaserSiHitCollection* truthHits=nullptr;
++    ATH_CHECK(evtStore()->retrieve(truthEvents, "TruthEvent"));
++    ATH_CHECK(evtStore()->retrieve(truthHits, "SCT_Hits"));
++    m_audit->truth(*truthEvents,*truthHits,m_detManager);
++  }
+ 
+ 
+   CircleFitTrackSeedTool* Tool = dynamic_cast<CircleFitTrackSeedTool*>(m_trackSeedTool.get());
+@@ -174,7 +208,11 @@ StatusCode CKF2::execute() {
+   tracks.addColumn<unsigned int>("trackGroup");
+   tracksTemp.addColumn<unsigned int>("trackGroup");
+   selectedTracks.addColumn<unsigned int>("trackGroup");
++  tracks.addColumn<unsigned int>("auditCandidate");
++  tracksTemp.addColumn<unsigned int>("auditCandidate");
++  selectedTracks.addColumn<unsigned int>("auditCandidate");
+   Acts::ProxyAccessor<unsigned int> seedNumber("trackGroup");
++  Acts::ProxyAccessor<unsigned int> candidateNumber("auditCandidate");
+   
+ 
+   //1) calibrator
+@@ -223,9 +261,21 @@ StatusCode CKF2::execute() {
+   m_numberOfTrackSeeds += initialParameters->size();
+   ATH_MSG_DEBUG("Invoke track finding with " << initialParameters->size() << " seeds.");
+ 
+-  unsigned int nSeed = 0;
+-
+   for (std::size_t iseed = 0; iseed < (*initialParameters).size(); ++iseed) {
++    if (m_audit) {
++      std::vector<const Tracker::FaserSCT_Cluster*> seedHits;
++      if (Tool) seedHits = Tool->seeds()->at(iseed).clusters;
++      m_audit->parameters("seed", gctx, initialParameters->at(iseed), iseed, -1, seedHits);
++      if(Tool) {
++        const auto& seed=Tool->seeds()->at(iseed);
++        m_audit->begin("seed_circle",iseed);
++        m_audit->out << ",\"stations\":" << seed.stations << ",\"chi2\":"; m_audit->number(seed.chi2);
++        m_audit->out << ",\"cx\":"; if(seed.stations>1) m_audit->number(seed.cx); else m_audit->out << "null";
++        m_audit->out << ",\"cy\":"; if(seed.stations>1) m_audit->number(seed.cy); else m_audit->out << "null";
++        m_audit->out << ",\"radius_mm\":"; if(seed.stations>1) m_audit->number(seed.r); else m_audit->out << "null";
++        m_audit->end();
++      }
++    }
+     ATH_MSG_DEBUG("  position: " << (*initialParameters)[iseed].position(gctx).transpose());
+     ATH_MSG_DEBUG("  momentum: " << (*initialParameters)[iseed].momentum().transpose());
+     ATH_MSG_DEBUG("  charge:   " << (*initialParameters)[iseed].charge());
+@@ -235,6 +285,10 @@ StatusCode CKF2::execute() {
+     auto result = (*m_finder)((*initialParameters).at(iseed), options, calibrator, slAccessor, Acts::MeasurementSelector(measurementSelectorCfg), tracksTemp);
+    
+     if (!result.ok()) {
++      if(m_audit) {
++        m_audit->begin("finder_error",iseed);
++        m_audit->out << ",\"error\":" << result.error().value(); m_audit->end();
++      }
+       ATH_MSG_WARNING("Track finding failed for seed " << iseed << " with error" << result.error());
+       continue;
+     }
+@@ -243,9 +297,9 @@ StatusCode CKF2::execute() {
+     m_numberOfFittedTracks += tracksForSeed.size();
+     ATH_MSG_DEBUG("Find " << tracksForSeed.size() << " tracks for this seed");
+     for (auto& track : tracksForSeed) {
+-      // Set the seed number, this number decrease by 1 since the seed number
+-      // has already been updated
+-      seedNumber(track) = nSeed - 1;
++      seedNumber(track) = iseed;
++      candidateNumber(track) = tracks.size();
++      if(m_audit) m_audit->track("found",gctx,track,iseed,tracks.size());
+       auto destProxy = tracks.getTrack(tracks.addTrack());
+       destProxy.copyFrom(track, true);  // make sure we copy track states!
+     }
+@@ -271,6 +325,7 @@ StatusCode CKF2::execute() {
+     
+     auto destProxy = selectedTracks.getTrack(selectedTracks.addTrack());
+     destProxy.copyFrom(tracks.getTrack(selected.index), true);  // make sure we copy track states!
++    if(m_audit) m_audit->track("selected",gctx,destProxy,seedNumber(destProxy),candidateNumber(destProxy));
+     
+     if(not allTracks.empty()){ 
+       allTracks.remove_if([&](const TrackInfo &p) {
+@@ -303,6 +358,7 @@ StatusCode CKF2::execute() {
+ 
+   std::map<std::size_t, bool> refitStatus; 
+   for (const auto & track : selectedTracks) {
++    const int auditSeed = seedNumber(track), auditCandidate = candidateNumber(track);
+     std::optional<Acts::BoundTrackParameters> fittedParams = std::nullopt;
+ 
+     if(track.hasReferenceSurface()){ 
+@@ -319,10 +375,12 @@ StatusCode CKF2::execute() {
+     }
+ 
+     std::unique_ptr<Trk::Track> trk = m_createTrkTrackTool->createTrack(gctx, track, fittedParams, m_backwardPropagation);
++    if(m_audit) m_audit->trk("converted",trk.get(),auditSeed,auditCandidate);
+     m_numberOfSelectedTracks++;
+     //@todo: make the KF refit configurable 
+-    std::unique_ptr<Trk::Track> trk2 = m_kalmanFitterTool1->fit(
+-      ctx, gctx, trk.get(), Acts::BoundVector::Zero(), m_isMC);
++    std::unique_ptr<Trk::Track> trk2 = m_kalmanFitterTool1->fitAudited(
++      ctx, gctx, trk.get(), Acts::BoundVector::Zero(), m_isMC, m_audit.get(), auditSeed, auditCandidate);
++    if(m_audit) m_audit->trk("final",trk2 ? trk2.get() : trk.get(),auditSeed,auditCandidate,trk2 ? 1 : 0);
+     if (trk2 != nullptr) {
+       outputTracks->push_back(std::move(trk2));
+       refitStatus[track.index()] = true;
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+index 44338063..4a26ddae 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -24,6 +24,7 @@
+ #include <boost/dynamic_bitset.hpp>
+ #include "CreateTrkTrackTool.h"
+ #include "xAODEventInfo/EventInfo.h"
++#include "TrackingAudit.h"
+ 
+ 
+ using ClusterSet = boost::dynamic_bitset<>;
+@@ -76,6 +77,10 @@ public:
+   virtual Acts::MagneticFieldContext getMagneticFieldContext(const EventContext& ctx) const;
+ 
+ private:
++  std::unique_ptr<TrackingAudit> m_audit;
++  Gaudi::Property<std::string> m_auditFile {this, "AuditFile", ""};
++  Gaudi::Property<bool> m_auditStates {this, "AuditStates", false};
++  Gaudi::Property<bool> m_auditClosure {this, "AuditClosure", false};
+   size_t m_numberOfEvents {0};
+   size_t m_numberOfTrackSeeds {0};
+   size_t m_numberOfFittedTracks {0};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+index e5500728..eb918cec 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+@@ -36,6 +36,10 @@ StatusCode CircleFitTrackSeedTool::initialize() {
+ 
+ 
+ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backward) {
++  if(m_resetEventMaps) {
++    s_indexMap.clear();
++    s_spacePointMap.clear();
++  }
+ 
+   SG::ReadHandle<Tracker::FaserSCT_ClusterContainer> clusterContainer {m_clusterContainerKey};
+       ATH_CHECK(clusterContainer.isValid());
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+index 3b88b324..f1a66c30 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+@@ -141,6 +141,7 @@ private:
+   Gaudi::Property<double> m_covQOverP {this, "covQOverP", 1};
+   Gaudi::Property<double> m_covTime {this, "covTime", 1};
+   Gaudi::Property<bool> m_removeIFT{this, "removeIFT", false};
++  Gaudi::Property<bool> m_resetEventMaps{this, "ResetEventMaps", false};
+ };
+ 
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
+index 9a29af04..e13aa935 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
+@@ -165,5 +165,15 @@ CreateTrkTrackTool::ConvertActsTrackParameterToATLAS(const Acts::BoundTrackParam
+ 
+   //  << "====================================\n"
+   //  << std::endl;
++  if (m_correctCovariance && cov) {
++    // The output local coordinates belong to the curvilinear plane, whereas
++    // the ACTS covariance is expressed in the input surface basis.
++    Trk::CurvilinearParameters frame(pos,tmom,charge);
++    const Eigen::Matrix<double,3,2> u = frame.associatedSurface().transform().rotation().leftCols<2>();
++    const Eigen::Matrix<double,3,2> e = actsParameter.referenceSurface().transform(gctx).rotation().leftCols<2>();
++    AmgMatrix(5,5) jacobian = AmgMatrix(5,5)::Identity();
++    jacobian.topLeftCorner<2,2>() = u.transpose() * e;
++    cov = (jacobian * (*cov) * jacobian.transpose()).eval();
++  }
+   return std::make_unique<Trk::CurvilinearParameters>(pos,tmom,charge, cov);
+ }
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
+index 2bbc72b6..b7451e0b 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
+@@ -29,6 +29,7 @@ public:
+   std::unique_ptr<Trk::Track> createTrack(const Acts::GeometryContext &gctx, const TrackContainer::TrackProxy &track, const std::optional<Acts::BoundTrackParameters>& fittedParams = std::nullopt, bool backwardPropagation=false) const;
+   std::unique_ptr<Trk::TrackParameters> ConvertActsTrackParameterToATLAS(const Acts::BoundTrackParameters &actsParameter, const Acts::GeometryContext& gctx) const;
+ private:
++  Gaudi::Property<bool> m_correctCovariance {this, "CorrectCovariance", false};
+   const FaserSCT_ID* m_idHelper {nullptr};
+ };
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+index b0056a88..c07226cc 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+@@ -12,6 +12,7 @@
+ #include "TrackerIdentifier/FaserSCT_ID.h"
+ 
+ #include "TrackerRIO_OnTrack/FaserSCT_ClusterOnTrack.h"
++#include "TrackingAudit.h"
+ 
+ 
+ KalmanFitterTool::KalmanFitterTool(const std::string& type, const std::string& name, const IInterface* parent) :
+@@ -342,8 +343,14 @@ KalmanFitterTool::getUnbiasedResidual(const EventContext &ctx, const Acts::Geome
+ 
+ std::unique_ptr<Trk::Track>
+ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx,
++                      Trk::Track* inputTrack, const Acts::BoundVector& inputVector, bool isMC) const {
++  return fitAudited(ctx,gctx,inputTrack,inputVector,isMC,nullptr,-1,-1);
++}
++
++std::unique_ptr<Trk::Track>
++KalmanFitterTool::fitAudited(const EventContext &ctx, const Acts::GeometryContext &gctx,
+                       Trk::Track* inputTrack, const Acts::BoundVector& inputVector,
+-                      bool isMC) const {
++                      bool isMC, TrackingAudit* audit, int auditSeed, int auditCandidate) const {
+   std::unique_ptr<Trk::Track> newTrack = nullptr;
+ 
+   if (!inputTrack->measurementsOnTrack() || inputTrack->measurementsOnTrack()->size() < m_minMeasurements) {
+@@ -364,6 +371,7 @@ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx
+   //auto pSurface = Acts::Surface::makeShared<Acts::PlaneSurface>(
+   //    Acts::Vector3 {0, 0, origin}, Acts::Vector3{0, 0, -1});
+   double origin = inputTrack->trackParameters()->front()->position().x() - 10;
++  if(m_correctInterfaces) origin = inputTrack->trackParameters()->front()->position().x();
+    Acts::RotationMatrix3 rot = Acts::RotationMatrix3::Identity();
+   rot.col(0) = Acts::Vector3(0, 0, -1);
+   rot.col(1) = Acts::Vector3(0, 1, 0);
+@@ -391,6 +399,7 @@ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx
+   if(trackParameters.covariance().has_value()){ 
+     trackParameters.covariance() = (trackParameters.covariance().value())*10; 
+   }
++  if(audit) audit->parameters("refit_input",gctx,trackParameters,auditSeed,auditCandidate);
+  
+   ATH_MSG_DEBUG("trackParameters: " << trackParameters.parameters().transpose());
+   ATH_MSG_DEBUG("position: " << trackParameters.position(gctx).transpose());
+@@ -420,6 +429,7 @@ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx
+ 
+   if (result.ok()) {
+     const auto& track = result.value();
++    if(audit) audit->track("refit",gctx,track,auditSeed,auditCandidate);
+     //if (track.hasReferenceSurface()) {
+       //const auto& params = track.fittedParameters.value();
+       //ATH_MSG_DEBUG("ReFitted parameters");
+@@ -633,6 +643,18 @@ Acts::RotationMatrix3 rot = Acts::RotationMatrix3::Identity();
+   for(int i=0; i < cov.cols(); i++){
+     cov(4, i) = cov(4, i)/1_MeV;
+   }
++  if(m_correctInterfaces) {
++    // Re-express uncertainty at the same physical point. A shift to a different
++    // plane would require propagation of the mean and covariance together.
++    const Acts::Vector3 direction = inputParameters->momentum().normalized();
++    const Acts::Vector3 normal = rotation.col(2);
++    const Eigen::Matrix<double,3,2> u = inputParameters->associatedSurface().transform().rotation().leftCols<2>();
++    const Acts::SquareMatrix3 projection = Acts::SquareMatrix3::Identity()
++        - direction * normal.transpose() / normal.dot(direction);
++    Acts::BoundSquareMatrix jacobian = Acts::BoundSquareMatrix::Identity();
++    jacobian.topLeftCorner<2,2>() = rotation.leftCols<2>().transpose() * projection * u;
++    cov = (jacobian * cov * jacobian.transpose()).eval();
++  }
+   for (int i = 0; i < 6; ++i) {
+     cov(i,i) = m_seedCovarianceScale * cov(i,i);
+   }
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+index 36a1afa0..a9aa3b02 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+@@ -36,6 +36,7 @@ struct TSOS4Residual{
+ };
+ 
+ class FaserSCT_ID;
++class TrackingAudit;
+ 
+ 
+ 
+@@ -47,11 +48,18 @@ public:
+   virtual StatusCode finalize() override;
+ 
+   virtual Acts::MagneticFieldContext getMagneticFieldContext(const EventContext& ctx) const;
++  Acts::BoundTrackParameters auditConvert(const Trk::TrackParameters* p, double origin) const {
++    return getParametersFromTrack(p, Acts::BoundVector::Zero(), origin);
++  }
+ 
+   std::unique_ptr<Trk::Track> fit(const EventContext &ctx, const Acts::GeometryContext &gctx,
+                                   Trk::Track *inputTrack,
+                                   const Acts::BoundVector& inputVector = Acts::BoundVector::Zero(),
+                                   bool isMC=false) const;
++  std::unique_ptr<Trk::Track> fitAudited(const EventContext &ctx, const Acts::GeometryContext &gctx,
++                                  Trk::Track *inputTrack, const Acts::BoundVector& inputVector,
++                                  bool isMC, TrackingAudit* audit,
++                                  int auditSeed=-1, int auditCandidate=-1) const;
+ 
+   std::vector<TSOS4Residual> getUnbiasedResidual(const EventContext &ctx, const Acts::GeometryContext &gctx,
+                                   Trk::Track *inputTrack,
+@@ -83,6 +91,7 @@ private:
+   Gaudi::Property<std::size_t> m_minMeasurements {this, "MinMeasurements", 12, "minimum number of measurements of the input track"};
+   Gaudi::Property<double> m_seedCovarianceScale {this, "SeedCovarianceScale", 100, "scale covariance from initial track"};
+   Gaudi::Property<bool> m_isMC {this, "isMC", false};
++  Gaudi::Property<bool> m_correctInterfaces {this, "CorrectInterfaces", false};
+   Gaudi::Property<bool> m_summaryWriter {this, "SummaryWriter", false};
+   Gaudi::Property<bool> m_statesWriter {this, "StatesWriter", false};
+   Gaudi::Property<bool> m_noDiagnostics {this, "noDiagnostics", true, "Set ACTS logging level to INFO and do not run performance writer, states writer or summary writer"};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
+new file mode 100644
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
+@@ -0,0 +1,233 @@
++// Deterministic, opt-in tracking observer. Serial Athena event slots only.
++#ifndef FASER_TRACKING_AUDIT_H
++#define FASER_TRACKING_AUDIT_H
++
++#include "TrackClassification.h"
++#include "GeneratorObjects/McEventCollection.h"
++#include "HepMC3/GenVertex.h"
++#include "HepMC3/Units.h"
++#include "TrackerSimEvent/FaserSiHitCollection.h"
++#include "TrackerReadoutGeometry/SCT_DetectorManager.h"
++#include "TrackerReadoutGeometry/SiDetectorElement.h"
++#include "TrackerIdentifier/FaserSCT_ID.h"
++#include "FaserActsKalmanFilter/IndexSourceLink.h"
++#include "Acts/EventData/TrackParameters.hpp"
++#include "TrkTrack/Track.h"
++#include <fstream>
++#include <iomanip>
++#include <set>
++#include <cmath>
++
++class TrackingAudit {
++ public:
++  explicit TrackingAudit(const std::string& path, bool states)
++      : out(path), fullStates(states) { out << std::setprecision(17); }
++  std::ofstream out;
++  bool fullStates;
++  uint64_t run = 0, event = 0, lumi = 0;
++  std::string collection;
++  const TrackerSimDataCollection* simData = nullptr;
++  const FaserSCT_ID* idHelper = nullptr;
++
++  void number(double x) { if (std::isfinite(x)) out << x; else out << "null"; }
++  template <typename M> void matrix(const M& m) {
++    out << '[';
++    for (int i=0; i<m.rows(); ++i) {
++      if (i) out << ',';
++      out << '[';
++      for (int j=0; j<m.cols(); ++j) { if(j) out << ','; number(m(i,j)); }
++      out << ']';
++    }
++    out << ']';
++  }
++  template <typename V> void vector(const V& v) {
++    out << '[';
++    for (int i=0; i<v.size(); ++i) { if(i) out << ','; number(v[i]); }
++    out << ']';
++  }
++  void begin(const char* stage, int seed=-1, int candidate=-1, int state=-1) {
++    out << "{\"schema\":2,\"run\":" << run << ",\"event\":" << event
++        << ",\"lumi\":" << lumi
++        << ",\"collection\":\"" << collection << "\",\"stage\":\"" << stage
++        << "\",\"seed\":" << seed << ",\"candidate\":" << candidate
++        << ",\"state\":" << state;
++  }
++  void end() { out << "}\n"; }
++  void truth(const McEventCollection& events, const FaserSiHitCollection& hits,
++             const TrackerDD::SCT_DetectorManager* manager) {
++    std::map<int,std::array<Acts::Vector3,4>> positions, directions;
++    std::map<int,std::array<int,4>> counts;
++    int index=0;
++    for(const auto& hit: hits) {
++      const int barcode=hit.trackNumber(), station=hit.getStation();
++      if(station<0 || station>=4) continue;
++      if(!counts.count(barcode)) {
++        counts[barcode]={0,0,0,0};
++        for(int s=0;s<4;++s) { positions[barcode][s]=Acts::Vector3::Zero(); directions[barcode][s]=Acts::Vector3::Zero(); }
++      }
++      const auto* element=manager->getDetectorElement(idHelper->wafer_id(station,hit.getPlane(),hit.getRow(),hit.getModule(),hit.getSensor()));
++      const auto start=hit.localStartPosition(), stop=hit.localEndPosition();
++      Acts::Vector3 localStart(start.x(),start.y(),start.z()), localStop(stop.x(),stop.y(),stop.z());
++      Acts::Vector3 pos=element->transformHit()*(0.5*(localStart+localStop));
++      Acts::Vector3 dir=(element->transformHit().rotation()*(localStop-localStart)).normalized();
++      positions[barcode][station]+=pos; directions[barcode][station]+=dir; ++counts[barcode][station];
++      if(fullStates) {
++        begin("truth_hit",-1,-1,index);
++        out << ",\"barcode\":" << barcode << ",\"station\":" << station << ",\"layer\":" << hit.getPlane()
++            << ",\"sensor\":" << element->identify().get_compact();
++        out << ",\"position_F_mm\":"; vector(pos);
++        out << ",\"direction_F\":"; vector(dir); end();
++      }
++      ++index;
++    }
++    for(const auto* mc: events) {
++      const double pscale=mc->momentum_unit()==HepMC3::Units::GEV ? 1000. : 1.;
++      const double xscale=mc->length_unit()==HepMC3::Units::CM ? 10. : 1.;
++      for(const auto& p: mc->particles()) {
++        const int barcode=HepMC::barcode(p);
++        if(std::abs(p->pdg_id())!=11 && std::abs(p->pdg_id())!=13) continue;
++        if(barcode%1000000>=200000 && !counts.count(barcode)) continue;
++        begin("truth");
++        out << ",\"barcode\":" << barcode << ",\"pdg\":" << p->pdg_id()
++            << ",\"status\":" << p->status() << ",\"signal\":" << (barcode>0 && barcode<200000 ? "true":"false");
++        out << ",\"momentum_F_MeV\":"; vector(Acts::Vector3(p->momentum().px(),p->momentum().py(),p->momentum().pz())*pscale);
++        if(p->production_vertex()) {
++          auto v=p->production_vertex()->position();
++          out << ",\"vertex_F_mm\":"; vector(Acts::Vector3(v.x(),v.y(),v.z())*xscale);
++        }
++        out << ",\"hit_counts\":[";
++        for(int s=0;s<4;++s) { if(s) out << ','; out << counts[barcode][s]; }
++        out << "],\"station_position_F_mm\":[";
++        for(int s=0;s<4;++s) { if(s) out << ','; if(counts[barcode][s]) vector((positions[barcode][s]/counts[barcode][s]).eval()); else out << "null"; }
++        out << "],\"station_direction_F\":[";
++        for(int s=0;s<4;++s) { if(s) out << ','; if(counts[barcode][s]) vector(directions[barcode][s].normalized()); else out << "null"; }
++        out << ']'; end();
++      }
++    }
++  }
++  void hits(const std::vector<const Tracker::FaserSCT_Cluster*>& clusters) {
++    out << ",\"hits\":[";
++    std::set<int> layers;
++    for (size_t i=0; i<clusters.size(); ++i) {
++      if(i) out << ',';
++      out << clusters[i]->identify().get_compact();
++      layers.insert(3 * idHelper->station(clusters[i]->identify()) + idHelper->layer(clusters[i]->identify()));
++    }
++    out << "],\"layers\":" << layers.size() << ",\"matches\":[";
++    if(simData) {
++      std::vector<ParticleHitCount> counts;
++      identifyContributingParticles(*simData, clusters, counts);
++      std::sort(counts.begin(), counts.end(), [](const auto& a, const auto& b) {
++        return a.hitCount != b.hitCount ? a.hitCount > b.hitCount : a.particleId < b.particleId;
++      });
++      for(size_t i=0; i<counts.size(); ++i) {
++        if(i) out << ',';
++        out << '[' << counts[i].particleId << ',' << counts[i].hitCount << ']';
++      }
++    }
++    out << ']';
++  }
++  void parameters(const char* stage, const Acts::GeometryContext& gctx,
++                  const Acts::BoundTrackParameters& p, int seed, int candidate,
++                  const std::vector<const Tracker::FaserSCT_Cluster*>& clusters={}) {
++    begin(stage,seed,candidate);
++    out << ",\"bound\":"; vector(p.parameters());
++    if(p.covariance()) {
++      out << ",\"variance_qop\":"; number((*p.covariance())(4,4));
++      if(fullStates) { out << ",\"cov\":"; matrix(*p.covariance()); }
++    }
++    out << ",\"position_A_mm\":"; vector(p.position(gctx));
++    out << ",\"momentum_A_GeV\":"; vector(p.momentum());
++    if(fullStates) { out << ",\"surface\":"; matrix(p.referenceSurface().transform(gctx).matrix()); }
++    hits(clusters); end();
++  }
++  template <typename Track> void track(const char* stage, const Acts::GeometryContext& gctx,
++                                     const Track& trk, int seed, int candidate) {
++    std::vector<const Tracker::FaserSCT_Cluster*> clusters;
++    double rmax=0;
++    for(const auto& state: trk.trackStatesReversed()) {
++      if(state.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag) && state.hasUncalibratedSourceLink()) {
++        auto cluster=state.getUncalibratedSourceLink().template get<IndexSourceLink>().hit();
++        clusters.push_back(cluster);
++        auto pos=cluster->globalPosition();
++        rmax=std::max(rmax,std::hypot(pos.x(),pos.y()));
++      }
++    }
++    begin(stage,seed,candidate);
++    out << ",\"measurements\":" << trk.nMeasurements() << ",\"holes\":" << trk.nHoles()
++        << ",\"outliers\":" << trk.nOutliers() << ",\"ndof\":" << trk.nDoF() << ",\"chi2\":";
++    number(trk.chi2()); out << ",\"rmax_mm\":"; number(rmax);
++    if(trk.hasReferenceSurface()) {
++      Acts::BoundTrackParameters p(trk.referenceSurface().getSharedPtr(),trk.parameters(),trk.covariance(),Acts::ParticleHypothesis::muon());
++      out << ",\"bound\":"; vector(trk.parameters());
++      out << ",\"variance_qop\":"; number(trk.covariance()(4,4));
++      if(fullStates) { out << ",\"cov\":"; matrix(trk.covariance()); }
++      out << ",\"position_A_mm\":"; vector(p.position(gctx));
++      out << ",\"momentum_A_GeV\":"; vector(p.momentum());
++    }
++    hits(clusters); end();
++    if(!fullStates) return;
++    int index=0;
++    for(const auto& state: trk.trackStatesReversed()) {
++      begin((std::string(stage)+"_state").c_str(),seed,candidate,index++);
++      out << ",\"geometry_id\":" << state.referenceSurface().geometryId().value()
++          << ",\"acts_state_index\":" << state.index() << ",\"acts_previous_index\":" << state.previous()
++          << ",\"measurement_flag\":" << (state.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag) ? "true":"false")
++          << ",\"outlier_flag\":" << (state.typeFlags().test(Acts::TrackStateFlag::OutlierFlag) ? "true":"false")
++          << ",\"hole_flag\":" << (state.typeFlags().test(Acts::TrackStateFlag::HoleFlag) ? "true":"false");
++      out << ",\"surface\":"; matrix(state.referenceSurface().transform(gctx).matrix());
++      if(state.hasUncalibratedSourceLink()) {
++        const auto sl=state.getUncalibratedSourceLink().template get<IndexSourceLink>();
++        out << ",\"source_index\":" << sl.index() << ",\"hit\":" << sl.hit()->identify().get_compact();
++      }
++      if(state.hasPredicted()) {
++        out << ",\"predicted\":"; vector(state.predicted());
++        out << ",\"predicted_cov\":"; matrix(state.predictedCovariance());
++      }
++      if(state.hasFiltered()) {
++        out << ",\"filtered\":"; vector(state.filtered());
++        out << ",\"filtered_cov\":"; matrix(state.filteredCovariance());
++      }
++      if(state.hasSmoothed()) {
++        out << ",\"smoothed\":"; vector(state.smoothed());
++        out << ",\"smoothed_cov\":"; matrix(state.smoothedCovariance());
++      }
++      if(state.hasJacobian()) { out << ",\"jacobian\":"; matrix(state.jacobian()); }
++      if(state.hasCalibrated()) {
++        out << ",\"measurement\":"; vector(state.effectiveCalibrated());
++        out << ",\"measurement_cov\":"; matrix(state.effectiveCalibratedCovariance());
++        out << ",\"projector\":"; matrix(state.effectiveProjector());
++      }
++      end();
++    }
++  }
++  void trk(const char* stage, const Trk::Track* track, int seed, int candidate, int refit=-1) {
++    begin(stage,seed,candidate);
++    out << ",\"refit\":" << refit;
++    std::vector<const Tracker::FaserSCT_Cluster*> clusters;
++    double rmax=0;
++    if(track->trackParameters() && !track->trackParameters()->empty()) {
++      const auto* p=track->trackParameters()->front();
++      out << ",\"position_A_mm\":"; vector(p->position());
++      out << ",\"momentum_A_GeV\":"; vector((p->momentum()*0.001).eval());
++      out << ",\"charge\":"; number(p->charge());
++      out << ",\"bound_trk\":"; vector(p->parameters());
++      if(p->covariance()) {
++        out << ",\"variance_qop\":"; number((*p->covariance())(4,4)*1e6);
++        if(fullStates) { out << ",\"cov_trk\":"; matrix(*p->covariance()); }
++      }
++      for(const auto* q: *track->trackParameters()) rmax=std::max(rmax,std::hypot(q->position().y(),q->position().z()));
++    }
++    if(track->measurementsOnTrack()) {
++      for(const auto* m: *track->measurementsOnTrack()) {
++        const auto* cot=dynamic_cast<const Tracker::FaserSCT_ClusterOnTrack*>(m);
++        if(cot) clusters.push_back(cot->prepRawData());
++      }
++    }
++    out << ",\"measurements\":" << clusters.size() << ",\"rmax_mm\":"; number(rmax);
++    out << ",\"chi2\":"; number(track->fitQuality()->chiSquared());
++    out << ",\"ndof\":"; number(track->fitQuality()->numberDoF());
++    hits(clusters); end();
++  }
++};
++#endif
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackingClosure.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingClosure.h
+new file mode 100644
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingClosure.h
+@@ -0,0 +1,180 @@
++#ifndef FASER_TRACKING_CLOSURE_H
++#define FASER_TRACKING_CLOSURE_H
++#include "TrackingAudit.h"
++#include "CreateTrkTrackTool.h"
++#include "KalmanFitterTool.h"
++#include "FaserActsGeometry/FASERMagneticFieldWrapper.h"
++#include "FaserActsGeometry/FaserActsDetectorElement.h"
++#include "Acts/Geometry/TrackingGeometry.hpp"
++#include "Acts/Surfaces/PlaneSurface.hpp"
++#include "Acts/MagneticField/ConstantBField.hpp"
++#include "Acts/Propagator/EigenStepper.hpp"
++#include "Acts/Propagator/Navigator.hpp"
++#include "Acts/Propagator/VoidNavigator.hpp"
++#include "Acts/Propagator/Propagator.hpp"
++#include "Acts/Propagator/MaterialInteractor.hpp"
++#include "Acts/Propagator/ActionList.hpp"
++#include "Acts/Propagator/AbortList.hpp"
++#include "Acts/Definitions/Units.hpp"
++
++inline void trackingClosure(TrackingAudit& a, const Acts::GeometryContext& gctx,
++    const Acts::MagneticFieldContext& mctx, const std::shared_ptr<const Acts::TrackingGeometry>& geometry,
++    const TrackerDD::SCT_DetectorManager* manager, const FaserSCT_ID* helper,
++    const CreateTrkTrackTool& converter, const KalmanFitterTool& fitter) {
++  Acts::RotationMatrix3 r;
++  r << 0,0,1, 0,1,0, -1,0,0;
++  Acts::Transform3 transform=Acts::Transform3::Identity(); transform.linear()=r;
++  size_t sensors=0;
++  double maxCenter=0, maxBasis=0;
++  geometry->visitSurfaces([&](const Acts::Surface* s) {
++    if(!s->associatedDetectorElement()) return;
++    ++sensors;
++    const auto* actsElement=dynamic_cast<const FaserActsDetectorElement*>(s->associatedDetectorElement());
++    if(!actsElement) return;
++    const auto id=actsElement->identify();
++    const auto* element=manager->getDetectorElement(helper->wafer_id(id));
++    if(!element) return;
++    Acts::Transform3 expected=transform*element->transform();
++    maxCenter=std::max(maxCenter,(s->center(gctx)-expected.translation()).norm());
++    maxBasis=std::max(maxBasis,(s->transform(gctx).rotation()-expected.rotation()).norm());
++  });
++  a.begin("closure_geometry");
++  a.out << ",\"sensors\":" << sensors << ",\"center_error_mm\":"; a.number(maxCenter);
++  a.out << ",\"basis_error\":"; a.number(maxBasis); a.end();
++
++  FASERMagneticFieldWrapper field;
++  auto cache=field.makeCache(mctx);
++  MagField::FaserFieldCache raw;
++  mctx.get<const FaserFieldCacheCondObj*>()->getInitializedCache(raw);
++  int fieldTrial=0;
++  for(double z: {-1700.,-1000.,0.,500.,1000.,1500.,2000.,2400.}) {
++    for(double x: {-50.,0.,50.}) {
++      Acts::Vector3 f(x,17.,z), p=r*f;
++      double xyz[3]={f.x(),f.y(),f.z()}, b[3], grad[9];
++      raw.getField(xyz,b,grad);
++      Acts::Vector3 expected=r*Acts::Vector3(b[0],b[1],b[2])*(1000.*Acts::UnitConstants::T);
++      Acts::SquareMatrix3 gradient;
++      auto actual=field.getFieldGradient(p,gradient,cache).value();
++      Acts::SquareMatrix3 fd;
++      const double h=0.01;
++      for(int j=0;j<3;++j) {
++        Acts::Vector3 delta=Acts::Vector3::Zero(); delta[j]=h;
++        fd.col(j)=(field.getField(p+delta,cache).value()-field.getField(p-delta,cache).value())/(2*h);
++      }
++      a.begin("closure_field",-1,-1,fieldTrial++); a.out << ",\"position_F_mm\":"; a.vector(f);
++      a.out << ",\"field_error_T\":"; a.number((actual-expected).norm()/Acts::UnitConstants::T);
++      a.out << ",\"gradient_error_T_per_mm\":"; a.number((gradient-fd).norm()/Acts::UnitConstants::T);
++      a.out << ",\"gradient_relative_error\":"; a.number((gradient-fd).norm()/std::max(fd.norm(),1e-20));
++      a.end();
++    }
++  }
++  Acts::RotationMatrix3 basis;
++  basis.col(0)=Acts::Vector3(0,1,0); basis.col(1)=Acts::Vector3(0,0,-1); basis.col(2)=Acts::Vector3(-1,0,0);
++  Acts::Transform3 surfaceTransform=Acts::Transform3::Identity();
++  surfaceTransform.linear()=basis;
++  auto plane=Acts::Surface::makeShared<Acts::PlaneSurface>(surfaceTransform);
++  int conversionTrial=0;
++  for(double q: {-1.,1.}) for(double phi: {-0.003,0.,0.004}) {
++    Acts::BoundVector mean;
++    mean << 2.,3.,phi,1.5707963267948966-0.002,q/150.,0.;
++    Acts::BoundSquareMatrix l=Acts::BoundSquareMatrix::Zero();
++    l.diagonal() << 0.9,0.019,0.0033,0.00029,0.0001,1.;
++    l(1,0)=0.001; l(3,0)=0.00003; l(4,2)=0.000001;
++    Acts::BoundSquareMatrix covariance=l*l.transpose();
++    Acts::BoundTrackParameters original(plane,mean,covariance,Acts::ParticleHypothesis::muon());
++    auto trk=converter.ConvertActsTrackParameterToATLAS(original,gctx);
++    auto evaluate=[&](const Acts::BoundVector& x) {
++      Acts::BoundTrackParameters perturbed(plane,x,std::nullopt,Acts::ParticleHypothesis::muon());
++      auto converted=converter.ConvertActsTrackParameterToATLAS(perturbed,gctx);
++      Acts::Vector3 d=converted->momentum().normalized();
++      const auto& frame=trk->associatedSurface().transform();
++      Acts::Vector3 n=frame.rotation().col(2);
++      Acts::Vector3 position=converted->position();
++      position-=d * n.dot(position-frame.translation())/n.dot(d);
++      Acts::Vector3 local=frame.inverse()*position;
++      Eigen::Matrix<double,5,1> value;
++      value << local.x(),local.y(),converted->parameters()[Trk::phi0],converted->parameters()[Trk::theta],converted->parameters()[Trk::qOverP]*1000.;
++      return value;
++    };
++    Eigen::Matrix<double,5,5> numericalJacobian;
++    const double steps[5]={1e-3,1e-3,1e-5,1e-5,1e-6};
++    for(int i=0;i<5;++i) {
++      auto plus=mean, minus=mean; plus[i]+=steps[i]; minus[i]-=steps[i];
++      numericalJacobian.col(i)=(evaluate(plus)-evaluate(minus))/(2.*steps[i]);
++    }
++    Eigen::Matrix<double,5,5> expectedCov=numericalJacobian*covariance.topLeftCorner<5,5>()*numericalJacobian.transpose();
++    Eigen::Matrix<double,5,5> actualCov=*trk->covariance();
++    actualCov.row(4)*=1000.; actualCov.col(4)*=1000.;
++    double chartError=0;
++    for(int i=0;i<5;++i) for(int j=0;j<5;++j) chartError=std::max(chartError,std::abs(actualCov(i,j)-expectedCov(i,j))/std::sqrt(expectedCov(i,i)*expectedCov(j,j)));
++    auto back=fitter.auditConvert(trk.get(),0.);
++    auto c=back.covariance().value();
++    // Existing refit scale is intentionally retained; compare the chart change
++    // before that separately configured inflation.
++    for(int i=0;i<6;++i) c(i,i)/=10.;
++    a.begin("closure_conversion",-1,-1,conversionTrial++);
++    a.out << ",\"charge\":" << q << ",\"phi\":" << phi;
++    a.out << ",\"position_error_mm\":"; a.number((back.position(gctx)-original.position(gctx)).norm());
++    a.out << ",\"momentum_relative_error\":"; a.number((back.momentum()-original.momentum()).norm()/original.momentum().norm());
++    a.out << ",\"covariance_relative_error\":"; a.number((c.topLeftCorner<5,5>()-covariance.topLeftCorner<5,5>()).norm()/covariance.topLeftCorner<5,5>().norm());
++    a.out << ",\"conversion_chart_error\":"; a.number(chartError);
++    a.out << ",\"original_cov\":"; a.matrix(covariance);
++    a.out << ",\"roundtrip_cov\":"; a.matrix(c); a.end();
++  }
++  // Actual ACTS stepping, without detector material, with both charge signs.
++  int propagationTrial=0;
++  for(int model=0;model<3;++model) {
++    std::shared_ptr<const Acts::MagneticFieldProvider> provider;
++    if(model==2) provider=std::make_shared<FASERMagneticFieldWrapper>();
++    else provider=std::make_shared<Acts::ConstantBField>(Acts::Vector3(0,model==1 ? 0.55*Acts::UnitConstants::T : 0,0));
++    Acts::EigenStepper<> stepper(provider);
++    Acts::Propagator<Acts::EigenStepper<>,Acts::VoidNavigator> propagator(std::move(stepper),Acts::VoidNavigator{});
++    for(double q: {-1.,1.}) for(double maxStep: {100.,10.}) {
++      Acts::BoundVector mean; mean << 0,0,0.002,1.5707963267948966-0.001,q/150.,0;
++      Acts::BoundTrackParameters start(plane,mean,std::nullopt,Acts::ParticleHypothesis::muon());
++      Acts::PropagatorOptions<> options(gctx,mctx);
++      options.pathLimit=2000.; options.maxStepSize=maxStep; options.maxSteps=10000;
++      auto result=propagator.propagate(start,options);
++      a.begin("closure_propagation",-1,-1,propagationTrial++); a.out << ",\"model\":" << model << ",\"charge\":" << q << ",\"max_step_mm\":" << maxStep << ",\"success\":" << (result.ok() ? "true":"false");
++      if(result.ok() && result->endParameters) {
++        a.out << ",\"momentum_relative_drift\":"; a.number(result->endParameters->absoluteMomentum()/start.absoluteMomentum()-1.);
++        a.out << ",\"position_A_mm\":"; a.vector(result->endParameters->position(gctx));
++        a.out << ",\"momentum_A_GeV\":"; a.vector(result->endParameters->momentum());
++      }
++      a.end();
++    }
++  }
++  auto provider=std::make_shared<FASERMagneticFieldWrapper>();
++  Acts::EigenStepper<> stepper(provider);
++  Acts::Navigator navigator(Acts::Navigator::Config{geometry});
++  Acts::Propagator<Acts::EigenStepper<>,Acts::Navigator> propagator(std::move(stepper),std::move(navigator));
++  for(double q: {-1.,1.}) for(int mode=0;mode<4;++mode) {
++    Acts::BoundVector mean; mean << 0,0,0.002,1.5707963267948966-0.001,q/150.,0;
++    Acts::BoundSquareMatrix c=Acts::BoundSquareMatrix::Identity()*1e-10;
++    Acts::BoundTrackParameters start(plane,mean,c,Acts::ParticleHypothesis::muon());
++    using Actions=Acts::ActionList<Acts::MaterialInteractor>;
++    Acts::PropagatorOptions<Actions> options(gctx,mctx);
++    options.pathLimit=2400.; options.maxStepSize=20.; options.maxSteps=10000;
++    auto& material=options.actionList.get<Acts::MaterialInteractor>();
++    material.energyLoss=mode&1; material.multipleScattering=mode&2; material.recordInteractions=true;
++    auto result=propagator.propagate(start,options);
++    a.begin("closure_material",-1,-1,mode+(q>0 ? 4:0)); a.out << ",\"mode\":" << mode << ",\"charge\":" << q
++      << ",\"success\":" << (result.ok() ? "true":"false");
++    if(result.ok() && result->endParameters) {
++      const auto& effects=result->template get<Acts::MaterialInteractor::result_type>();
++      double deltaP=0,varianceQop=0;
++      std::set<uint64_t> ids;
++      for(const auto& effect: effects.materialInteractions) {
++        deltaP+=effect.deltaP; varianceQop+=effect.sigmaQoP2;
++        if(effect.surface) ids.insert(effect.surface->geometryId().value());
++      }
++      a.out << ",\"X_over_X0\":"; a.number(effects.materialInX0);
++      a.out << ",\"interactions\":" << effects.materialInteractions.size() << ",\"unique_surfaces\":" << ids.size();
++      a.out << ",\"momentum_change_GeV\":"; a.number(result->endParameters->absoluteMomentum()-start.absoluteMomentum());
++      a.out << ",\"summed_delta_p_GeV\":"; a.number(deltaP);
++      a.out << ",\"summed_variance_qop\":"; a.number(varianceQop);
++    }
++    a.end();
++  }
++}
++#endif

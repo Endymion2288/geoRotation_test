@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import socket
 import sys
 import time
 from pathlib import Path
@@ -110,6 +111,9 @@ def main():
                 "calypso_dir": os.environ.get("Calypso_DIR"), "athena": os.environ.get("AtlasVersion"),
                 "threads": 1, "collection": "CKFTrackCollectionWithoutIFT"}
     manifest["material_source"] = os.environ.get("GEOROTATION_MATERIAL_SOURCE", args.material)
+    manifest["hostname"] = socket.gethostname()
+    manifest["software_manifest"] = os.environ.get("GEOROTATION_SOFTWARE_MANIFEST")
+    manifest["library_override"] = os.environ.get("GEOROTATION_LIBRARY_DIR")
     Path("run.json").write_text(json.dumps(manifest, indent=2) + "\n")
     sc = acc.run(maxEvents=args.events)
     manifest.update(success=sc.isSuccess(), wall_seconds=time.monotonic() - started)

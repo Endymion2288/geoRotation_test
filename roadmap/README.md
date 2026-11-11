@@ -2,7 +2,9 @@
 
 本研究要给出三个可复核的答案：动量低估首次出现在哪个运算或候选选择环节、角度分布的剩余结构来自物理混合还是实现问题、μ− 比 μ+ 更易误判电荷的差异在旋转后是否存在及其来源。完成标准包括事件级因果证据、总体发生率及其统计区间、最小修复或经验证的物理解释，以及独立样本回归。
 
-研究起点为本地旋转版 Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。本次阶段 00 完成材料与源码研究；下表其余阶段是待执行任务，当前发生率、峰显著性和根因均未测量。
+研究起点为本地旋转版 Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00 材料、S01 输入/定义、S02 旋转与诊断检查已有阶段报告；S03 的 50,000 事件 baseline 正在执行。总体发生率待 S03 合并，峰显著性和根因由 S04–S06 检验。
+
+当前实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)。S02 发现 plane/curvilinear covariance chart 和 refit 起点问题，交付默认关闭的实验修正；当前 default material 的 22 surfaces 与历史 rotated map 的 12 surfaces 分开控制。补充 G4 模拟的退出故障记录于 S01，不影响使用 RDO 建立 production-truth 基线。
 
 ## 阅读与执行入口
 
