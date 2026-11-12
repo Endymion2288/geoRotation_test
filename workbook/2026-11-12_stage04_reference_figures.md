@@ -8,6 +8,8 @@
 
 比较的两端均为旋转后的探测器几何。`current`使用未旋转current22材料图，`strict`使用保持geometry IDs/bin data不变的严格旋转材料图。本次图中的before/after指材料图坐标，不能解读为历史beforeGeo/afterGeo的几何旋转净效应。
 
+所有图的seed、CKF和final参数均来自geoRotation Calypso作业；本仓库脚本负责matching、归约和绘图。独立验证与逐层诊断使用的具体Calypso构建、patch、配置差别及材料问题源码路径，见[Calypso来源报告](2026-11-12_stage04_calypso_provenance.md)。独立ACTS toy没有进入本图集。
+
 ## 原绘图源码核对
 
 已读取用户提供的[GitHub目录](https://github.com/zsm2024/FASER_tracking/tree/main/test_pResolution)，冻结commit为`33ca2281b961935456dfd4dc9fc06235e24b551e`。5个原文件与来源表保存在`$F/reference_scripts/`；下列链接固定到该commit。

@@ -43,7 +43,9 @@ S01 逐类核查 RDO/HITS/PHYS 的 truth 信息。若 SiHit 只提供位置、�
 
 ## 对照软件与最小运行矩阵
 
-先保留原版作为不可变的测量基线，再增加诊断补丁。建立 on/off 对照的优先方案是相同共同父版 `c95170f2` 加相同诊断，旋转版对应当前两次旋转修改；记录其余源码差异。需要在同一实现中开关时，将 geometry、alignment context、field/gradient、seed、reference surfaces、refit、writers 和 material bins 全部纳入统一配置，并做闭合验证。
+先保留原版作为不可变的测量基线，再增加诊断补丁。所有拟合、传播、truth注入与固定hits实验调用实际Calypso组件，改动保存在geoRotation Calypso源码树并冻结patch与构建。独立ACTS toy或简化探测器模型不进入物理结论和阶段验收；matching、统计与绘图使用仓库分析脚本。软件来源与已执行作业核对见[Calypso来源报告](../workbook/2026-11-12_stage04_calypso_provenance.md)。
+
+建立 on/off 对照的优先方案是相同共同父版 `c95170f2` 加相同诊断，旋转版对应当前两次旋转修改；记录其余源码差异。需要在同一实现中开关时，将 geometry、alignment context、field/gradient、seed、reference surfaces、refit、writers 和 material bins 全部纳入统一配置，并做闭合验证。
 
 | 组别 | Frame | 初始 covariance | 用途 |
 | --- | --- | --- | --- |

@@ -66,7 +66,7 @@ truth -> SiHit/digitization/cluster -> segment -> seed
 1. **输出定义**：只修正 frame/atan/单位/无效值处理，重建候选保持不变，量化对历史分布的影响。
 2. **方向数值稳定性**：近 beam 方向扫过零、小正负 slopes、不同 p 与两电荷；比较 A/F 下 reconstructed free directions。检查 θ≈0 时的 Jacobian、φ wrap、normalizePhiTheta、κ–angle correlations 与 covariance。
 3. **measurement 离散性**：验证实际 strip pitch、stereo angle 和 lever arm。估算 `Δs≈pitch/lever_arm` 的间距，比较峰间距随 lever arm、stereo side 与半 strip 初始位置移动的变化；再用 digitization on/off 的 uniform-direction gun 验证。
-4. **材料和场**：使用匹配 toy/simulation 做无材料、散射、能损逐项实验；固定 p_truth、position/方向与 local hit 序列比较。对实际 RDO 的 reconstruction-only 开关只作敏感性研究。
+4. **材料和场**：在Calypso实际几何与组件内使用匹配simulation做无材料、散射、能损逐项实验；固定p_truth、position/方向与local hit序列比较。对实际RDO的reconstruction-only开关只作敏感性研究。
 5. **选择与 refit**：固定 candidate，比较 seed C、measurement C、smoothing、refit、outlier 和 forward/backward/merge 的贡献；峰若对应默认值/fallback，给其覆盖率与触发原因。
 6. **几何和 conditions**：检查 construction/alignment transform、module local basis、material bins 与 field gradients，比较同一物理 hit/residual map，避免通过不匹配 production geometry 的配置“平滑”曲线。
 

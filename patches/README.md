@@ -31,6 +31,8 @@ SD patch 对应 `FaserGeant4` target 和 `build/Simulation/FaserGeant4/cmake_ins
 
 材料最小修复是使用与 A frame 一致的 current22 map，保持全部 geometry IDs 与 bin data。运行 [rotate_material.py](../scripts/rotate_material.py) 后，在配置中显式设置 `flags.TrackingGeometry.MaterialSource` 或通过 `tracking_runner.py --material <map>` 指定。材料 JSON 保存在 results，不进入 Git；历史 rotated12 map 不作为严格旋转 current22 的替代品。
 
+问题对应的Calypso源码路径、默认材料入口和实际作业来源见[源码与结果来源报告](../workbook/2026-11-12_stage04_calypso_provenance.md)。当前`faser_reco.py`第196行的默认材料路径尚未修改，已经验证的是显式flag替换；诊断及修复继续在同一Calypso源码树和匹配构建中进行。
+
 `0002 → 0003` 与 `0004` 已在仅含基底源码的小目录顺序应用，检查所得 12 个 tracking 文件、2 个生成文件与实际源码逐字节一致。记录在 `stage04_momentum/patch_validation/validation.json`；`0003` 是增量 patch，不应与冻结软件的累计 `tracking.patch` 重复应用。
 
 最终 `0001 → 0002 → 0003 → 0004 → 0005` 顺序应用后，全部15个文件与实际Calypso源码逐字节一致，见 `stage04_momentum/patch_validation_final/validation.json`。controls_v5冻结生成库与sensor event metadata；使用同随机种子的2400事件、81153个step验证物理数值未变。

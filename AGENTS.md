@@ -78,6 +78,7 @@ condor_q -name <schedd> -totals
 - 每个参数、表和图声明坐标系、参考 surface、单位和 stage。区分原始 FASER frame 与旋转 ACTS frame，以及 GeV/MeV、`q/p` 和 `p`、`py/pz` 和 `atan(py/pz)`。
 - 保留稳定的 event/particle/seed/candidate/state 标识；truth matching 使用 hit/SDO/barcode，电荷与重建动量不参与主匹配条件。失败、未匹配、重复候选和 refit fallback 分别计数。
 - 新增诊断保持 reconstruction 行为一致；先验证观察开关不改变事件和候选结果，再做单因素消融。几何旋转的 on/off 必须覆盖几何、磁场、seed、refit、输出和 covariance；不能只切换 `geometryRotation` 成员。
+- 所有重建结果、物理结论和验收图均基于 `/eos/home-x/xcheng/FASER/geoRotation_calypso` 的实际组件及其匹配构建。新增诊断、truth seed、固定 hits 和消融在该源码树内实现并保存 patch；配置脚本调用 Calypso 组件，仓库分析脚本负责 matching、统计和绘图。禁止使用另写的独立 tracking、简化 detector/field 或 standalone ACTS toy 代替 Calypso 结果。冻结的 `.so` 是该 Calypso 构建的运行副本，记录来源、commit/patch、配置和库目录；实际源码的本地改动必须如实列明。
 - 对坐标、单位、covariance Jacobian、候选归属和已定位缺陷增加有意义的小型回归检查。文档调整使用链接检查和 `git diff --check`；物理结论使用明确样本上的比较与区间估计。
 - ROOT 分析只读取必要 branch，优先 ROOT RDataFrame 或批量数组计算，避免逐事件 Python 对象循环；保存 `sumw`、`sumw2` 和原始计数。
 

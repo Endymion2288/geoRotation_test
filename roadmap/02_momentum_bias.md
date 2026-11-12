@@ -46,7 +46,7 @@
 | T2 | 在同一 seed 与 surface 只替换 signed κ 为局部 truth | 后续问题能否单由 momentum/charge 初值解释 |
 | T3 | 替换完整 position、direction、κ/time 的 truth mean，先保留原 C，再使用经验证的同 frame C | 未替换参数、C 及坐标转换分别是否影响 CKF；truth/time 不可得项明确标注 |
 | T4 | T3 + 固定正确 truth-associated hit 序列，用非组合 KF | 排除错误 hit association、branch/pruning/selection 后是否仍有偏差 |
-| T5 | T4 + 理想几何/场、与输入生成一致的无材料/材料模型、已知测量噪声 | 验证 propagation、update、smoothing、units/C 的数值与统计 closure |
+| T5 | T4 + Calypso实际几何中的受控场/材料配置，配套Calypso生成、G4和digitization及可追溯truth | 在Calypso内验证propagation、update、smoothing、units/C的数值与统计closure；不使用独立ACTS toy或简化探测器替代 |
 
 T3 使用局部 truth 并正确变换到初始 plane；若真实样本无法提供，先在有充分 truth 的诊断 simulation 上执行，再联系实际问题。T4 固定 hit 需检查 shared/mixed clusters 和二次粒子，记录纯度与 ambiguity，不能把所有与 barcode 有任意 deposit 的 cluster 当作纯测量。
 
@@ -85,7 +85,7 @@ seed
 
 单因素实验包括：CKF 的 material resolving 与 ACTS 实际能损/散射选项分别控制；精度/step size/maxSteps 收敛；真实场对理想场；measurement 原 C 对固定 C；seed C 的映射/inflation；outlier/measurement χ²、最大 branch 数；固定 hits 后的 smoothing 开关。仅 `resolveMaterial=False` 不自动代表所有材料效应已关闭，须记录实际选项与累计积分。
 
-关闭 reconstruction 材料并不能让已包含 G4 能损的 RDO 成为“无材料 truth”。严格无材料 closure 使用匹配生成模型的 toy/诊断 simulation；实际 RDO 消融只测模型敏感性。
+关闭 reconstruction 材料并不能让已包含 G4 能损的 RDO 成为“无材料 truth”。严格无材料closure使用Calypso内生成与重建配置匹配的诊断simulation，保留实际几何及组件；实际RDO消融只测模型敏感性。
 
 ## M5：转换、refit 和选择审计
 
@@ -99,7 +99,7 @@ seed
 
 ## M6：验证、扩展与停止条件
 
-根据发现的机制选最小修复，固定一项修改后重放全部诊断事件并在预留文件上批量验证。初始 toy p 网格可取 10、50、100、250、1000 GeV，两电荷及小斜率/近 beam 方向；只运行能区与当前问题相关的子集。真实样本覆盖 e± 两个 A′ 寿命/衰变拓扑、μ±、不同 station 模式；新 simulation 批量走 HTCondor。
+根据发现的机制选最小修复，固定一项修改后重放全部诊断事件并在预留文件上批量验证。Calypso诊断simulation的p网格可取10、50、100、250、1000 GeV，两电荷及小斜率/近beam方向；只运行能区与当前问题相关的子集。真实样本覆盖e±两个A′寿命/衰变拓扑、μ±、不同station模式；新simulation批量走HTCondor。
 
 验收输出：
 
@@ -113,6 +113,6 @@ seed
 
 ## S04实施结果与后续入口
 
-M1–M6阶段交付已完成，实际样本、所有控制、分子分母、配对区间、失败记录与复现入口见[S04报告](../workbook/2026-11-12_stage04_momentum.md)。严格旋转current22材料已通过独立样本验证；完整truth seed与纯hits控制证明错误材料图能在初值正确时产生大负尾。全量逐运算和局部truth界将seed、update、smoothing/refit及候选选择分别量化。
+S04已完成材料配对、T0–T4及逐运算研究，实际样本、所有控制、分子分母、配对区间、失败记录与复现入口见[S04报告](../workbook/2026-11-12_stage04_momentum.md)。严格旋转current22材料已通过独立样本验证；完整truth seed与纯hits控制在Calypso内证明错误材料图能在初值正确时产生大负尾。全量逐运算和局部truth界将seed、update、smoothing/refit及候选选择分别量化。此前standalone ACTS toy不计为T5验收；T5在Calypso内的完整统计closure未测量，列入S07。
 
 剩余研究由S07继续：同truth segment/方向与field-integral seed、真实辐射后的KF能损模型、measurement C/branch策略及chart/refit/IFT控制。23条固定真hits的电子local tail已有同sensor前后运算和真实沿程p证据，GSF文献与具体区分实验已列入报告；历史truth界待定类也保留发生率。S05/S06分别验收角度峰和谱匹配电荷差异。

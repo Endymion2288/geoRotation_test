@@ -235,7 +235,7 @@ T1在finding前按 `abs(pseed/ptruth−1)<0.1`、同电荷、同A-frame `abs(θs
 
 新sensor truth覆盖2400个Athena事件、81153个step，和原模拟除事件标识外逐值相同；59个measurement-state关联因surface/primary覆盖不能找到0.6mm内sensor界，单列为missing，不用它们构造精确truth。`sensor_layers.json`保存逐层predicted/filtered/smoothed对sensor p上界的分位数，final粒子另保留上下界分类。
 
-## 定向单因素控制与真实 ACTS toy
+## 定向单因素控制
 
 从 S03 冻结的30个事件、32条无匹配歧义代表 track 出发，baseline 重放的 final p/charge 与 S03 完全一致。它们按 normal、seed/found/refit tail 与 wrong-charge 刻意抽取，以下结果仅用于机制判别，不是总体发生率。
 
@@ -257,9 +257,7 @@ T1在finding前按 `abs(pseed/ptruth−1)<0.1`、同电荷、同A-frame `abs(θs
 
 `no_scatt` 同时关闭 CKF 与 refit 的实际 scattering；`no_eloss` 同时关闭实际 energy loss；没有用 `resolveMaterial=False` 代替实际物理开关。关闭 scattering 大幅改变选中路径的负尾/电荷，关闭 energy loss 在这些案例不改变结果，符合错误材料厚度主要通过过程噪声和 gain 影响 curvature 的机制。refit bypass、covariance inflation 和 step=10 mm 也会改变部分案例，不能据此替代材料修复。`fixed_hits` 案例使用普通 seed，并非正式 T4，正式结论使用前节的确定性 truth mean+纯 hits。
 
-`configs/acts_momentum_toy.cxx` 使用真实 ACTS EigenStepper、KalmanFitter、测量更新与 smoother，在均匀0.55 T、无材料、18个 strip planes、已知噪声中运行 p=10/50/100/250/1000 GeV、q=±1、三个初值模式，各1000 replicas，共30000 fits。全部成功；其中29970次有噪声 fits 没有 ratio<0.5 或 wrong sign。精确初始mean的无噪声 closure 最大相对误差2.081×10⁻⁸。
-
-有限偏置仍可测量：10 GeV、mode0（初始 p 低3倍且其他 mean 偏移）两电荷的 κ pull mean 为−1.018±0.0325 与+0.772±0.0339；mode2 近真初值较好。因此结论是该理想模型未生成巨大负尾，不是所有初值/模式均统计无偏。逐组数值、pull 与英文图见 `toy_analysis/`。
+此前运行过`configs/acts_momentum_toy.cxx`的30000次独立ACTS toy fits，它使用均匀场和自建strip planes，不属于Calypso实际重建。根据用户本次明确要求，该项退出本报告的物理结论和T5验收；旧代码和运行记录仅保留历史来源。T5在Calypso实际几何/组件内的完整统计closure未测量，列入S07。主材料配对、逐层分布和上表单因素结果来自实际Calypso作业，来源详见[专项核查报告](2026-11-12_stage04_calypso_provenance.md)。
 
 ## 固定真 hits 的电子剩余尾：局部能损与运算
 
@@ -357,16 +355,16 @@ S04交付的是主要材料机制的因果闭环、完整负尾定位和剩余�
 | --- | --- |
 | M1 定义/图/真值 | production与local两套定义、5类cutflow、逐层英文图、历史vertex界和2400事件sensor界；负p/invalid单列，所有有效p比使用正norm |
 | M2 seed | fake-point实际输入、circle/helix闭合、独立geometric解、全量seed标签与发生数；主要混合segment类和direction敏感类已量化，精确修复留S07 |
-| M3 T0–T5 | 同母事件good-seed、q/p/full-mean/纯hits真KF；12000次注入检查；30000次真实ACTS toy；good seed之后负尾与材料因果控制闭合 |
+| M3 T0–T4 | Calypso内同母事件good-seed、q/p/full-mean/纯hits KF；12000次注入检查；good seed之后负尾与材料因果控制闭合。T5完整Calypso统计closure未测量，独立toy不计入验收 |
 | M4 运算 | 两份50k全量selected/refit compact traces、Kκr与smoother恒等式、材料查询与first-stage/operation标签；23条剩余electron local tail补充same-sensor运算证据 |
 | M5 转换/选择/output | p mean闭合、refit/bypass/C/hypothesis/step消融、pruning损失、真实merge来源、IFT outlier源码及Ntuple branch验证 |
 | M6 独立验证 | 预留50k母事件的current/strict配对，五类tail均改善且效率保持/提高；core/charge/production-slope/失败及资源表；所有剩余类有发生数、具体运算与下个实验 |
 
-S04阶段交付完成。已证实的主因是冻结current22材料与旋转几何的坐标不一致，主要通过散射协方差及后续gain更新制造大负尾；严格旋转同一map在独立样本得到确认。剩余seed组合、辐射能损后的KF模型和历史truth界待定类已经分别定位，尚未形成全部残余的唯一解释。
+S04材料配对、T0–T4和逐运算研究已交付。已证实的主因是冻结current22材料与旋转几何的坐标不一致，主要通过散射协方差及后续gain更新制造大负尾；严格旋转同一map在独立Calypso样本得到确认。剩余seed组合、辐射能损后的KF模型和历史truth界待定类已经分别定位，尚未形成全部残余的唯一解释。独立toy退出后，T5完整Calypso统计closure属于S07待完成项。
 
 ## 资源与运行记录
 
-主批量均申请1 CPU、3500 MB memory、8 GB worker scratch，`OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1`；toy为C++，重建和G4的单个事件串行，事件分块通过Condor并发。下表汇总成功主矩阵的GNU time实测值，wall为各任务墙钟时间之和，不是用户等待时长；不包含被替换失败任务、额外debug、分析作业和编译。
+主批量均申请1 CPU、3500 MB memory、8 GB worker scratch，`OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1`；Calypso重建和G4的单个事件串行，事件分块通过Condor并发。下表汇总成功Calypso主矩阵的GNU time实测值，wall为各任务墙钟时间之和，不是用户等待时长；不包含独立toy、被替换失败任务、额外debug、分析作业和编译。
 
 | 矩阵 | tasks | 源事件处理或fits | sum CPU / h | sum wall / h | max RSS / MiB |
 | --- | --- | --- | --- | --- | --- |
@@ -376,7 +374,6 @@ S04阶段交付完成。已证实的主因是冻结current22材料与旋转几�
 | G4+digitization+12模式 | 8 | 2400源事件、28800模式事件 | 1.0349 | 1.3413 | 1735.9 |
 | 四种finding+两种真实merge | 10 | 5000源事件 | 0.8413 | 1.0214 | 2078.4 |
 | 代表事件单因素 | 390 | 390 | 1.3166 | 2.3002 | 1017.7 |
-| 真实ACTS toy | 1 | 30000 fits | 0.0044 | 0.0044 | 5.5 |
 
 主要submission：初轮材料/代表事件1573761（initial_submission.json）、独立验证1573764、全量operations1573769、G4矩阵1573770、modes1573773、gzip定点retry1573775、完整operations统计1573776、旧metadata模拟统计1573779、最终完整审计1573780、mechanism表1573781、Ntuple验证1573783、sensor metadata重生成1573784、资源统计1573785、正确metadata/T1统计1573786、电子剩余尾审计1573787。每次选择均保存实时schedd load/queue及理由，实际选中bigbird20；bigbird21的EOS路径兼容性拒绝已记录并排除。各任务表和 `*_worker/submission.json` 为精确定位入口。
 
@@ -415,7 +412,7 @@ git diff --check
 | 独立验证 | independent_inputs.json、independent_tasks.json；independent_merged；paired_independent.json；validation_complete |
 | 逐运算和观察量一致性 | operations_tasks.json；operations_analysis；observer_integrity；mechanism_tables |
 | 受控seed/KF | simulation_verified_tasks.json关联原96个模式与已验证sensor metadata；simulation_analysis_verified；simulation_sensor_validation.json |
-| 定向单因素、seed、理想toy | case_controls_tasks.json；case_analysis；seed_ideal/seed_cases；toy_tasks.json、acts_momentum_toy、toy_analysis |
+| Calypso定向单因素、seed | case_controls_tasks.json；case_analysis；seed_ideal/seed_cases |
 | 四种finding/实际merge | modes_tasks.json；mode_matrix；modes_analysis_complete |
 | 实际Ntuple与资源 | ntuple_v2_tasks.json；ntuple_checks_v2；resources/summary.json |
 
