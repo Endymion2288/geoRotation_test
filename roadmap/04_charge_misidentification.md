@@ -88,3 +88,5 @@ truth -> segment/seed sign -> CKF predicted -> filtered -> smoothed
 5. **修复回归**：每次一项最小变化，在预留 μ± 文件与 A′ e± 上测 paired change；覆盖 forward/backward/3/4 station、不同 p 和 detector 区域。报告 charge 改善与 momentum/angle/efficiency/failure/CPU 的联合变化。
 
 最终报告分别回答：旋转相对一致未旋转控制改善多少；μ−−μ+ 总差有多少来自谱与接受度；相同输入条件下还剩多少差异；各类错误首次产生在哪个操作。若不再观察到差异，给预先设定精度内的区间/上限；若仍存在但原因未完结，给未解释类别、比例和下一项可判别实验。
+
+最终图组按Alma报告p16–18、p23–25画μ±的signed q/p、wrong-sign尾部和误判率，按p19–22、p27画truth/reco动量相关与宽范围动量谱；增加带区间的truth-p分箱misID、共同支持域/谱平衡前后对比。历史old/new、G0/G1旋转和current/strict材料比较分别标清，按[参考图规范](05_reference_figures.md)交付PNG、逐图PDF和汇报PDF。

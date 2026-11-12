@@ -77,3 +77,5 @@ truth -> SiHit/digitization/cluster -> segment -> seed
 输出每个主要结构的来源表：stage、physical surface、峰位/宽度/占比/区间、对应 truth/detector/algorithm 条件、最小消融/修复效果，以及未解释余量。图表至少包括 raw 对重算角度、truth/reco/residual、条件分布重组、s_y 对 p_truth/position/module、逐 stage peak fraction。
 
 程序问题须由固定输入的最小修改和独立样本验证；物理混合解释须量化重现结构；如果在目标精度内未见额外尖峰，给可排除的额外峰占比/宽度范围。同步报告 reconstruction efficiency、momentum tail、charge misID 和外推失败率，确认改善来自参数解释或算法修复，而非难事件丢失。
+
+最终图组包含`problem.pdf` p4和`geometryRotation.pdf` p19–20、p23对应的st1/VetoNu全谱与动量切片before/after分布。并排给历史legacy表达式与正确物理frame/同面truth的主图，附峰区放大、分组贡献与选择迁移；输出PNG和汇报PDF，按[参考图规范](05_reference_figures.md)验收。

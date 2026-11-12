@@ -107,6 +107,7 @@ seed
 - 每类 tail 的首次异常阶段占比、配对修复差值、未解释占比；truth-relative 与 generator-relative 分开。
 - reconstruction efficiency、duplicates/fakes、track separation 依赖、angle structure 与 charge misID，避免通过丢弃难 track 获得更好的 momentum 图。
 - 资源、有效输出 schema、完整复现命令、最小 Calypso patch 和有意义的 closure/regression checks。
+- `problem.pdf` p3风格的seed residual、九层predicted/filtered/smoothed与good-seed条件图，以及独立样本最终动量before/after叠图；图组和PDF汇编按[参考图规范](05_reference_figures.md)交付。
 
 若局部 truth 与经验证的能损模型已解释负尾，应将其报告为相应物理/定义效应并量化剩余偏差。若仍有无法解释的类，给其发生率、典型运算与下一项能区分假设的实验；不以少数事件或“峰变小”关闭分支。
 

@@ -27,6 +27,7 @@
 | [02 动量研究](02_momentum_bias.md) | segment→seed→CKF→conversion→refit→output 的逐环节审计与消融 |
 | [03 角度研究](03_slope_structure.md) | 物理方向恢复、峰的量化、条件分布与数值稳定性检查 |
 | [04 电荷研究](04_charge_misidentification.md) | Alma 9 复现、配对比较、谱匹配、符号首次翻转与对称性实验 |
+| [05 参考图与汇报产物](05_reference_figures.md) | 参考PDF页码到各阶段图清单、共同绘图规范、PNG/PDF与阶段完成标准 |
 
 ## 目前证据决定的优先级
 
@@ -79,6 +80,8 @@ flowchart TD
 | 在目标精度内未见问题 | 预先定义指标、区间与等效性范围；给剩余效应的上限或可排除范围；不能用“没有显著性”代替“完全不存在” |
 
 最终比较至少提供 `f(p_reco/p_truth<0.5)`、momentum core median/68% width、angle residual/peak fraction、μ± charge misID、truth reconstruction efficiency、duplicates/fakes、refit failure/fallback 及 CPU/I/O。主效应按事件聚类估计不确定度；逐层与多候选记录不作为独立统计样本。
+
+每阶段同时交付[参考图清单](05_reference_figures.md)规定的分布图，使用参考材料对应的物理量和面板布局，展示before/after及必要的legacy/正确定义对照。PNG、逐图PDF、完整汇报PDF和bin counts写入results，主图嵌入workbook并链接图集。
 
 ## 下一轮落地任务
 

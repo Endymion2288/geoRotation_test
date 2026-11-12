@@ -106,6 +106,8 @@ pilot 先每类约 10k 事件用于发现路径与估算吞吐；charge 约 0.2%
 
 ## 计算、存储与执行
 
+各阶段分布图按[参考图与汇报产物](05_reference_figures.md)执行：冻结对应参考页、样本、选择、bin edges、轴范围和归一化，输出before/after主图及PDF汇编，并把图中entries/tail与数值summary逐项核对。
+
 所有运行输出位于 `/eos/home-x/xcheng/FASER/geoRotation_test_results`。S00 核查产物为 `stage00_material_review/`；后续目录为 `stageNN_<topic>/<run_id>/`。Git 保存配置、schema、分析和报告；EOS 保留紧凑表、合并统计、英文图表与少量重放事件。
 
 S01 的单事件模板在确认 metadata 后选定 geometry；示意流程只使用现有 CLI：

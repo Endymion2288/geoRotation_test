@@ -78,6 +78,8 @@
 
 五类独立样本的 tail 改善区间均在 0 以下；效率保持或提高。材料修正还减少 wrong charge，μ± 独立样本各剩1条 wrong。正负电荷残余差异须在 S06 做共同谱/位置/方向支持域比较；角度多峰的显著性与机制由 S05 检验。
 
+材料图旋转前后的seed、九层predicted/filtered/smoothed、good-seed与final分布，以及用户提供绘图源码的逐项核对见[S04补图报告](2026-11-12_stage04_reference_figures.md)。该报告提供PNG、逐图PDF和完整汇报图集，并区分原脚本与S04的选择/truth定义。
+
 ## 逐层材料的固定轨迹证据
 
 100044/file0/entry21，production p=1708.985 GeV，seed p=1436.63 GeV。current 下 found=258.788 GeV、final=262.020 GeV；strict 下 final=1301.198 GeV。相同18个 measurement IDs，初始 seed 不变。selected 路径的完整 slab 查询和由 55.05665 X0 降至 0.0486853 X0；path correction 均约1。
