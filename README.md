@@ -14,6 +14,7 @@
 - [两份旋转材料图的比较](workbook/2026-11-12_stage04_material_maps.md)：AFS rotated12与strict current22的共同材料bin、空surface和法向2 mm平移差异。
 - [S04 动量补图与原脚本核对](workbook/2026-11-12_stage04_reference_figures.md)：材料图旋转前后seed/九层CKF/final分布、good-seed条件图；[完整汇报PDF](../geoRotation_test_results/stage04_momentum/reference_figures/figures/momentum_material_comparison.pdf)。
 - [110051原宏、整体geometry与truth复核](workbook/2026-11-12_stage04_native_geometry_truth.md)：原生Calypso master/geoRotation、GitHub原宏选择、同track truth单因素，以及AFS材料图和历史mask设置控制。
+- [两套九层图的smoothed鼓包来源](workbook/2026-11-12_stage04_smoothing_bump_cause.md)：相同10文件的配对控制，区分S1共享state的smoothing覆写与S3的SDO purity/final选样效应。
 - [各阶段参考图清单](roadmap/05_reference_figures.md)：S04–S07对应的参考页、图组和PNG/PDF交付要求。
 - [Calypso patches 与构建](patches/README.md)；[冻结定义](configs/definitions.json)；[诊断字段](configs/fields.md)。
 - [仓库协作规范](AGENTS.md)。

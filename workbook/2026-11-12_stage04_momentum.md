@@ -14,6 +14,8 @@
 
 另确认 shared ancestor 的 smoothed slots 可被其他分支覆写，污染逐层诊断。独立重算使 smoother 恒等式恢复闭合。全量100000次事件处理的136540条final tracks中，p/charge和Good95判定均不变；部分rmax元数据会变。该诊断覆写没有解释本批最终动量负尾。
 
+对用户指出的两套九层图，新增[鼓包来源复核](2026-11-12_stage04_smoothing_bump_cause.md)固定110051同10文件及同候选，证实S1的额外smoothed鼓包主要来自上述覆写；S3末端q/p不变，图间差别主要来自SDO purity/final选样。旧图27个直方图已逐bin复现。
+
 ## 工作内容与冻结定义
 
 - 发现样本沿用 S03 五类各 10000 事件，共 50000 事件、70000 个 signal truth。事件身份为 DSID/file_index/source_entry；A′ 两个子粒子共同按源事件 bootstrap，不使用会复用的 run/lumi/event 去重。

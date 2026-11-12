@@ -151,7 +151,7 @@ predicted使用当前测量更新前的状态，filtered加入当前测量，smo
 
 ## 历史复现中的已知差异
 
-旧`110051_nine_layers.png`来自matched final Good95祖先，并使用fiducial+H18、SDO≥0.7、每truth选一条、production truth以及reset-event-maps/isolate-smoothing。GitHub原宏直接画native CKF states writer中的selected tracks，只加上述三个cuts。两者所选tracks、states和诊断控制不同；旧S04图不能直接当作第17页的原宏复现。本次固定barcode的实验不检验旧compact final matching是否为某些CKF祖先指定了不同barcode；那属于候选/truth归属差异，后续与各项cuts分别控制。已确认这些配置不一致，各项单独贡献尚未测量。
+旧`110051_nine_layers.png`来自matched final Good95祖先，并使用fiducial+H18、SDO≥0.7、每truth选一条、production truth以及reset-event-maps/isolate-smoothing。GitHub原宏直接画native CKF states writer中的selected tracks，只加上述三个cuts。两者所选tracks、states和诊断控制不同；旧S04图不能直接当作第17页的原宏复现。本报告的truth实验只固定native writer的barcode；后续[同10文件鼓包复核](2026-11-12_stage04_smoothing_bump_cause.md)已测量smoothing及purity/final选择的作用，并检查旧图final/selected的barcode归属：13,242条轨迹中仅1条不同。S1的主要额外鼓包随候选独立smoothing消失，S3末端主要随选样变化；其余配置因素仍按对应控制的覆盖范围解释。
 
 报告附带的公开脚本位于`/afs/cern.ch/work/s/sazhang/public/FASER/xai_alma9/check_geometryRotation/faser_reco.py`，已冻结到`G/reference/historical_faser_reco.py`。其中所谓3station的mask为`[0,1,2]`，而seed mask按`6*station+2*layer+side`编码，完整IFT排除应为0–5。当前GitHub宏实际启用的hardcoded输入又是100043 μ−4station；注释才包含110051。这些是可核对的配置差异，PDF截图不能确认当时私有ROOT具体使用哪一版脚本。控制样本使用file0的1,000事件，分别测试mask012与4station，不能将其标为20文件全量。
 

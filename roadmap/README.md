@@ -10,6 +10,8 @@
 
 用户指定的[原宏与整体geometry复核](../workbook/2026-11-12_stage04_native_geometry_truth.md)使用110051全20文件、20,000源事件、原生Calypso master/geoRotation及GitHub原宏cuts。afterGeo的566,369个共同有效states上，两种truth的27图逐bin相同；production仅新增约1.02%的truth覆盖，解释不了旧图的大幅结构差异。AFS/strict材料及历史mask012/4station另作控制。阶段产物位于`stage05_geometry_comparison/`，该目录名不表示已启动下表S05的100044角度研究；第19页规范保留用于S05。
 
+[smoothed鼓包来源复核](../workbook/2026-11-12_stage04_smoothing_bump_cause.md)进一步固定旧图的前10文件、10,000事件、strict材料及候选：仅隔离重算smoothing就使S1 L0的residual<−0.8从24.38%降至3.95%，P/F逐值不变；S3 L2的smoothed q/p全部不变，该层主要随SDO purity/final选择减少尾部。旧图右列27个直方图已精确复现；此结果解释逐层states读出，不能当作最终动量修复。
+
 下表保留S03的current22历史基线；strict与独立样本的完整配对表见S04。
 
 | DSID | Good95 匹配粒子 | production p ratio <0.5 / % | charge misID / % |
@@ -36,6 +38,7 @@
 ## 目前证据决定的优先级
 
 0. **以已完成的原宏对照为入口，分离局部bias与production-relative能损。** `t_eQOP`与相同majority barcode的production p实测一致；历史图继续保留`t_eQOP`，逐层算法检验使用同面G4 p。beforeGeo/afterGeo的原生covariance不同，后续固定物理先验及共同seed/hits，才能判断旋转、covariance和选择各自的贡献。AFS/strict有小的产额差异，其navigation/candidate来源尚未定位；file0的三个mask控制27图相同。
+   原生共享smoothed slots与候选隔离重算分开呈现，truth purity分组保留共同母样本；两者对旧图形状的作用已定量，按鼓包复核报告使用各自适用的states。
 1. **S05在current/strict配对上统一物理面。** S04已证明材料能显著改变选择与curvature；先将tanθ_y和truth传播到同一st1/VetoNu面，再分解reco-p窗口、hit pattern和candidate迁移。量化峰的位置、宽度、占比及统计显著性，不能用production方向residual直接充当角分辨率。
 2. **S06先平衡谱与接受度。** 独立strict样本μ+、μ−各剩1条wrong；事件数尚不足以判定残余正负差异。先比较共同truth p/位置/方向支持域与有效样本量，再按目标精度追加。材料配对不代替完整G0/G1的旋转净效应。
 3. **S07逐项处理seed和辐射模型。** 110051 strict有3020条最终祖先seed tail，其中2346条含other-majority segment。固定真hits的电子仍有23条guaranteed local tail，11条在update、12条在smoothing出现同sensor可证实的穿越，并有显著沿程能损。使用纯segment组合/同点方向与field integral、G4 bremsstrahlung控制及piecewise q/p/GSF分别检验。

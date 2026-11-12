@@ -120,3 +120,5 @@ S04已完成材料配对、T0–T4及逐运算研究，实际样本、所有控�
 剩余研究由S07继续：同truth segment/方向与field-integral seed、真实辐射后的KF能损模型、measurement C/branch策略及chart/refit/IFT控制。23条固定真hits的电子local tail已有同sensor前后运算和真实沿程p证据，GSF文献与具体区分实验已列入报告；历史truth界待定类也保留发生率。S05/S06分别验收角度峰和谱匹配电荷差异。
 
 用户指定的110051全文件补图与P/F/S信息范围核对见[专项报告](../workbook/2026-11-12_stage04_full110051_pfs.md)。全样本比较以该DSID的MC24 `master_dev`目录全部20个文件、20,000源事件为范围；原逐层发现图只覆盖前10文件。后续必须分别计数同state的F→S修复与新生tail，检查末端F=S，结合signed κ、σ(κ)和局部truth判断中间状态的约束强弱。S07的statistical closure还需检验各层pull calibration与coverage，不能由一条p曲线较窄或单个事件的2σ偏差替代。
+
+旧S04图与native GitHub图的smoothed鼓包差别已通过[10文件配对控制](../workbook/2026-11-12_stage04_smoothing_bump_cause.md)区分：S1主要受共享祖先smoothed slots覆写影响，隔离重算显著改变S而P/F不变；S3末端不受重算影响，其尾部主要随SDO purity和final选样变化。历史复现保持原生slots及原宏cuts；逐运算物理诊断检查每个候选自己的smoother闭合。隔离smoothing若进入正式修复，S07须另验收rMax_smt、选择迁移和最终物理量。
