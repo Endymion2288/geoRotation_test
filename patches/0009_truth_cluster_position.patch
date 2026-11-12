@@ -1,0 +1,131 @@
+diff --git a/Tracker/TrackerRecTools/FaserSiClusterizationTool/CMakeLists.txt b/Tracker/TrackerRecTools/FaserSiClusterizationTool/CMakeLists.txt
+index 00988a7c..b2c2cd3f 100644
+--- a/Tracker/TrackerRecTools/FaserSiClusterizationTool/CMakeLists.txt
++++ b/Tracker/TrackerRecTools/FaserSiClusterizationTool/CMakeLists.txt
+@@ -17,7 +17,7 @@ atlas_add_library( FaserSiClusterizationToolLib
+    PRIVATE_INCLUDE_DIRS ${CLHEP_INCLUDE_DIRS}
+    PRIVATE_DEFINITIONS ${CLHEP_DEFINITIONS}
+    LINK_LIBRARIES ${ROOT_LIBRARIES} AthenaBaseComps AthenaKernel GeoPrimitives
+-   Identifier EventPrimitives GaudiKernel TrackerSimData TrackerIdentifier
++   Identifier EventPrimitives GaudiKernel TrackerSimData TrackerSimEvent TrackerIdentifier
+    TrackerReadoutGeometry TrackerRawData TrackerPrepRawData
+    TrkParameters CxxUtils FaserSCT_ConditionsToolsLib
+    PRIVATE_LINK_LIBRARIES ${CLHEP_LIBRARIES} AthenaPoolUtilities FileCatalog FaserDetDescr
+diff --git a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
+index 9b853f51..c4720222 100644
+--- a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
++++ b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
+@@ -19,6 +19,9 @@
+ #include "TrackerPrepRawData/FaserSiWidth.h"
+ 
+ #include "EventPrimitives/EventPrimitives.h"
++#include "StoreGate/ReadHandle.h"
++#include "TrackerIdentifier/FaserSCT_ID.h"
++#include <map>
+ 
+ using CLHEP::micrometer;
+ 
+@@ -56,9 +59,18 @@ StatusCode  TrackerClusterMakerTool::initialize(){
+ 
+ //   ATH_CHECK(m_clusterErrorKey.initialize(SG::AllowEmpty));
+ 
++   ATH_CHECK(m_truthHits.initialize(m_truthPosition));
++   ATH_CHECK(m_truthSDO.initialize(m_truthPosition));
++   if (m_truthPosition) ATH_CHECK(detStore()->retrieve(m_truthIds, "FaserSCT_ID"));
+    return StatusCode::SUCCESS;
+ }
+ 
++StatusCode TrackerClusterMakerTool::finalize() {
++  ATH_MSG_INFO("Truth cluster position: enabled=" << m_truthPosition
++    << " replaced=" << m_truthReplaced << " fallback=" << m_truthFallback);
++  return StatusCode::SUCCESS;
++}
++
+ 
+ // Computes global position and errors for SCT cluster.
+   // Called by SCT Clustering tools
+@@ -87,6 +99,31 @@ Tracker::FaserSCT_Cluster* TrackerClusterMakerTool::sctCluster(
+ //                        InDetDD::SiLocalPosition(localPos[Trk::locY),
+ //                                        localPos[Trk::locX)+shift,0);
+         Amg::Vector2D locpos(localPos[Trk::locX]+shift, localPos[Trk::locY]);
++        if (m_truthPosition) {
++          SG::ReadHandle<FaserSiHitCollection> hits(m_truthHits);
++          SG::ReadHandle<TrackerSimDataCollection> sdo(m_truthSDO);
++          std::map<int,double> charge;
++          for (const auto& id:rdoList) {
++            const auto deposit=sdo->find(id);
++            if (deposit==sdo->end()) continue;
++            for (const auto& d:deposit->second.getdeposits()) charge[d.first.barcode()]+=d.second;
++          }
++          int barcode=0;double largest=0.;
++          for (const auto& [b,q]:charge) if(q>largest) {barcode=b;largest=q;}
++          double sum=0.,coordinate=0.;
++          for (const auto& hit:*hits) {
++            if (!barcode || hit.trackNumber()!=barcode) continue;
++            const auto wafer=m_truthIds->wafer_id(hit.getStation(),hit.getPlane(),hit.getRow(),hit.getModule(),hit.getSensor());
++            if (wafer!=element->identify()) continue;
++            const auto a=hit.localStartPosition(),b=hit.localEndPosition();
++            const Amg::Vector3D midpoint(.5*(a.x()+b.x()),.5*(a.y()+b.y()),.5*(a.z()+b.z()));
++            const Amg::Vector3D local=element->transform().inverse()*(element->transformHit()*midpoint);
++            const double weight=hit.energyLoss()>0. ? hit.energyLoss() : 1.;
++            coordinate+=weight*local.x();sum+=weight;
++          }
++          if (sum>0.) {locpos[Trk::locX]=coordinate/sum;++m_truthReplaced;}
++          else ++m_truthFallback;
++        }
+ 
+ 	// error matrix
+ 	const Amg::Vector2D& colRow = width.colRow();// made ref to avoid 
+@@ -142,4 +179,4 @@ Tracker::FaserSCT_Cluster* TrackerClusterMakerTool::sctCluster(
+ 
+ }
+ 
+-}
+\ No newline at end of file
++}
+diff --git a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
+index c8ea25e5..4c1758f8 100644
+--- a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
++++ b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
+@@ -24,6 +24,9 @@
+ #include "InDetCondTools/ISiLorentzAngleTool.h"
+ 
+ #include "StoreGate/ReadCondHandleKey.h"
++#include "StoreGate/ReadHandleKey.h"
++#include "TrackerSimEvent/FaserSiHitCollection.h"
++#include "TrackerSimData/TrackerSimDataCollection.h"
+ 
+ #include "GaudiKernel/ToolHandle.h"
+ 
+@@ -35,6 +38,7 @@
+ template <class T> class ServiceHandle;
+ class Identifier;
+ class StatusCode;
++class FaserSCT_ID;
+ 
+ namespace TrackerDD {
+   class SiDetectorElement;
+@@ -62,6 +66,7 @@ namespace Tracker
+     static const InterfaceID& interfaceID() { return IID_TrackerClusterMakerTool; };
+ 
+     StatusCode initialize();
++    StatusCode finalize() override;
+     
+   // Computes global position and errors for SCT cluster.
+   // Called by SCT Clustering tools
+@@ -84,9 +89,12 @@ namespace Tracker
+                           int errorStrategy) const;
+   
+   private:
+-
+-
+-
++    Gaudi::Property<bool> m_truthPosition{this, "UseTruthClusterPosition", false,
++      "Diagnostic only: replace measured local strip coordinate with majority SiHit centroid"};
++    SG::ReadHandleKey<FaserSiHitCollection> m_truthHits{this, "TruthHits", "SCT_Hits"};
++    SG::ReadHandleKey<TrackerSimDataCollection> m_truthSDO{this, "TruthSDO", "SCT_SDO_Map"};
++    const FaserSCT_ID* m_truthIds=nullptr;
++    mutable std::atomic<unsigned long> m_truthReplaced{0},m_truthFallback{0};
+   //  ToolHandle<FaserSiLorentzAngleTool> m_sctLorentzAngleTool
+   //  {this, "FaserSCTLorentzAngleTool", "FaserSiLorentzAngleTool/FaserSiLorentzAngleTool", "Tool to retreive Lorentz angle of SCT"};
+     ToolHandle<ISiLorentzAngleTool> m_sctLorentzAngleTool

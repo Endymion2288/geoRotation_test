@@ -1,0 +1,529 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt b/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt
+index 21318f25..355fe176 100755
+--- a/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt
++++ b/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt
+@@ -150,6 +150,16 @@ atlas_add_component(FaserActsKalmanFilter
+ )
+ 
+ # Install files from the package:
++find_package(ROOT COMPONENTS Core RIO Tree)
++atlas_add_component(CalypsoSlopeDiagnostics
++    src/CalypsoSlopeDiagnosticsAlg.cxx
++    INCLUDE_DIRS ${ROOT_INCLUDE_DIRS} ${EIGEN_INCLUDE_DIRS}
++    LINK_LIBRARIES ${ROOT_LIBRARIES} AthenaBaseComps StoreGateLib xAODTruth xAODEventInfo
++    TrkTrack TrkSurfaces TrackerRIO_OnTrack TrackerSimEvent TrackerIdentifier
++    TrackerReadoutGeometry FaserActsKalmanFilterLib FaserActsGeometryLib
++    FaserActsGeometryInterfacesLib ActsCore
++)
++
+ # atlas_install_headers(FaserActsKalmanFilter)
+ atlas_install_python_modules( python/*.py )
+ atlas_install_scripts( test/*.py )
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+new file mode 100644
+index 0000000..a1370a3
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -0,0 +1,502 @@
++// S05 opt-in observer. Reconstruction and propagation use the native Calypso tools.
++#include "AthenaBaseComps/AthAlgorithm.h"
++#include "StoreGate/ReadHandleKey.h"
++#include "StoreGate/ReadHandle.h"
++#include "GaudiKernel/ThreadLocalContext.h"
++#include "TrkTrack/TrackCollection.h"
++#include "FaserActsGeometryInterfaces/IFaserActsExtrapolationTool.h"
++#include "FaserActsGeometryInterfaces/IFaserActsTrackingGeometryTool.h"
++#include "FaserActsKalmanFilter/ITrackTruthMatchingTool.h"
++#include "TrackerIdentifier/FaserSCT_ID.h"
++#include "TrackerReadoutGeometry/SCT_DetectorManager.h"
++#include "TrackerReadoutGeometry/SiDetectorElement.h"
++#include "TrackerSimEvent/FaserSiHitCollection.h"
++#include "TrackerRIO_OnTrack/FaserSCT_ClusterOnTrack.h"
++#include "TrackerPrepRawData/FaserSCT_Cluster.h"
++#include "TrkTrack/TrackStateOnSurface.h"
++#include "TrkSurfaces/Surface.h"
++#include "xAODTruth/TruthParticleContainer.h"
++#include "xAODTruth/TruthVertex.h"
++#include "xAODEventInfo/EventInfo.h"
++#include "Acts/Surfaces/PlaneSurface.hpp"
++#include "Acts/Geometry/TrackingGeometry.hpp"
++#include "Acts/Utilities/Helpers.hpp"
++#include "TFile.h"
++#include "TTree.h"
++#include <array>
++#include <algorithm>
++#include <map>
++#include <vector>
++#include <set>
++#include <limits>
++#include <cmath>
++#include <fstream>
++#include <sstream>
++
++class CalypsoSlopeDiagnosticsAlg final : public AthAlgorithm {
++public:
++  CalypsoSlopeDiagnosticsAlg(const std::string& name, ISvcLocator* locator)
++      : AthAlgorithm(name, locator) {}
++  StatusCode initialize() override;
++  StatusCode execute() override;
++  StatusCode finalize() override;
++private:
++  SG::ReadHandleKey<TrackCollection> m_tracks{this,"TrackCollection","CKFTrackCollectionWithoutIFT"};
++  SG::ReadHandleKey<TrackCollection> m_segments{this,"Segments","Segments"};
++  SG::ReadHandleKey<xAOD::TruthParticleContainer> m_truth{this,"TruthParticles","TruthParticles"};
++  SG::ReadHandleKey<xAOD::EventInfo> m_event{this,"EventInfo","EventInfo"};
++  SG::ReadHandleKey<FaserSiHitCollection> m_hits{this,"SiHits","SCT_Hits"};
++  ToolHandle<IFaserActsExtrapolationTool> m_extrapolator{this,"ExtrapolationTool","FaserActsExtrapolationTool"};
++  ToolHandle<ITrackTruthMatchingTool> m_matcher{this,"TruthMatchingTool","TrackTruthMatchingTool"};
++  Gaudi::Property<bool> m_rotated{this,"Rotated",true};
++  Gaudi::Property<bool> m_actualCovariance{this,"ActualCovariance",false};
++  Gaudi::Property<long> m_skip{this,"Skip",0};
++  Gaudi::Property<double> m_st1z{this,"St1Z",0.};
++  Gaudi::Property<double> m_vetoz{this,"VetoNuZ",-3112.};
++  Gaudi::Property<std::string> m_output{this,"Output","slopes.root"};
++  const FaserSCT_ID* m_ids=nullptr;
++  const TrackerDD::SCT_DetectorManager* m_manager=nullptr;
++  std::unique_ptr<TFile> m_file;
++  TTree *m_events=nullptr,*m_particles=nullptr,*m_trackTree=nullptr,*m_segmentTree=nullptr;
++  long m_entry=0;
++  unsigned long long m_run=0,m_number=0;
++  int m_nTracks=0,m_nTruth=0,m_ordinal=0,m_barcode=0,m_pdg=0,m_status=0;
++  int m_nHits=0,m_nLayers=0,m_stations=0,m_moduleEta=0,m_modulePhi=0,m_outliers=0;
++  int m_counts[4]{};
++  double m_prodPos[3]{},m_prodMom[3]{},m_truthPos[4][3]{},m_truthDir[4][3]{};
++  double m_sensorPos[3]{},m_sensorDir[3]{},m_purity=0,m_charge=0,m_chi2=0,m_ndof=0,m_rmax=0;
++  double m_truthReference[2][3]{},m_clusterWidthMean=0,m_clusterWidthMax=0;
++  int m_truthReferenceOK[2]{};
++  std::vector<unsigned long long> m_hitIds;
++  double m_upRaw[6]{},m_upF[6]{},m_minZ=0,m_boundAngles[2]{},m_angleCov[2][2]{};
++  double m_projection[3][8]{}; // x,y,z [mm], px,py,pz [GeV], var(s_y), legacy angle
++  int m_projectionOK[3]{};
++  double m_segment[6]{};
++  int m_segmentStation=0;
++  struct TruthHits {
++    std::array<int,4> counts{};
++    std::array<Acts::Vector3,4> pos,dir;
++    Acts::Vector3 firstPos=Acts::Vector3::Constant(NAN),firstDir=Acts::Vector3::Constant(NAN);
++    std::array<Acts::Vector3,2> referenceMom{Acts::Vector3::Constant(NAN),Acts::Vector3::Constant(NAN)};
++    std::array<int,2> referenceOK{};
++    TruthHits() { for(int s=0;s<4;++s) {pos[s].setZero();dir[s].setZero();} }
++  };
++  std::map<int,TruthHits> m_truthHits;
++  Acts::Vector3 physical(const Acts::Vector3& v) const {
++    return m_rotated ? Acts::Vector3(-v.z(),v.y(),v.x()) : v;
++  }
++  void identity(TTree* tree) {
++    tree->Branch("source_entry",&m_entry,"source_entry/L");
++    tree->Branch("run",&m_run,"run/l");
++    tree->Branch("event",&m_number,"event/l");
++  }
++  void truthFields(TTree* tree) {
++    tree->Branch("barcode",&m_barcode,"barcode/I");
++    tree->Branch("pdg",&m_pdg,"pdg/I");
++    tree->Branch("status",&m_status,"status/I");
++    tree->Branch("production_position_F_mm",m_prodPos,"production_position_F_mm[3]/D");
++    tree->Branch("production_momentum_F_GeV",m_prodMom,"production_momentum_F_GeV[3]/D");
++    tree->Branch("truth_hit_counts",m_counts,"truth_hit_counts[4]/I");
++    tree->Branch("truth_station_position_F_mm",m_truthPos,"truth_station_position_F_mm[4][3]/D");
++    tree->Branch("truth_station_direction_F",m_truthDir,"truth_station_direction_F[4][3]/D");
++    tree->Branch("truth_sensor_position_F_mm",m_sensorPos,"truth_sensor_position_F_mm[3]/D");
++    tree->Branch("truth_sensor_direction_F",m_sensorDir,"truth_sensor_direction_F[3]/D");
++  }
++  void loadTruth(const xAOD::TruthParticle* particle);
++  void transportTruth(const EventContext&,const xAOD::TruthParticle*,const Acts::GeometryContext&);
++  void project(const EventContext&,const Trk::TrackParameters*,const Acts::GeometryContext&);
++  std::shared_ptr<Acts::PlaneSurface> plane(double z) const {
++    Acts::RotationMatrix3 basis=Acts::RotationMatrix3::Identity();
++    if(m_rotated) {basis.col(0)=Acts::Vector3(0,-1,0);basis.col(1)=Acts::Vector3(0,0,-1);basis.col(2)=Acts::Vector3(1,0,0);}
++    return Acts::Surface::makeShared<Acts::PlaneSurface>(Acts::Transform3(
++      Acts::Translation3(m_rotated ? Acts::Vector3(z,0,0) : Acts::Vector3(0,0,z))*basis));
++  }
++};
++
++StatusCode CalypsoSlopeDiagnosticsAlg::initialize() {
++  ATH_CHECK(m_tracks.initialize()); ATH_CHECK(m_segments.initialize());
++  ATH_CHECK(m_truth.initialize()); ATH_CHECK(m_event.initialize()); ATH_CHECK(m_hits.initialize());
++  ATH_CHECK(m_extrapolator.retrieve()); ATH_CHECK(m_matcher.retrieve());
++  ATH_CHECK(detStore()->retrieve(m_ids,"FaserSCT_ID"));
++  ATH_CHECK(detStore()->retrieve(m_manager,"SCT"));
++  m_file.reset(TFile::Open(m_output.value().c_str(),"RECREATE"));
++  if(!m_file || m_file->IsZombie()) return StatusCode::FAILURE;
++  m_file->SetCompressionSettings(404);
++  m_events=new TTree("events","Every source event, including reconstruction failures");
++  identity(m_events);
++  m_events->Branch("n_tracks",&m_nTracks,"n_tracks/I");
++  m_events->Branch("n_primary_truth",&m_nTruth,"n_primary_truth/I");
++  m_particles=new TTree("truth","Primary signal truth and true SiHit directions");
++  identity(m_particles);truthFields(m_particles);
++  m_particles->Branch("truth_model_momentum_F_GeV",m_truthReference,"truth_model_momentum_F_GeV[2][3]/D");
++  m_particles->Branch("truth_model_valid",m_truthReferenceOK,"truth_model_valid[2]/I");
++  m_trackTree=new TTree("tracks","Native final tracks and Calypso propagation");
++  identity(m_trackTree);truthFields(m_trackTree);
++  m_trackTree->Branch("ordinal",&m_ordinal,"ordinal/I");
++  m_trackTree->Branch("purity",&m_purity,"purity/D");
++  m_trackTree->Branch("charge",&m_charge,"charge/D");
++  m_trackTree->Branch("chi2",&m_chi2,"chi2/D");
++  m_trackTree->Branch("ndof",&m_ndof,"ndof/D");
++  m_trackTree->Branch("rmax_mm",&m_rmax,"rmax_mm/D");
++  m_trackTree->Branch("n_hits",&m_nHits,"n_hits/I");
++  m_trackTree->Branch("n_layers",&m_nLayers,"n_layers/I");
++  m_trackTree->Branch("station_bits",&m_stations,"station_bits/I");
++  m_trackTree->Branch("module_eta",&m_moduleEta,"module_eta/I");
++  m_trackTree->Branch("module_phi",&m_modulePhi,"module_phi/I");
++  m_trackTree->Branch("n_outliers",&m_outliers,"n_outliers/I");
++  m_trackTree->Branch("hit_identifiers",&m_hitIds);
++  m_trackTree->Branch("cluster_width_mean",&m_clusterWidthMean,"cluster_width_mean/D");
++  m_trackTree->Branch("cluster_width_max",&m_clusterWidthMax,"cluster_width_max/D");
++  m_trackTree->Branch("upstream_raw",m_upRaw,"upstream_raw[6]/D");
++  m_trackTree->Branch("upstream_F",m_upF,"upstream_F[6]/D");
++  m_trackTree->Branch("minimum_state_z_F_mm",&m_minZ,"minimum_state_z_F_mm/D");
++  m_trackTree->Branch("bound_angles",m_boundAngles,"bound_angles[2]/D");
++  m_trackTree->Branch("angle_covariance",m_angleCov,"angle_covariance[2][2]/D");
++  m_trackTree->Branch("projection",m_projection,"projection[3][8]/D");
++  m_trackTree->Branch("projection_valid",m_projectionOK,"projection_valid[3]/I");
++  m_segmentTree=new TTree("segments","Native segment fits in physical FASER frame");
++  identity(m_segmentTree);
++  m_segmentTree->Branch("barcode",&m_barcode,"barcode/I");
++  m_segmentTree->Branch("station",&m_segmentStation,"station/I");
++  m_segmentTree->Branch("parameters_F",m_segment,"parameters_F[6]/D");
++  m_entry=m_skip;
++  return StatusCode::SUCCESS;
++}
++
++void CalypsoSlopeDiagnosticsAlg::loadTruth(const xAOD::TruthParticle* p) {
++  m_barcode=p ? p->barcode() : 0;m_pdg=p ? p->pdgId() : 0;m_status=p ? p->status() : 0;
++  for(int j=0;j<3;++j) { m_prodPos[j]=m_prodMom[j]=m_sensorPos[j]=m_sensorDir[j]=NAN; }
++  for(int i=0;i<2;++i) {m_truthReferenceOK[i]=0;for(int j=0;j<3;++j) m_truthReference[i][j]=NAN;}
++  for(int s=0;s<4;++s) {
++    m_counts[s]=0;
++    for(int j=0;j<3;++j) { m_truthPos[s][j]=m_truthDir[s][j]=NAN; }
++  }
++  if(!p) return;
++  m_prodMom[0]=p->px()*.001;m_prodMom[1]=p->py()*.001;m_prodMom[2]=p->pz()*.001;
++  if(p->hasProdVtx()) {
++    m_prodPos[0]=p->prodVtx()->x();m_prodPos[1]=p->prodVtx()->y();m_prodPos[2]=p->prodVtx()->z();
++  }
++  auto found=m_truthHits.find(m_barcode);
++  if(found==m_truthHits.end()) return;
++  const auto& h=found->second;
++  for(int s=0;s<4;++s) {
++    m_counts[s]=h.counts[s];
++    if(!m_counts[s]) continue;
++    const auto direction=h.dir[s].normalized();
++    for(int j=0;j<3;++j) {m_truthPos[s][j]=h.pos[s][j]/m_counts[s];m_truthDir[s][j]=direction[j];}
++  }
++  for(int j=0;j<3;++j) {m_sensorPos[j]=h.firstPos[j];m_sensorDir[j]=h.firstDir[j];}
++  for(int i=0;i<2;++i) {m_truthReferenceOK[i]=h.referenceOK[i];for(int j=0;j<3;++j) m_truthReference[i][j]=h.referenceMom[i][j];}
++}
++
++void CalypsoSlopeDiagnosticsAlg::transportTruth(const EventContext& ctx,const xAOD::TruthParticle* p,
++                                                const Acts::GeometryContext& gctx) {
++  auto found=m_truthHits.find(p->barcode());
++  if(found==m_truthHits.end() || !std::isfinite(found->second.firstPos.z())) return;
++  auto& h=found->second;
++  const auto toNative=[&](const Acts::Vector3& v) {return m_rotated ? Acts::Vector3(v.z(),v.y(),-v.x()) : v;};
++  const auto position=toNative(h.firstPos),direction=toNative(h.firstDir);
++  auto startSurface=plane(h.firstPos.z());
++  Acts::BoundVector pars=Acts::BoundVector::Zero();
++  pars.head<2>()=startSurface->globalToLocal(gctx,position).value();
++  pars[2]=Acts::VectorHelpers::phi(direction);pars[3]=Acts::VectorHelpers::theta(direction);
++  pars[4]=p->charge()/(.001*p->p4().P());
++  Acts::BoundTrackParameters start(std::move(startSurface),pars,std::nullopt,Acts::ParticleHypothesis::muon());
++  for(int i=0;i<2;++i) {
++    const double z=i==0 ? m_st1z.value() : m_vetoz.value();
++    auto target=plane(z);
++    auto output=m_extrapolator->propagate(ctx,start,*target,
++      z>=h.firstPos.z() ? Acts::Direction::Forward : Acts::Direction::Backward);
++    if(output) {h.referenceMom[i]=physical(output->momentum());h.referenceOK[i]=1;}
++  }
++}
++
++void CalypsoSlopeDiagnosticsAlg::project(const EventContext& ctx,const Trk::TrackParameters* p,
++                                        const Acts::GeometryContext& gctx) {
++  const Acts::Vector3 position=p->position(),momentum=p->momentum()*.001;
++  const auto fpos=physical(position);
++  const double coordinate=m_rotated ? position.x() : position.z();
++  auto startSurface=plane(coordinate);
++  const auto basis=startSurface->transform(gctx).rotation();
++  auto local=startSurface->globalToLocal(gctx,position);
++  Acts::BoundVector pars=Acts::BoundVector::Zero();
++  pars.head<2>()=local.value();
++  pars[2]=Acts::VectorHelpers::phi(momentum);pars[3]=Acts::VectorHelpers::theta(momentum);
++  pars[4]=p->charge()/momentum.norm();
++  Acts::BoundSquareMatrix cov=Acts::BoundSquareMatrix::Identity();
++  if(m_actualCovariance && p->covariance()) {
++    Acts::BoundSquareMatrix old=Acts::BoundSquareMatrix::Zero(),jac=Acts::BoundSquareMatrix::Identity();
++    old.topLeftCorner<5,5>()=*p->covariance();old(5,5)=1.;
++    jac.topLeftCorner<2,2>()=basis.leftCols<2>().transpose()*p->associatedSurface().transform().rotation().leftCols<2>();
++    jac(4,4)=1000.;cov=jac*old*jac.transpose();
++  }
++  Acts::BoundTrackParameters start(std::move(startSurface),pars,cov,Acts::ParticleHypothesis::muon());
++  const std::array<double,3> targets{m_st1z,m_vetoz,m_sensorPos[2]};
++  for(int i=0;i<3;++i) {
++    m_projectionOK[i]=0;
++    for(double& v:m_projection[i]) v=NAN;
++    if(!std::isfinite(targets[i])) {m_projectionOK[i]=-1;continue;}
++    auto target=plane(targets[i]);
++    const auto direction=targets[i]>=fpos.z() ? Acts::Direction::Forward : Acts::Direction::Backward;
++    auto output=m_extrapolator->propagate(ctx,start,*target,direction);
++    if(!output) continue;
++    const auto location=physical(output->position(gctx)),mom=physical(output->momentum());
++    for(int j=0;j<3;++j) {m_projection[i][j]=location[j];m_projection[i][j+3]=mom[j];}
++    const auto raw=output->momentum();
++    m_projection[i][7]=std::atan(raw.y()/raw.z());
++    if(output->covariance()) {
++      double phi=output->parameters()[2],theta=output->parameters()[3];
++      Eigen::Vector2d gradient;
++      if(m_rotated) gradient<<1./std::pow(std::cos(phi),2),0.;
++      else gradient<<std::cos(phi)*std::tan(theta),std::sin(phi)/std::pow(std::cos(theta),2);
++      m_projection[i][6]=(gradient.transpose()*output->covariance()->block<2,2>(2,2)*gradient)(0,0);
++    }
++    m_projectionOK[i]=1;
++  }
++}
++
++StatusCode CalypsoSlopeDiagnosticsAlg::execute() {
++  const auto& ctx=Gaudi::Hive::currentContext();
++  SG::ReadHandle<xAOD::EventInfo> info(m_event,ctx);
++  SG::ReadHandle<TrackCollection> tracks(m_tracks,ctx),segments(m_segments,ctx);
++  SG::ReadHandle<xAOD::TruthParticleContainer> particles(m_truth,ctx);
++  SG::ReadHandle<FaserSiHitCollection> hits(m_hits,ctx);
++  ATH_CHECK(info.isValid() && tracks.isValid() && particles.isValid() && hits.isValid());
++  m_run=info->runNumber();m_number=info->eventNumber();m_nTracks=tracks->size();m_nTruth=0;
++  m_truthHits.clear();
++  for(const auto& hit:*hits) {
++    int station=hit.getStation();if(station<0 || station>3) continue;
++    auto* element=m_manager->getDetectorElement(m_ids->wafer_id(station,hit.getPlane(),hit.getRow(),hit.getModule(),hit.getSensor()));
++    const auto a=hit.localStartPosition(),b=hit.localEndPosition();
++    const Acts::Vector3 localStart(a.x(),a.y(),a.z()),localEnd(b.x(),b.y(),b.z());
++    if((localEnd-localStart).norm()==0.) continue;
++    const Acts::Vector3 position=element->transformHit()*(.5*(localStart+localEnd));
++    const Acts::Vector3 direction=(element->transformHit().rotation()*(localEnd-localStart)).normalized();
++    auto& h=m_truthHits[hit.trackNumber()];
++    ++h.counts[station];h.pos[station]+=position;h.dir[station]+=direction;
++    if(station==1 && (!std::isfinite(h.firstPos.z()) || position.z()<h.firstPos.z())) {h.firstPos=position;h.firstDir=direction;}
++  }
++  auto geometry=m_extrapolator->trackingGeometryTool()->getNominalGeometryContext();
++  auto gctx=geometry.context();
++  for(const auto* p:*particles) {
++    if(p->status()!=1 || p->barcode()<=0 || p->barcode()>=200000 || (std::abs(p->pdgId())!=11 && std::abs(p->pdgId())!=13)) continue;
++    transportTruth(ctx,p,gctx);loadTruth(p);m_particles->Fill();++m_nTruth;
++  }
++  m_events->Fill();
++  m_ordinal=0;
++  for(const auto* track:*tracks) {
++    if(!track->trackParameters() || track->trackParameters()->empty()) continue;
++    const auto* upstream=track->trackParameters()->front();if(!upstream) continue;
++    const auto [particle,nMatched]=m_matcher->getTruthParticle(track);loadTruth(particle);
++    std::set<int> layers;
++    m_nHits=0;m_stations=0;m_moduleEta=m_modulePhi=999;m_outliers=0;
++    m_hitIds.clear();m_clusterWidthMean=m_clusterWidthMax=0.;
++    if(track->measurementsOnTrack()) for(const auto* measurement:*track->measurementsOnTrack()) {
++      const auto* cluster=dynamic_cast<const Tracker::FaserSCT_ClusterOnTrack*>(measurement);if(!cluster) continue;
++      const auto id=cluster->identify();int station=m_ids->station(id);
++      layers.insert(3*station+m_ids->layer(id));m_stations|=1<<station;
++      m_hitIds.push_back(id.get_compact());
++      const double width=cluster->prepRawData()->rdoList().size();
++      m_clusterWidthMean+=width;m_clusterWidthMax=std::max(m_clusterWidthMax,width);
++      if(m_nHits==0) {m_moduleEta=m_ids->eta_module(id);m_modulePhi=m_ids->phi_module(id);}++m_nHits;
++    }
++    m_nLayers=layers.size();m_purity=m_nHits ? double(nMatched)/m_nHits : 0.;
++    if(m_nHits) m_clusterWidthMean/=m_nHits;
++    if(track->trackStateOnSurfaces()) for(const auto* state:*track->trackStateOnSurfaces())
++      if(state->type(Trk::TrackStateOnSurface::Outlier)) ++m_outliers;
++    m_charge=upstream->charge();m_chi2=track->fitQuality()->chiSquared();m_ndof=track->fitQuality()->numberDoF();
++    m_rmax=0.;m_minZ=std::numeric_limits<double>::infinity();
++    for(const auto* p:*track->trackParameters()) {
++      auto x=physical(p->position());m_rmax=std::max(m_rmax,std::hypot(x.x(),x.y()));m_minZ=std::min(m_minZ,x.z());
++    }
++    const Acts::Vector3 pos=upstream->position(),mom=upstream->momentum()*.001;
++    const auto fpos=physical(pos),fmom=physical(mom);
++    for(int j=0;j<3;++j) {m_upRaw[j]=pos[j];m_upRaw[j+3]=mom[j];m_upF[j]=fpos[j];m_upF[j+3]=fmom[j];}
++    for(int j=0;j<2;++j) {
++      m_boundAngles[j]=upstream->parameters()[j+2];
++      for(int k=0;k<2;++k) m_angleCov[j][k]=upstream->covariance() ? (*upstream->covariance())(j+2,k+2) : NAN;
++    }
++    project(ctx,upstream,gctx);m_trackTree->Fill();++m_ordinal;
++  }
++  if(segments.isValid()) for(const auto* segment:*segments) {
++    if(!segment->trackParameters() || segment->trackParameters()->empty()) continue;
++    const auto* p=segment->trackParameters()->front();
++    const auto [particle,nMatched]=m_matcher->getTruthParticle(segment);m_barcode=particle ? particle->barcode() : 0;
++    const auto pos=p->position(),mom=p->momentum();
++    for(int j=0;j<3;++j) {m_segment[j]=pos[j];m_segment[j+3]=mom[j];}
++    m_segmentStation=-1;
++    for(const auto* measurement:*segment->measurementsOnTrack()) {
++      const auto* cluster=dynamic_cast<const Tracker::FaserSCT_ClusterOnTrack*>(measurement);
++      if(cluster) {m_segmentStation=m_ids->station(cluster->identify());break;}
++    }
++    m_segmentTree->Fill();
++  }
++  ++m_entry;return StatusCode::SUCCESS;
++}
++
++StatusCode CalypsoSlopeDiagnosticsAlg::finalize() {
++  m_file->cd();m_file->Write();
++  const bool failed=m_file->TestBit(TFile::kWriteError);m_file->Close();
++  return failed ? StatusCode::FAILURE : StatusCode::SUCCESS;
++}
++
++DECLARE_COMPONENT(CalypsoSlopeDiagnosticsAlg)
++
++// Separate propagation-only algorithm for archived native states and free
++// direction checks. It calls the same Calypso extrapolation tool as NtupleDumper.
++class CalypsoSlopeTransportProbeAlg final : public AthAlgorithm {
++public:
++  CalypsoSlopeTransportProbeAlg(const std::string& name,ISvcLocator* locator):AthAlgorithm(name,locator) {}
++  StatusCode initialize() override;
++  StatusCode execute() override;
++  StatusCode finalize() override;
++private:
++  ToolHandle<IFaserActsExtrapolationTool> m_tool{this,"ExtrapolationTool","FaserActsExtrapolationTool"};
++  SG::ReadHandleKey<FaserSiHitCollection> m_hits{this,"SiHits","SCT_Hits"};
++  Gaudi::Property<bool> m_rotated{this,"Rotated",true},m_scan{this,"DirectionScan",false};
++  Gaudi::Property<long> m_skip{this,"Skip",0};
++  Gaudi::Property<std::string> m_input{this,"InputStates",""},m_output{this,"Output","transport_probe.root"};
++  const FaserSCT_ID* m_ids=nullptr;
++  const TrackerDD::SCT_DetectorManager* m_manager=nullptr;
++  std::unique_ptr<TFile> m_file;
++  TTree* m_tree=nullptr;
++  long m_entry=0;
++  int m_seed=0,m_candidate=0,m_barcode=0,m_stage=0,m_layer=0,m_hasCov=0;
++  unsigned long long m_geometryID=0;
++  double m_inputPosition[3]{},m_inputMomentum[3]{},m_inputAngles[2]{},m_charge=0;
++  double m_outputParameters[3][6]{},m_outputCovariance[3][6][6]{};
++  int m_valid[3]{};
++  struct Input {int seed,candidate,barcode,stage,layer,kind;unsigned long long geometry;double charge;Acts::BoundVector values;};
++  std::map<long,std::vector<Input>> m_inputs;
++  Acts::Vector3 toF(const Acts::Vector3& x) const {return m_rotated ? Acts::Vector3(-x.z(),x.y(),x.x()) : x;}
++  Acts::Vector3 toNative(const Acts::Vector3& x) const {return m_rotated ? Acts::Vector3(x.z(),x.y(),-x.x()) : x;}
++  std::shared_ptr<Acts::PlaneSurface> plane(double z) const {
++    Acts::RotationMatrix3 basis=Acts::RotationMatrix3::Identity();
++    if(m_rotated) {basis.col(0)=Acts::Vector3(0,-1,0);basis.col(1)=Acts::Vector3(0,0,-1);basis.col(2)=Acts::Vector3(1,0,0);}
++    return Acts::Surface::makeShared<Acts::PlaneSurface>(Acts::Transform3(Acts::Translation3(toNative(Acts::Vector3(0,0,z)))*basis));
++  }
++  void propagate(const EventContext&,const Acts::GeometryContext&,const Acts::BoundTrackParameters&,const std::array<double,3>&);
++};
++
++StatusCode CalypsoSlopeTransportProbeAlg::initialize() {
++  ATH_CHECK(m_hits.initialize());ATH_CHECK(m_tool.retrieve());
++  ATH_CHECK(detStore()->retrieve(m_ids,"FaserSCT_ID"));ATH_CHECK(detStore()->retrieve(m_manager,"SCT"));
++  if(!m_input.value().empty()) {
++    std::ifstream file(m_input.value());if(!file) return StatusCode::FAILURE;
++    long entry;Input row;
++    while(file>>entry>>row.seed>>row.candidate>>row.barcode>>row.stage>>row.layer>>row.kind>>row.geometry>>row.charge) {
++      for(int i=0;i<6;++i) if(!(file>>row.values[i])) return StatusCode::FAILURE;
++      m_inputs[entry].push_back(row);
++    }
++    if(!file.eof()) return StatusCode::FAILURE;
++  }
++  m_file.reset(TFile::Open(m_output.value().c_str(),"RECREATE"));
++  if(!m_file || m_file->IsZombie()) return StatusCode::FAILURE;
++  m_tree=new TTree("transport","Actual Calypso propagation of native stages or physical direction scan");
++  m_tree->Branch("source_entry",&m_entry,"source_entry/L");
++  m_tree->Branch("seed",&m_seed,"seed/I");m_tree->Branch("candidate",&m_candidate,"candidate/I");
++  m_tree->Branch("barcode",&m_barcode,"barcode/I");m_tree->Branch("stage",&m_stage,"stage/I");
++  m_tree->Branch("layer",&m_layer,"layer/I");m_tree->Branch("geometry_id",&m_geometryID,"geometry_id/l");
++  m_tree->Branch("input_position_F_mm",m_inputPosition,"input_position_F_mm[3]/D");
++  m_tree->Branch("input_momentum_F_GeV",m_inputMomentum,"input_momentum_F_GeV[3]/D");
++  m_tree->Branch("input_angles_native",m_inputAngles,"input_angles_native[2]/D");
++  m_tree->Branch("input_has_covariance",&m_hasCov,"input_has_covariance/I");
++  m_tree->Branch("charge",&m_charge,"charge/D");
++  m_tree->Branch("projection_F",m_outputParameters,"projection_F[3][6]/D");
++  m_tree->Branch("projection_covariance_native",m_outputCovariance,"projection_covariance_native[3][6][6]/D");
++  m_tree->Branch("projection_valid",m_valid,"projection_valid[3]/I");
++  m_entry=m_skip;return StatusCode::SUCCESS;
++}
++
++void CalypsoSlopeTransportProbeAlg::propagate(const EventContext& ctx,const Acts::GeometryContext& gctx,
++    const Acts::BoundTrackParameters& start,const std::array<double,3>& targets) {
++  const auto pos=toF(start.position(gctx)),mom=toF(start.momentum());
++  for(int j=0;j<3;++j) {m_inputPosition[j]=pos[j];m_inputMomentum[j]=mom[j];}
++  m_inputAngles[0]=start.parameters()[2];m_inputAngles[1]=start.parameters()[3];
++  m_hasCov=start.covariance().has_value();m_charge=start.charge();
++  for(int i=0;i<3;++i) {
++    m_valid[i]=0;
++    for(double& v:m_outputParameters[i]) v=NAN;
++    for(auto& row:m_outputCovariance[i]) for(double& v:row) v=NAN;
++    if(!std::isfinite(targets[i])) {m_valid[i]=-1;continue;}
++    auto target=plane(targets[i]);
++    const auto direction=targets[i]>=pos.z() ? Acts::Direction::Forward : Acts::Direction::Backward;
++    auto result=m_tool->propagate(ctx,start,*target,direction);
++    if(!result) continue;
++    const auto x=toF(result->position(gctx)),p=toF(result->momentum());
++    for(int j=0;j<3;++j) {m_outputParameters[i][j]=x[j];m_outputParameters[i][j+3]=p[j];}
++    if(result->covariance()) for(int j=0;j<6;++j) for(int k=0;k<6;++k) m_outputCovariance[i][j][k]=(*result->covariance())(j,k);
++    m_valid[i]=1;
++  }
++  m_tree->Fill();
++}
++
++StatusCode CalypsoSlopeTransportProbeAlg::execute() {
++  const auto& ctx=Gaudi::Hive::currentContext();
++  auto holder=m_tool->trackingGeometryTool()->getNominalGeometryContext();auto gctx=holder.context();
++  if(m_scan && m_entry==m_skip.value()) {
++    m_seed=m_candidate=m_barcode=0;m_stage=-1;m_layer=-1;m_geometryID=0;
++    const std::array<double,7> slopes{-.003,-1e-6,-1e-9,0.,1e-9,1e-6,.003};
++    for(double p:{50.,100.,1000.}) for(double charge:{-1.,1.}) for(double sx:slopes) for(double sy:slopes) {
++      auto surface=plane(0.);
++      const auto direction=toNative(Acts::Vector3(sx,sy,1.).normalized());
++      Acts::BoundVector pars=Acts::BoundVector::Zero();
++      pars[2]=Acts::VectorHelpers::phi(direction);pars[3]=Acts::VectorHelpers::theta(direction);pars[4]=charge/p;
++      // At the F-frame pole phi is undefined; test its mean without pretending
++      // that a nonsingular angular covariance exists there.
++      std::optional<Acts::BoundSquareMatrix> cov;
++      const double r=std::hypot(sx,sy);
++      if(m_rotated || r>1e-12) {
++        cov=Acts::BoundSquareMatrix::Identity();cov->block<2,2>(2,2).setZero();
++        Eigen::Matrix2d jac;
++        if(m_rotated) {
++          jac(0,0)=0.;jac(0,1)=1./(1.+sy*sy);
++          const double a=std::sqrt(1.+sy*sy),b=1.+sx*sx+sy*sy;
++          jac(1,0)=a/b;jac(1,1)=-sx*sy/(a*b);
++        } else {
++          jac(0,0)=-sy/(r*r);jac(0,1)=sx/(r*r);
++          jac(1,0)=sx/(r*(1.+r*r));jac(1,1)=sy/(r*(1.+r*r));
++        }
++        const double sigma=std::min(1e-5,.01*std::max(r,1e-12));
++        cov->block<2,2>(2,2)=sigma*sigma*jac*jac.transpose();(*cov)(4,4)=1e-8/(p*p);
++      }
++      Acts::BoundTrackParameters start(std::move(surface),pars,cov,Acts::ParticleHypothesis::muon());
++      propagate(ctx,gctx,start,{100.,-100.,NAN});++m_candidate;
++    }
++  }
++  auto found=m_inputs.find(m_entry);
++  if(found!=m_inputs.end()) {
++    SG::ReadHandle<FaserSiHitCollection> hits(m_hits,ctx);ATH_CHECK(hits.isValid());
++    std::map<int,double> first;
++    for(const auto& hit:*hits) if(hit.getStation()==1) {
++      auto* element=m_manager->getDetectorElement(m_ids->wafer_id(1,hit.getPlane(),hit.getRow(),hit.getModule(),hit.getSensor()));
++      const auto a=hit.localStartPosition(),b=hit.localEndPosition();
++      const double z=(element->transformHit()*Acts::Vector3(.5*(a.x()+b.x()),.5*(a.y()+b.y()),.5*(a.z()+b.z()))).z();
++      auto [it,inserted]=first.emplace(hit.trackNumber(),z);if(!inserted && z<it->second) it->second=z;
++    }
++    auto tracking=m_tool->trackingGeometryTool()->trackingGeometry();
++    for(const auto& row:found->second) {
++      m_seed=row.seed;m_candidate=row.candidate;m_barcode=row.barcode;m_stage=row.stage;m_layer=row.layer;m_geometryID=row.geometry;
++      std::shared_ptr<const Acts::Surface> surface;Acts::BoundVector pars=row.values;
++      if(row.kind==1) {
++        const auto* s=tracking->findSurface(Acts::GeometryIdentifier(row.geometry));
++        if(!s) {ATH_MSG_ERROR("Archived state surface not found: "<<row.geometry);return StatusCode::FAILURE;}
++        surface=s->getSharedPtr();
++      } else {
++        const Acts::Vector3 pos=row.values.head<3>(),mom=row.values.tail<3>();
++        surface=plane(toF(pos).z());pars.setZero();pars.head<2>()=surface->globalToLocal(gctx,pos,mom.normalized()).value();
++        pars[2]=Acts::VectorHelpers::phi(mom);pars[3]=Acts::VectorHelpers::theta(mom);pars[4]=row.charge/mom.norm();
++      }
++      Acts::BoundTrackParameters start(std::move(surface),pars,std::nullopt,Acts::ParticleHypothesis::muon());
++      propagate(ctx,gctx,start,{0.,-3112.,first.count(row.barcode) ? first.at(row.barcode) : NAN});
++    }
++  }
++  ++m_entry;return StatusCode::SUCCESS;
++}
++
++StatusCode CalypsoSlopeTransportProbeAlg::finalize() {
++  m_file->cd();m_file->Write();const bool failed=m_file->TestBit(TFile::kWriteError);m_file->Close();
++  return failed ? StatusCode::FAILURE : StatusCode::SUCCESS;
++}
++
++DECLARE_COMPONENT(CalypsoSlopeTransportProbeAlg)

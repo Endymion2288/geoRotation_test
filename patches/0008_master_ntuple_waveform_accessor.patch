@@ -1,0 +1,15 @@
+diff --git a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
+index c1e1c280..23be1f7f 100644
+--- a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
++++ b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
+@@ -268,8 +268,8 @@ void NtupleDumperAlg::FillWaveBranches(const xAOD::WaveformHitContainer &wave, b
+       if (hit->overflow()) {  // Overflow
+ 
+ 	// For v3 Waveforms, we store overflow time directly
+-	if (hit->over_time() > 0) {
+-	  m_wave_overflow[ch] = hit->over_time();
++        if (hit->auxdataConst<float>("over_time") > 0) {
++          m_wave_overflow[ch] = hit->auxdataConst<float>("over_time");
+ 	}
+ 	
+ 	// Need raw waveform, if it doesn't exist, set time as -1 (unknown)

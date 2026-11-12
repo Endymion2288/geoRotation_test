@@ -64,6 +64,8 @@ python3 /eos/home-x/xcheng/FASER/geoRotation_test/configs/tracking_runner.py --d
 
 S04 的批量入口为 `scripts/submit_momentum.py`，接受冻结 task JSON、library 目录和唯一任务名，提交前重新选择 schedd。`--states --selected-states-only` 配合 worker 的 `audit_reduce.py` 只保留选中路径的 compact traces；`--isolate-smoothing` 会实际重算候选自身的逐层 smoothed states，并改变少量 rmax 元数据。历史原宏复现保持该开关关闭；隔离 smoothing 的诊断须固定候选、hits、truth 和 cuts，不能把分布变窄当作最终动量已修复。sensor CSV 必须用 patch0005 的 Athena event/source_entry，G4 event ID 在当前调用中恒为1。实际配置、50k独立配对和复现入口见 S04 workbook；大型统计也通过 Condor 执行。
 
+S05 使用 `configs/slope_tracking.py`、`scripts/run_slope_task.py`、`analysis/slope_analysis.py` 和 `analysis/slope_figures.py`；任务由 `scripts/prepare_slope_tasks.py` 冻结，经相同提交入口指定 `--stage S05`。before/after 库及 Python config 必须成套使用 `stage05_slopes/software_before` / `software_after`。`--native-states` 开启现有 CKF/refit writers，worker 归约后不保留大型 ROOT；seed 仅有 population 身份时不得声明同 ancestor seed。writer 开关需先与保存基线逐值闭合。cluster truth-position 是实际 Calypso 的单因素诊断，保留测量误差/噪声，不称为 digitization off。fixed-plane truth model 将 production p 大小附到首个 st1 SiHit chord 再传播；局部角度真值和实际 G4 momentum 必须区别记录。
+
 提交前读取当前 schedd 广告与队列，按实际可见 schedd 进一步查询：
 
 ```bash

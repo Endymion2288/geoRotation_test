@@ -8,7 +8,7 @@
 
 110051的S04材料对照见[全20文件专项报告](../workbook/2026-11-12_stage04_full110051_pfs.md)：20,000源事件，材料坐标修正前后final尾率33.858%→10.577%。该报告使用S04 Good95/SDO选择，补齐原10文件逐层图，给出predicted/filtered/smoothed的信息范围、同state尾部迁移与曲率不确定度；这些图不代表整体坐标旋转beforeGeo/afterGeo，也不能代替GitHub原宏的复现。
 
-用户指定的[原宏与整体geometry复核](../workbook/2026-11-12_stage04_native_geometry_truth.md)使用110051全20文件、20,000源事件、原生Calypso master/geoRotation及GitHub原宏cuts。afterGeo的566,369个共同有效states上，两种truth的27图逐bin相同；production仅新增约1.02%的truth覆盖，解释不了旧图的大幅结构差异。AFS/strict材料及历史mask012/4station另作控制。阶段产物位于`stage05_geometry_comparison/`，该目录名不表示已启动下表S05的100044角度研究；第19页规范保留用于S05。
+用户指定的[原宏与整体geometry复核](../workbook/2026-11-12_stage04_native_geometry_truth.md)使用110051全20文件、20,000源事件、原生Calypso master/geoRotation及GitHub原宏cuts。afterGeo的566,369个共同有效states上，两种truth的27图逐bin相同；production仅新增约1.02%的truth覆盖，解释不了旧图的大幅结构差异。AFS/strict材料及历史mask012/4station另作控制。产物目录`stage05_geometry_comparison/`属于S04复核；S05角度产物另存`stage05_slopes/`。
 
 [smoothed鼓包来源复核](../workbook/2026-11-12_stage04_smoothing_bump_cause.md)进一步固定旧图的前10文件、10,000事件、strict材料及候选：仅隔离重算smoothing就使S1 L0的residual<−0.8从24.38%降至3.95%，P/F逐值不变；S3 L2的smoothed q/p全部不变，该层主要随SDO purity/final选择减少尾部。旧图右列27个直方图已精确复现；此结果解释逐层states读出，不能当作最终动量修复。
 
@@ -22,7 +22,9 @@
 | 110033 | 12325 | 12.252 | 2.150 |
 | 110051 | 12460 | 33.563 | 13.604 |
 
-以上使用 fiducial+H18、SDO purity≥0.7、Good95；完整 cutflow、区间与匹配歧义检查见 S03。μ−−μ+ 总误判率差为 0.571 个百分点，bootstrap95 为 [0.333,0.829] 个百分点；输入谱不同，尚未隔离算法的电荷不对称或旋转净效应。角度的物理定义已恢复，剩余峰的显著性未测量。
+以上使用 fiducial+H18、SDO purity≥0.7、Good95；完整 cutflow、区间与匹配歧义检查见 S03。μ−−μ+ 总误判率差为 0.571 个百分点，bootstrap95 为 [0.333,0.829] 个百分点；输入谱不同，尚未隔离算法的电荷不对称或旋转净效应。
+
+S05 正在推进，实测入口为[角度结构报告](../workbook/2026-11-12_stage05_slope_structure.md)：100044 500k/版本全量已完成，物理 frame/同面传播和原 writer 闭合；真实 cluster locX 控制在生产 RDO 与独立 G4 中均抑制 seed 之前的 segment 周期，VetoNu 宽度与实际靶散射及 1/p 标度相符。beforeGeo 近零尖峰及 afterGeo 剩余肩峰的 final-stage 因果归属仍未闭合，A5 尚未完成。
 
 ## 阅读与执行入口
 
@@ -39,7 +41,7 @@
 
 0. **以已完成的原宏对照为入口，分离局部bias与production-relative能损。** `t_eQOP`与相同majority barcode的production p实测一致；历史图继续保留`t_eQOP`，逐层算法检验使用同面G4 p。beforeGeo/afterGeo的原生covariance不同，后续固定物理先验及共同seed/hits，才能判断旋转、covariance和选择各自的贡献。AFS/strict有小的产额差异，其navigation/candidate来源尚未定位；file0的三个mask控制27图相同。
    原生共享smoothed slots与候选隔离重算分开呈现，truth purity分组保留共同母样本；两者对旧图形状的作用已定量，按鼓包复核报告使用各自适用的states。
-1. **S05在current/strict配对上统一物理面。** S04已证明材料能显著改变选择与curvature；先将tanθ_y和truth传播到同一st1/VetoNu面，再分解reco-p窗口、hit pattern和candidate迁移。量化峰的位置、宽度、占比及统计显著性，不能用production方向residual直接充当角分辨率。
+1. **S05以整体beforeGeo/afterGeo比较统一物理面。** 已完成100044每版500k的真实重建与同面传播，AFS/strict另列材料控制。下一步定位before近零尖峰的首次stage、量化after肩峰的phase响应与未覆盖余量，分解reco-p窗口、hit pattern和candidate迁移；不能用production方向residual直接充当角分辨率。
 2. **S06先平衡谱与接受度。** 独立strict样本μ+、μ−各剩1条wrong；事件数尚不足以判定残余正负差异。先比较共同truth p/位置/方向支持域与有效样本量，再按目标精度追加。材料配对不代替完整G0/G1的旋转净效应。
 3. **S07逐项处理seed和辐射模型。** 110051 strict有3020条最终祖先seed tail，其中2346条含other-majority segment。固定真hits的电子仍有23条guaranteed local tail，11条在update、12条在smoothing出现同sensor可证实的穿越，并有显著沿程能损。使用纯segment组合/同点方向与field integral、G4 bremsstrahlung控制及piecewise q/p/GSF分别检验。
 4. **保留接口、pruning与IFT实验。** S04全量100k观察配对的final p/charge/Good95均一致，少量rmax改变；转换mean闭合不代表covariance已修复。4-station finding会使用IFT，但既有refit将IFT判outlier；完整四站refit须显式控制该策略。候选pruning损失也有独立计数。
@@ -94,7 +96,7 @@ flowchart TD
 ## 下一轮落地任务
 
 0. 按[原宏复核报告](../workbook/2026-11-12_stage04_native_geometry_truth.md)保留历史图与truth对照；动量后续控制固定物理先验及共同seed/hits，使用同面G4 truth区分实际能损与KF bias。AFS/strict小产额差异保留导航与candidate排查，不将其当作已定位原因。
-1. S05读取S04的paired particles与compact traces，冻结同一物理面和p窗口，分别看truth、seed、selected、refit/final的角度峰及选择迁移；使用A1–A5的显著性与forward-model验收。
+1. S05完成已提交的native writer同面传播，定位beforeGeo近零尖峰的首次stage，并做固定候选的最小控制；afterGeo肩峰保留geometry-phase响应、same-hit truth-coordinate实验与未覆盖余量，按A1–A5完成因果和图表验收。已测数据及产物见S05 workbook。
 2. S06使用correct material后的μ±共同支持域，检查首次sign flip与谱平衡后的率差；记录既有样本的精度，再确定追加规模。Alma历史selection与完整G0/G1仍单独控制。
 3. S07从已定位的other-segment seed、真实radiative loss后的update/smoothing、chart/refit covariance、IFT策略分别做单因素实验。Gaussian mixture能损的文献可行性和典型事件见S04，未把它当作已验证修复。
 4. 所有新批量按S04实测CPU/RSS/I/O配置资源，提交前重新比较兼容schedd；所有源码、数据身份与observer开关继续冻结。

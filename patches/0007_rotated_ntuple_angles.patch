@@ -1,0 +1,27 @@
+diff --git a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
+index 7eee8839..e2983733 100644
+--- a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
++++ b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
+@@ -1935,6 +1935,10 @@ StatusCode NtupleDumperAlg::execute(const EventContext &ctx) const
+       m_yVetoNu[m_longTracks] = targetPosition_VetoNu.y();
+       m_thetaxVetoNu[m_longTracks] = atan(targetMomentum_VetoNu[0]/targetMomentum_VetoNu[2]);
+       m_thetayVetoNu[m_longTracks] = atan(targetMomentum_VetoNu[1]/targetMomentum_VetoNu[2]);
++      if (m_rotatedPhysicalAngles) {
++        m_thetaxVetoNu[m_longTracks] = std::atan2(-targetMomentum_VetoNu[2], targetMomentum_VetoNu[0]);
++        m_thetayVetoNu[m_longTracks] = std::atan2(targetMomentum_VetoNu[1], targetMomentum_VetoNu[0]);
++      }
+     } else {
+       ATH_MSG_INFO("vetoNu null targetParameters");
+     }
+diff --git a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h
+index 9fa0a821..03f2c319 100644
+--- a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h
++++ b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h
+@@ -129,6 +129,7 @@ private:
+   const FaserSCT_ID* m_sctHelper;
+ 
+   BooleanProperty m_useIFT               { this, "UseIFT", false, "Use IFT tracks" };
++  BooleanProperty m_rotatedPhysicalAngles { this, "RotatedPhysicalAngles", false, "Write physical FASER VetoNu angles from rotated ACTS momentum" };
+   BooleanProperty m_doCalib              { this, "DoCalib", true, "Fill calibrated calorimeter quantities" };
+   BooleanProperty m_doBlinding           { this, "DoBlinding", true, "Blinding will not output events with no veto signal adn Calo signal > 20 GeV e-" };
+   BooleanProperty m_onlyBlinded          { this, "OnlyBlinded", false, "Only events that would be blinded are saved" };

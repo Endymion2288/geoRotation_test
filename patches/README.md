@@ -11,6 +11,12 @@
 - `0003-momentum-controls.patch`：在 `0002` 后应用；增加独立 smoother 快照、seed 输入审计、实际材料/粒子假设/step/C 控制、确定性 truth mean 注入及纯 hits 的非组合 KF。物理控制默认关闭，energy loss/scattering 保持原 true。S04 对全部名义事件核对诊断控制是否保持 reconstruction 输出一致。
 - `0004-diagnostic-generation.patch`：ParticleGun HepMC3 显式使用 MeV/mm；Pythia8Decayer 隐藏静态链接库符号，避免其 G4ios finalizer 经符号抢占调用另一库的 finalizer，导致第二次 delete。与 `0001` 配合用于补充 G4；不修改历史 RDO。
 - `0005-sensor-event-identity.patch`：在 `0001` 后应用，将 sensor CSV 的主键改为 Athena event number/source entry，同时保留 G4 event ID。当前 serial G4 调用的 G4 event ID 恒为1，不能用于跨事件真值关联。S04 用相同随机种子重新生成2400事件的sidecar，逐步验证物理数值与原模拟一致后再关联。
+- `0006_slope_diagnostics.patch`：实际 Calypso 的只读 final/segment/truth observer 和 InputStates transport 组件；raw/physical frame 并存，所有 fixed-plane propagation 用真实 field、geometry 和 extrapolator。独立编译为诊断 plugin，与原生 before/after tracking 库组合，不替换 tracking。
+- `0007_rotated_ntuple_angles.patch`：NtupleDumper 的 `RotatedPhysicalAngles` opt-in，默认 false；保存正确物理 VetoNu angles。20+500 events 的真实 writer 配对和逐字未改 GitHub 宏核对见 S05。
+- `0008_master_ntuple_waveform_accessor.patch`：仅 master NtupleDumper 的 waveform accessor 编译兼容；保持 before tracking 源码与原生 frame。
+- `0009_truth_cluster_position.patch`：真实 TrackerClusterMakerTool 的默认关闭 `UseTruthClusterPosition`，仅替换 local measured strip coordinate，保留原误差/宽度/噪声及无 truth fallback。依赖同 release 的 HitManagement/TrackerSimEvent；构建入口 `scripts/build_cluster_control.py`。是诊断 ideal centroid 控制，不是关闭完整 digitization 或正式修复。
+
+S05 的 0006–0009 各自以其记录基底及适用 package 应用，不能把 before 专用 0008 当作 after tracking patch 串接。`stage05_slopes/patch_validation_v1/validation.json` 核对四份 patch 与实际源码一致，软件来源、观察闭合及测量限制见 [S05 报告](../workbook/2026-11-12_stage05_slope_structure.md)。
 
 保留原 `KalmanFitterTool::fit` ABI，新审计使用 `fitAudited` 显式传递 event/seed/candidate 来源。批量原版基线关闭全部物理实验开关；诊断只改变来源标签和输出。观察开关配对与 covariance 数值检查见 S02 报告，不能把实验修正的结果当作原版结果。
 

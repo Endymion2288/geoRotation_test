@@ -1,0 +1,29 @@
+{
+  "repository": "https://github.com/zsm2024/FASER_tracking",
+  "commit": "33ca2281b961935456dfd4dc9fc06235e24b551e",
+  "macro": "root_txt/geoRotation/after_vs_before/test_geoMerge/afterGeo_afterModifyErr_test/test_tanTheta.C",
+  "macro_url": "https://github.com/zsm2024/FASER_tracking/blob/33ca2281b961935456dfd4dc9fc06235e24b551e/root_txt/geoRotation/after_vs_before/test_geoMerge/afterGeo_afterModifyErr_test/test_tanTheta.C",
+  "provenance_note": "The angle macro is in root_txt, not test_pResolution; compare its exact bytes with the frozen GitHub source before use.",
+  "pdf_layout": {
+    "geometryRotation.pdf:19": "VetoNu, 2x2: before/after columns; full spectrum / 50-250 GeV rows",
+    "geometryRotation.pdf:20": "Station 1, same 2x2 layout",
+    "geometryRotation.pdf:23": "Aprime comparisons, full spectrum and 50-100 GeV",
+    "physical_histogram": {"bins": 100, "min": -0.01, "max": 0.01, "normalization": "raw track entries"},
+    "narrow_histogram": {"bins": 50, "min": -0.003, "max": 0.003},
+    "legacy_pdf_window": "50e3 < Track_pz0[0] < 250e3: event's first stored long track, raw branch frame"
+  },
+  "macro_active_behavior": {
+    "inputs": "110033, not the PDF's 100044 input",
+    "before": "Track_ThetaX_atVetoNu, with per-track 100 < Track_pz0/1000 < 250",
+    "after": "Track_Y_atVetoNu/sqrt(Track_X_atVetoNu^2+Track_Y_atVetoNu^2); no momentum cut",
+    "display": "Only h1 is drawn; before and after use different bin counts",
+    "assessment": "The enabled macro block cannot be used as a physically consistent before/after theta_y comparison"
+  },
+  "outputs": [
+    "Original enabled macro expressions, clearly labelled literal legacy",
+    "PDF-intended momentum-direction quantities in a common physical frame and fixed planes",
+    "Raw native Ntuple angle expressions and legacy first-track pz cuts",
+    "Per-track physical-p and matched truth-p windows, including acceptance migration",
+    "Same-sensor true SiHit direction residuals; fixed-plane transported truth labelled as model reference"
+  ]
+}

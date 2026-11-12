@@ -1,0 +1,38 @@
+{
+  "stage": "S05",
+  "reference_pages": {"problem.pdf": [4], "geometryRotation.pdf": [19, 20, 23]},
+  "main_sample": {
+    "dsid": "100044",
+    "input": "/eos/experiment/faser/data0/sim/mc24/particle_gun/100044/rdo/s0013/FaserMC-MC24_PG_mupl_fasernu_5mrad_flukaE-100044-00000-00099-s0013-RDO.root",
+    "events": 500000,
+    "scope": "The single 500k-event production unit cited on geometryRotation.pdf page 19",
+    "discovery_entries": [0, 250000],
+    "validation_entries": [250000, 500000]
+  },
+  "controls": ["100116", "100117", "110033", "110051"],
+  "geometry": "FASERNU-04",
+  "conditions": "OFLCOND-FASER-05",
+  "tracking": "Native Calypso, three stations, forward; original branch seed covariance",
+  "before_geo_source": "/eos/home-x/xcheng/FASER/geoRotation_calypso_main",
+  "after_geo_source": "/eos/home-x/xcheng/FASER/geoRotation_calypso",
+  "st1_plane_z_F_mm": 0.0,
+  "vetonu_plane_z_F_mm": -3112.0,
+  "physical_slope": "py_F/pz_F = py_A/px_A",
+  "physical_angle": "atan2(py_F,pz_F)",
+  "legacy_st1": "atan(Track_py0/Track_pz0), raw stored frame and upstream parameter surface",
+  "legacy_vetonu": "Track_ThetaY_atVetoNu, native writer atan(raw_py/raw_pz)",
+  "momentum_windows_GeV": {"muon": [50, 250], "Aprime": [50, 100], "macro_legacy": [100, 250]},
+  "sample_selections": ["All native long tracks", "Good95", "Matched signal, fiducial H18, purity >= 0.7", "Common truth and matched hit pattern"],
+  "truth_references": {
+    "sensor": "Same physical SiHit midpoint plane; direction from local end minus start transformed with transformHit",
+    "fixed_planes": "Attach the production momentum magnitude to the first station-1 SiHit midpoint/chord, then propagate using the actual Calypso tool. This is a model reference, not measured local Geant4 momentum",
+    "vetonu_RDO": "No scintillator truth hits in the historical RDO; new Calypso G4 control required for exact local truth"
+  },
+  "acceptance": [
+    "A1: frame, surface, native Ntuple and physical re-evaluation closure; invalid and propagation failure accounting",
+    "A2: bin width/offset, ECDF/KDE, discrete-value and held-out peak tests; fixed discovery windows",
+    "A3: momentum, truth direction, position/module/hit pattern, material and algorithm contributions; held-out response reconstruction",
+    "A4: first stage, same-surface updates and minimal controls for each remaining structure",
+    "A5: causal source table, uncertainty, unaccounted fraction, efficiency/tail/charge/failure monitoring, reference PNG/PDF/counts and Chinese report"
+  ]
+}
