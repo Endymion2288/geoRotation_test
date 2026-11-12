@@ -104,6 +104,8 @@ condor_q -name <schedd> -totals
 
 每阶段最终产物必须包含与参考材料对应的分布图，具体图清单与规范见 `roadmap/05_reference_figures.md`。before/after使用共同分箱和可比较的轴/归一化，标明样本、选择、frame、truth参考与entries；历史定义有误时同时标出legacy与正确物理定义。图表保存PNG、逐图PDF和多页汇报PDF，bin counts及产物索引随结果保存；workbook嵌入主图并链接完整图集。阶段完成前核对图中统计与冻结summary，并目视检查导出效果。
 
+后续动量图优先参考用户提供的 `https://github.com/zsm2024/FASER_tracking/tree/main/test_pResolution` 原代码，保留可用的公式、分箱、颜色和九层布局，并明确必要的truth/选择差异。每张图声明输入文件数、源事件数及覆盖范围；小样本图不能标为全量。全量重画必须逐文件核对entries和event ranges，worker内完成matching及histogram归约，避免长期保存大规模逐state JSON。
+
 后续提交统一遵循 Angular Conventional Commits：`<type>(<scope>): <subject>`，例如 `feat(gravnet): add vertex distance features`、`docs(workbook): record stage01 validation`。Pull Request 说明改动、意义、验证命令和样本选择，关联相关 issue；模型或可视化变更附相应图表。
 
 ## 沟通与文档

@@ -17,7 +17,7 @@ def main():
     args=parser.parse_args();repo=Path(__file__).resolve().parents[1]
     root=args.tasks.resolve().parent;code=root/(args.name+"_worker")
     code.mkdir(exist_ok=False)
-    for name in ("momentum_worker.sh","momentum_task.py","audit_reduce.py","run_momentum_simulation.py"):shutil.copy2(repo/"scripts"/name,code/name)
+    for name in ("momentum_worker.sh","momentum_task.py","audit_reduce.py","run_momentum_simulation.py","full_momentum_task.py"):shutil.copy2(repo/"scripts"/name,code/name)
     shutil.copy2(repo/'configs/momentum_modes.py',code/'momentum_modes.py')
     (code/"momentum_worker.sh").chmod(0o755)
     load=subprocess.check_output(["condor_status","-schedd","-af","Name","TotalRunningJobs","TotalIdleJobs","MaxJobsRunning"],text=True)
@@ -33,7 +33,7 @@ def main():
     submit=Path('/afs/cern.ch/user/x/xcheng/condor/geoRotation_test')/args.name
     submit.mkdir(exist_ok=False,parents=True);(root/"condor_logs").mkdir(exist_ok=True)
     tasks=json.loads(args.tasks.read_text())
-    if any(task.get('kind')=='analysis' for task in tasks):
+    if any(task.get('kind') in ['analysis', 'full_sample'] for task in tasks):
         shutil.copytree(repo/'analysis',code/'analysis',ignore=shutil.ignore_patterns('__pycache__'))
     (submit/"jobs.sub").write_text(f'''universe = vanilla
 executable = {code}/momentum_worker.sh

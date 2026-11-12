@@ -342,7 +342,10 @@ def layer_figure(data, cohort, reference=None):
     prefix = "Source binning, S04 selection | " if reference else ""
     fig.suptitle(prefix+NAMES[data["dsid"]]+" | "+("Good-seed CKF momentum residuals" if good_seed else "CKF momentum residuals at nine tracker layers"),
                  fontsize=17, y=.994)
-    fig.text(.5, .953, subtitle, ha="center", fontsize=11)
+    scope = data.get("scope_label")
+    fig.text(.5, .958 if scope else .953, subtitle, ha="center", fontsize=11)
+    if scope:
+        fig.text(.5, .936, scope, ha="center", fontsize=10)
     for x, variant in [(.265, "current"), (.755, "strict")]:
         fig.text(x, .914, LABELS[variant], color=COLORS[variant], ha="center", fontsize=15, weight="bold")
     fig.legend(handles=[Line2D([0], [0], color=color, lw=2, label=c.title()) for c, color in COMPONENTS.items()],

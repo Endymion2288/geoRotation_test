@@ -2,6 +2,8 @@
 
 日期：2026-11-12。结果根目录为 `/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_momentum/reference_figures`，下文记为 `$F`。
 
+110051逐层图在本文使用前10个文件、10,000源事件，占该DSID目录50%；independent final图使用其后10文件。用户指定全文件后，已另行交付[20文件、20,000事件的完整图集与P/F/S研究](2026-11-12_stage04_full110051_pfs.md)，完整110051分布请使用该版本。
+
 ## 阶段目标
 
 补齐`docs/problem.pdf`第3页风格的动量分布，展示材料图坐标严格旋转前后的seed、CKF逐层和final形状；核对用户提供的绘图源码；为S05–S07固定参考图、PNG/PDF汇编和数值核对要求。

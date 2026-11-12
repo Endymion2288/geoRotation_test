@@ -15,6 +15,8 @@ S04补图实现入口为 `analysis/momentum_reference_figures.py`，读取已有
 
 用户补充的[原绘图脚本目录](https://github.com/zsm2024/FASER_tracking/tree/main/test_pResolution)已在S04补图中按commit核对。阶段开始时必须区分源码实际启用的公式/cuts、注释中的备用配置和PDF文字；核对writer的truth/frame/单位及逐层取值方式后，再声明与参考图的一致程度。
 
+后续同类动量图优先沿用该目录的公式、分箱、颜色和九层布局。小样本发现图与全输入图明确区分；全输入版本逐文件检查CollectionTree entries及无重叠、无遗漏的entry ranges，图上列出源事件数。predicted/filtered/smoothed比较必须包含同state的tail迁移计数、末端filtered=smoothed检查及covariance变化，区分前向信息不足、更新新生tail与后向修复。批量state在worker scratch归约，只保存histogram和紧凑诊断统计。
+
 ## 每张比较图的约定
 
 1. 标明DSID/粒子、源事件范围、所比较的配置和stage，声明坐标系、物理参考面与truth来源。`before/after`必须说明改的是几何、材料还是其他具体配置。

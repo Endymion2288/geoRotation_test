@@ -6,6 +6,8 @@
 
 实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)、[S04](../workbook/2026-11-12_stage04_momentum.md)。S04证实current22材料与旋转几何的坐标不一致，主要通过scattering covariance/gain制造大负尾；严格旋转同一map后，独立110051尾率从34.151%降至10.543%，Good95效率提高4.018个百分点。接口chart/refit起点问题、seed混合和辐射后KF残余分别保留受控实验入口。补充G4退出134已定位修复，同sensor truth关联通过2400事件、81153 steps逐值验证。
 
+110051完整输入的最新动量图见[全20文件专项报告](../workbook/2026-11-12_stage04_full110051_pfs.md)：20,000源事件，材料坐标修正前后final尾率33.858%→10.577%。该报告补齐原10文件逐层图，给出predicted/filtered/smoothed的信息范围、同state尾部迁移、曲率不确定度及7页图集；描述性全样本与上述独立验收样本分别报告。
+
 下表保留S03的current22历史基线；strict与独立样本的完整配对表见S04。
 
 | DSID | Good95 匹配粒子 | production p ratio <0.5 / % | charge misID / % |
