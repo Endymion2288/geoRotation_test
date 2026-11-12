@@ -19,6 +19,7 @@ def accumulate(counter, prefix, reconstructed, reference):
     counter[prefix+'_sum'] += residual
     counter[prefix+'_sum2'] += residual*residual
     counter[prefix+'_below_minus_half'] += residual < -.5
+    counter[prefix+'_below_minus_point8'] += residual < -.8
     counter[prefix+'_above_half'] += residual > .5
     counter[prefix+'_underflow'] += residual < -1.2
     counter[prefix+'_overflow'] += residual >= 1.2
@@ -26,6 +27,7 @@ def accumulate(counter, prefix, reconstructed, reference):
 
 def attach_production(directory):
     import ROOT
+    import numpy as np
     directory = Path(directory)
     raw = ROOT.TFile.Open(str(directory/'track_states.root'))
     tree = raw.Get('tree')
@@ -50,10 +52,15 @@ def attach_production(directory):
     examples = []
     maximum = 0.
     ordinal = 0
+    event_entries = []
+    event_cumulative = []
+    event_tracks = []
     with (directory/'production_truth.jsonl').open() as stream:
         for line in stream:
             event = json.loads(line)
             counts['source_events'] += 1
+            event_entries.append(event['source_entry'])
+            selected_before = counts['github_selected_tracks']
             for index, final in enumerate(event['final']):
                 assert ordinal < tree.GetEntries()
                 tree.GetEntry(ordinal)
@@ -115,10 +122,19 @@ def attach_production(directory):
                                 production_qop_MeV_inv=qop[0], relative_qop_difference=difference))
                 friend.Fill()
                 ordinal += 1
+            event_tracks.append((len(event['final']), counts['github_selected_tracks']-selected_before))
+            event_cumulative.append([[[per_layer[f'{s}_{l}'][stage+'_native_'+field]
+                for field in ['finite', 'below_minus_half', 'below_minus_point8']]
+                for s in [1, 2, 3] for l in [0, 1, 2]] for stage in ['prt', 'flt', 'smt']])
     assert ordinal == tree.GetEntries() == friend.GetEntries()
     friend.Write()
     output.Close()
     raw.Close()
+    cumulative = np.asarray(event_cumulative, dtype=np.int64)
+    event_counts = np.diff(cumulative, axis=0, prepend=np.zeros_like(cumulative[:1]))
+    np.savez_compressed(directory/'event_counts.npz', source_entry=event_entries,
+        counts=event_counts, tracks=np.asarray(event_tracks, dtype=np.int64),
+        stages=['prt', 'flt', 'smt'], fields=['finite', 'below_minus_half', 'below_minus_point8'])
     result = dict(counts=dict(counts), per_layer=per_layer,
         max_relative_link_vs_production_qop=maximum, differing_examples=examples,
         association='file + source_entry + selected-track ordinal; production is the same majority barcode',

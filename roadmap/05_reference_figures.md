@@ -21,6 +21,8 @@ S04历史补图入口为 `analysis/momentum_reference_figures.py`，其compact t
 
 truth来源检查在同一份native writer ROOT上运行原`t_eQOP`与相同majority barcode的production q/p两次；另画共同有效states对照。两种参考都不是sensor局部G4 p；NaN、production-only/link-only states、逐bin差异和有限分母单列。实现为`configs/reference_tracking.py`、`scripts/prepare_reference_macro.py`、`scripts/run_reference_task.py`与`analysis/reference_figures.py`。全20文件的beforeGeo、afterGeo、strict主图及truth对照已交付，[复核报告](../workbook/2026-11-12_stage04_native_geometry_truth.md)链接14页完整图集、bin counts和覆盖验证；原宏的TTreeFormula除零/NaN行为与有限residual统计分别记录。
 
+用户指定开启候选独立 smoothing 后的全量主图见[全110051 smoothing/covariance 对照](../workbook/2026-11-12_stage04_smoothing_covariance.md)：beforeGeo、afterGeo，以及 afterGeo 恢复原 inflation 三组各20文件、20,000事件；保留其余原生设置和原宏 cuts。16页图集同时给出 P/F/S 九层、几何/variance 叠图和 smoothed 左尾 log 图。相同数值 inflation 与经过 Jacobian 匹配的相同物理 covariance 分别表述。
+
 小样本发现图与全输入图明确区分；全输入版本逐文件检查CollectionTree entries及无重叠、无遗漏的entry ranges，图上列出源事件数。predicted/filtered/smoothed诊断另保留同state的tail迁移计数、末端filtered=smoothed检查及covariance变化，区分前向信息不足、更新新生tail与后向修复。批量state在worker scratch归约，只保存histogram和紧凑诊断统计。
 
 ## 每张比较图的约定

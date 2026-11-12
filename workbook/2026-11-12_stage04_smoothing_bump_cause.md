@@ -135,3 +135,5 @@ python3 scripts/submit_momentum.py \
 ## 下一步计划
 
 保留两种用途的图：历史复现继续使用原生slots和GitHub cuts；逐运算物理诊断另列候选隔离smoothing及truth purity分组。若将隔离smoothing作为正式Calypso修复，独立验收其对rMax_smt/GitHub选择、refit、效率、最终动量、电荷和CPU的影响，并保留原生基线。局部物理偏差继续以同sensor G4 truth判别。
+
+用户随后指定正式比较图开启 isolate-smoothing，其全110051复核已完成，见[全量 smoothing 与 seed covariance 对照](2026-11-12_stage04_smoothing_covariance.md)。新报告在原宏 cuts 下比较 beforeGeo/afterGeo，并将 afterGeo inflation 从 `[100,100,100,10000,100000]` 恢复到 `[100,100,100,100,1000]`：S2 P/F 负尾明显减少，smoothed 靠近−1的尾率在九层均略增。完整16页图集、选择迁移和事件配对区间随报告保存。

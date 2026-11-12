@@ -20,11 +20,17 @@ def main():
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--jobs', type=int, default=4)
+    parser.add_argument('--source-patch', type=Path,
+        help='Permit exactly this recorded tracked source diff')
     args = parser.parse_args()
     base = Path('/eos/home-x/xcheng/FASER/geoRotation_calypso')
     original_build = base/'build'
     source = args.source.resolve()
-    assert not subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain', '--untracked-files=no'], text=True)
+    diff = subprocess.check_output(['git', '-C', str(source), 'diff', 'HEAD'], text=True)
+    if args.source_patch:
+        assert diff == args.source_patch.read_text()
+    else:
+        assert not diff
     commit = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -105,11 +111,29 @@ def main():
         shutil.copytree(source/'Tracking/Acts'/package/'python', dest, dirs_exist_ok=True)
         (dest/'__init__.py').touch()
     manifest = dict(source=str(source), commit=commit, native_packages=list(PACKAGES), targets=list(TARGETS),
-        source_clean=True, compiler_recipe_base=str(original_build/'compile_commands.json'),
+        source_clean=not diff, source_patch=diff,
+        compiler_recipe_base=str(original_build/'compile_commands.json'),
         compiled_translation_units=len(jobs), shared_unchanged_dependencies=str(base/'run'),
         athena='24.0.41', debug_symbols=False, jobs=args.jobs,
         completed_utc=datetime.datetime.now(datetime.timezone.utc).isoformat())
     (output/'software.json').write_text(json.dumps(manifest, indent=2)+'\n')
+    if args.source_patch:
+        # Register the additional Gaudi property using Athena's own metadata tools.
+        tools = Path('/cvmfs/atlas.cern.ch/repo/sw/software/24.0/AthenaExternals/24.0.41/InstallArea/x86_64-el9-gcc13-opt/bin')
+        env = dict(os.environ, LD_LIBRARY_PATH=str(lib)+':'+os.environ.get('LD_LIBRARY_PATH', ''))
+        generated = scratch/'genconf'
+        generated.mkdir()
+        subprocess.run([str(tools/'listcomponents'), '--output',
+            str(lib/'libFaserActsKalmanFilter.components'), 'libFaserActsKalmanFilter.so'], env=env, check=True)
+        subprocess.run([str(tools/'genconf'), '-o', str(generated), '-p', 'FaserActsKalmanFilter',
+            '--no-init', '-i', 'libFaserActsKalmanFilter.so'], env=env, check=True)
+        shutil.copy2(generated/'FaserActsKalmanFilter.confdb', lib/'FaserActsKalmanFilter.confdb')
+        inputs = generated/'inputs.txt'
+        inputs.write_text(str(generated/'FaserActsKalmanFilter.confdb2_part')+'\n')
+        merge = Path('/cvmfs/atlas.cern.ch/repo/sw/software/24.0/Athena/24.0.41/InstallArea/x86_64-el9-gcc13-opt/cmake/modules/scripts/mergeConfdb2.py')
+        subprocess.run([str(merge), str(lib/'FaserActsKalmanFilter.confdb2'), str(inputs)], env=env, check=True)
+        shutil.copy2(generated/'FaserActsKalmanFilterConf.py',
+            output/'python/FaserActsKalmanFilter/FaserActsKalmanFilterConf.py')
     print(json.dumps(manifest), flush=True)
 
 

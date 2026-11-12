@@ -15,9 +15,24 @@ sys.path.insert(0, str(CODE/'analysis' if (CODE/'analysis').exists() else CODE.p
 
 def run(task, destination):
     started = time.monotonic()
+    if 'input_entries' in task:
+        import ROOT
+        source = ROOT.TFile.Open(task['input'])
+        assert source and not source.IsZombie()
+        observed_entries = int(source.Get('CollectionTree').GetEntries())
+        source.Close()
+        assert observed_entries == task['input_entries']
+        (destination/'input_metadata.json').write_text(json.dumps(dict(
+            input=task['input'], collection_tree_entries=observed_entries,
+            skip=task['skip'], events=task['events']), indent=2)+'\n')
     command = ['python3', task['runner'], '--input', task['input'], '--events', str(task['events']),
         '--skip', str(task['skip']), '--material', task['material'], '--variant', task['variant'],
         '--mask', task.get('mask', '0,1,2,3,4,5')]
+    if task.get('isolate_smoothing', False):
+        command.append('--isolate-smoothing')
+    if task.get('initial_variance_inflation') is not None:
+        command.extend(['--initial-variance-inflation',
+            *map(str, task['initial_variance_inflation'])])
     with Path('reconstruction.log').open('w') as log:
         status = subprocess.run(['/usr/bin/time','-v','-o','resource.txt',*command],
             stdout=log, stderr=subprocess.STDOUT).returncode
@@ -33,6 +48,7 @@ def run(task, destination):
     result = attach_production(Path.cwd())
     assert result['counts']['source_events'] == task['events']
     shutil.copy2('truth_comparison.json',destination/'truth_comparison.json')
+    shutil.copy2('event_counts.npz',destination/'event_counts.npz')
     import ROOT
     ROOT.gROOT.SetBatch(True)
     ROOT.gROOT.ProcessLine('.L '+task['macro'])

@@ -12,6 +12,7 @@ import sys
 import tempfile
 
 TRUTHS = ('native','production','common_native','common_production')
+CASE_LABELS = {'afterGeo_originalVariance': 'afterGeo old var.'}
 COMPONENTS = ('smt','flt','prt')
 LAYERS = [(s,l) for s in [1,2,3] for l in [0,1,2]]
 
@@ -40,6 +41,7 @@ def merge(root, cases):
     for case in cases:
         tasks = json.loads((root/(case+'_tasks.json')).read_text())
         seen = set()
+        ranges = {}
         counts = Counter()
         per_layer = {f'{s}_{l}': Counter() for s,l in LAYERS}
         maximum = 0.
@@ -51,9 +53,14 @@ def merge(root, cases):
             identity = (task['input'],task['skip'],task['events'])
             assert identity not in seen
             seen.add(identity)
+            ranges.setdefault(task['input'], []).append((task['skip'], task['skip']+task['events']))
             source = Path(task['output'])
             assert (source/'exit_code.txt').read_text().strip() == '0', source
             assert json.loads((source/'task.json').read_text()) == task
+            if 'input_entries' in task:
+                metadata = json.loads((source/'input_metadata.json').read_text())
+                assert metadata == dict(input=task['input'], collection_tree_entries=task['input_entries'],
+                    skip=task['skip'], events=task['events'])
             observed = json.loads((source/'truth_comparison.json').read_text())
             assert observed['counts']['source_events'] == task['events']
             counts.update(observed['counts'])
@@ -62,7 +69,10 @@ def merge(root, cases):
             maximum = max(maximum, observed['max_relative_link_vs_production_qop'])
             examples.extend(dict(file_index=task['file_index'], **x) for x in observed['differing_examples'])
             run = json.loads((source/'run.json').read_text())
-            assert run['success'] and not any(run[k] for k in ['audit','reset_event_maps','isolate_smoothing'])
+            assert run['success'] and not any(run[k] for k in ['audit','reset_event_maps'])
+            assert run['isolate_smoothing'] == task.get('isolate_smoothing', False)
+            if task.get('initial_variance_inflation') is not None:
+                assert run['args']['initial_variance_inflation'] == task['initial_variance_inflation']
             resources.append(dict(file_index=task['file_index'], wall_s=run['wall_s'],
                 **json.loads((source/'resources.json').read_text())))
             for truth in TRUTHS:
@@ -139,7 +149,16 @@ def merge(root, cases):
             legacy_worker_key_files=sorted(legacy_files),
             legacy_key_mapping='hist_station_layer cycles 1/2/3 = smt/flt/prt; line colors checked')
         (destination/(case+'_truth_summary.json')).write_text(json.dumps(summary,indent=2)+'\n')
-        coverage['cases'][case] = dict(files=len(seen),source_events=counts['source_events'],
+        if all('input_entries' in task for task in tasks) and not all('smoke' in task['output'] for task in tasks):
+            for path, intervals in ranges.items():
+                end = 0
+                for begin, stop in sorted(intervals):
+                    assert begin == end, (case, path, intervals)
+                    end = stop
+                expected = next(task['input_entries'] for task in tasks if task['input'] == path)
+                assert end == expected, (case, path, end, expected)
+        coverage['cases'][case] = dict(files=len(ranges), shards=len(seen),
+            source_events=counts['source_events'],
             writer_tracks=counts['writer_tracks'], github_selected_tracks=counts['github_selected_tracks'])
         fields=['case','station','layer','stage','truth','states','finite','tail_half','tail_percent',
                 'mean_including_overflow','rms_including_overflow','invalid_truth','invalid_reco','overflow']
@@ -162,6 +181,8 @@ def merge(root, cases):
                             overflow=value[key+'_overflow']))
     comparisons={}
     for first,second in [('beforeGeo','afterGeo'),('afterGeo','afterGeo_strict'),
+                         ('afterGeo','afterGeo_originalVariance'),
+                         ('beforeGeo','afterGeo_originalVariance'),
                          ('afterGeo_f00','afterGeo_mask012'),('afterGeo_f00','afterGeo_4station')]:
         if first not in cases or second not in cases:
             continue
@@ -227,7 +248,8 @@ def overlay(first, second, prefix, title, labels):
                 hist.SetMinimum(0)
                 hist.SetMaximum(1.2*maximum)
                 hist.Draw('hist' if reference==component==0 else 'hist same')
-                leg.AddEntry(hist,labels[reference]+' '+COMPONENTS[component],'l')
+                leg.AddEntry(hist,labels[reference]+' '+COMPONENTS[component]+
+                    f' N={int(hist.GetEntries()):,}','l')
         leg.Draw()
         latex=ROOT.TLatex()
         latex.SetNDC()
@@ -255,6 +277,12 @@ def plot(root,cases):
     destination.mkdir(exist_ok=True)
     reductions=root/'reductions'
     coverage=json.loads((reductions/'coverage.json').read_text())
+    controls=json.loads((root/'inputs.json').read_text())
+    smoothing_label=' | isolated smoothing' if controls.get('isolate_smoothing') else ''
+    def annotated(title):
+        if not controls.get('isolate_smoothing'):
+            return title
+        return '#splitline{'+title+'}{GitHub cuts: #chi^{2}/NDF<20, NDF>9, r_{max}<90 mm | selected CKF sensor states | native FASER / rotated ACTS frames | p residual dimensionless}'
     ROOT.gROOT.ProcessLine('.L '+str(root/'reference/adapted/ckf_residual_perLayer.C'))
     data={(case,truth):read_histograms(reductions/(case+'_'+truth+'_3station.root'),case+'_'+truth)
         for case in cases for truth in TRUTHS}
@@ -268,29 +296,33 @@ def plot(root,cases):
         for truth in ['native','production']:
             reference='SiHit-linked HepMC truth' if truth=='native' else 'Production truth (same majority barcode)'
             prefix=destination/('110051_'+case+'_'+truth+'_nine_layers')
-            os.environ['REFERENCE_SCOPE_LABEL']=f"110051 | {case} | {scope['files']} files | {scope['source_events']:,} source events | {reference}"
+            description=f"110051 | {case} | {scope['files']} files | {scope['source_events']:,} source events | {reference}"+smoothing_label
+            os.environ['REFERENCE_SCOPE_LABEL']=annotated(description)
             ROOT.ckf_residual_perLayer(str(reductions/(case+'_'+truth+'_3station.root')),
-                str(prefix),case,'t_eQOP',True)
-            index.append(dict(name=prefix.name,description=os.environ['REFERENCE_SCOPE_LABEL'],reference='geometryRotation.pdf p17; original GitHub macro'))
-        title=f"110051 | {case} | {scope['files']} files | {scope['source_events']:,} source events | Only truth reference changes"
+                str(prefix),CASE_LABELS.get(case, case),'t_eQOP',True)
+            index.append(dict(name=prefix.name,description=description,reference='geometryRotation.pdf p17; original GitHub macro'))
+        title=f"110051 | {case} | {scope['files']} files | {scope['source_events']:,} source events | Only truth reference changes"+smoothing_label
         prefix=destination/('110051_'+case+'_truth_overlay')
-        canvas,retained=overlay(data[(case,'native')],data[(case,'production')],prefix,title,
+        canvas,retained=overlay(data[(case,'native')],data[(case,'production')],prefix,annotated(title),
             ['SiHit link','Production'])
         index.append(dict(name=prefix.name,description=title,reference='GitHub counts; solid=link, dashed=production'))
         canvas.Close()
         prefix=destination/('110051_'+case+'_common_truth_overlay')
         canvas,retained=overlay(data[(case,'common_native')],data[(case,'common_production')],prefix,
-            title+' | Common finite truth states',['SiHit link','Production'])
+            annotated(title+' | Common finite truth states'),['SiHit link','Production'])
         index.append(dict(name=prefix.name,description=title+' | Common finite truth states',reference='GitHub counts; common truth coverage'))
         canvas.Close()
     for first,second,name in [('beforeGeo','afterGeo','geometry_overlay'),
+                              ('afterGeo','afterGeo_originalVariance','variance_overlay'),
+                              ('beforeGeo','afterGeo_originalVariance','geometry_original_variance_overlay'),
                               ('afterGeo','afterGeo_strict','material_overlay')]:
         if first not in cases or second not in cases:
             continue
         scope=coverage['cases'][first]
-        title=f"110051 | {scope['files']} files | {scope['source_events']:,} source events | SiHit-linked HepMC truth | {first} vs {second}"
+        title=f"110051 | {scope['files']} files | {scope['source_events']:,} source events | SiHit-linked HepMC truth | {first} vs {second}"+smoothing_label
         prefix=destination/('110051_'+name)
-        canvas,retained=overlay(data[(first,'native')],data[(second,'native')],prefix,title,[first,second])
+        canvas,retained=overlay(data[(first,'native')],data[(second,'native')],prefix,annotated(title),
+            [CASE_LABELS.get(first, first), CASE_LABELS.get(second, second)])
         index.append(dict(name=prefix.name,description=title,reference='GitHub-macro histograms; solid=first, dashed=second'))
         canvas.Close()
     # Preserve the individual ROOT vector exports, including their page boxes.

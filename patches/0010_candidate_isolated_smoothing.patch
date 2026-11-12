@@ -1,0 +1,30 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+index ee327a21..6a529f1c 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -271,6 +271,13 @@ StatusCode CKF2::execute() {
+     
+     auto destProxy = selectedTracks.getTrack(selectedTracks.addTrack());
+     destProxy.copyFrom(tracks.getTrack(selected.index), true);  // make sure we copy track states!
++    if (m_isolateSmoothing) {
++      auto status = Acts::GainMatrixSmoother()(gctx, selectedTracks.trackStateContainer(), destProxy.tipIndex(), *m_logger);
++      if (!status.ok()) {
++        ATH_MSG_ERROR("Isolated candidate smoothing failed: " << status.error());
++        return StatusCode::FAILURE;
++      }
++    }
+     
+     if(not allTracks.empty()){ 
+       allTracks.remove_if([&](const TrackInfo &p) {
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+index 44338063..1bd9ea5a 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -94,6 +94,7 @@ private:
+   Gaudi::Property<bool> m_performanceWriter {this, "PerformanceWriter", true};
+   Gaudi::Property<bool> m_noDiagnostics {this, "noDiagnostics", true, "Set ACTS logging level to INFO and do not run performance writer, states writer or summary writer"};
+   Gaudi::Property<bool> m_summaryWriter {this, "SummaryWriter", true};
++  Gaudi::Property<bool> m_isolateSmoothing {this, "IsolateCandidateSmoothing", false};
+   Gaudi::Property<bool> m_statesWriter {this, "StatesWriter", false};
+   Gaudi::Property<bool> m_seedWriter {this, "seedWriter", true};
+   Gaudi::Property<bool> m_alignmentWriter {this, "alignmentWriter", false};
