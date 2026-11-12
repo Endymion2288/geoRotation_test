@@ -1,0 +1,173 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+index 26ad71a9..5ee9e274 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+@@ -34,7 +34,7 @@ StatusCode KalmanFitterTool::initialize() {
+   auto magneticField = std::make_shared<FASERMagneticFieldWrapper>();
+   double reverseFilteringMomThreshold = 0.1; //@todo: needs to be validated
+   //@todo: the multiple scattering and energy loss are originallly turned off 
+-  m_fit = makeTrackFitterFunction(m_trackingGeometryTool->trackingGeometry(), magneticField, true, true, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger); 
++  m_fit = makeTrackFitterFunction(m_trackingGeometryTool->trackingGeometry(), magneticField, true, true, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger, m_wrapSmoothingPhi);
+   return StatusCode::SUCCESS;
+ }
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+index 36a1afa0..56ad94b3 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+@@ -82,6 +82,7 @@ private:
+   Gaudi::Property<std::string> m_actsLogging {this, "ActsLogging", "VERBOSE"};
+   Gaudi::Property<std::size_t> m_minMeasurements {this, "MinMeasurements", 12, "minimum number of measurements of the input track"};
+   Gaudi::Property<double> m_seedCovarianceScale {this, "SeedCovarianceScale", 100, "scale covariance from initial track"};
++  Gaudi::Property<bool> m_wrapSmoothingPhi {this, "WrapRefitSmoothingPhi", false, "Use the periodic phi difference in the native ACTS refit smoother"};
+   Gaudi::Property<bool> m_isMC {this, "isMC", false};
+   Gaudi::Property<bool> m_summaryWriter {this, "SummaryWriter", false};
+   Gaudi::Property<bool> m_statesWriter {this, "StatesWriter", false};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx
+index 4ecf14a4..731554ae 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx
+@@ -1,5 +1,68 @@
+ #include "TrackFitterFunction.h"
+ #include "TrackerRIO_OnTrack/FaserSCT_ClusterOnTrack.h"
++#include "Acts/Utilities/detail/periodic.hpp"
++#include <cmath>
++
++// Diagnostic adapter: retain the actual ACTS 32.0.2 smoother calculation and
++// covariance update, changing only its phi subtraction to the periodic one.
++struct PhiPeriodicGainMatrixSmoother {
++  Acts::Result<void> operator()(const Acts::GeometryContext&,
++      Acts::VectorMultiTrajectory& trajectory, std::size_t entryIndex,
++      const Acts::Logger& logger) const {
++    using Proxy = Acts::VectorMultiTrajectory::TrackStateProxy;
++    Acts::GainMatrixSmoother native;
++    Acts::GainMatrixSmoother::GetParameters filtered, smoothed, predicted;
++    Acts::GainMatrixSmoother::GetCovariance filteredCovariance,
++        predictedCovariance, smoothedCovariance, jacobian;
++    filtered.connect([](const void*, void* state) {
++      return static_cast<Proxy*>(state)->filtered();
++    });
++    smoothed.connect([](const void*, void* state) {
++      return static_cast<Proxy*>(state)->smoothed();
++    });
++    predicted.connect([](const void*, void* state) {
++      return static_cast<Proxy*>(state)->predicted();
++    });
++    filteredCovariance.connect([](const void*, void* state) {
++      return static_cast<Proxy*>(state)->filteredCovariance();
++    });
++    predictedCovariance.connect([](const void*, void* state) {
++      return static_cast<Proxy*>(state)->predictedCovariance();
++    });
++    smoothedCovariance.connect([](const void*, void* state) {
++      return static_cast<Proxy*>(state)->smoothedCovariance();
++    });
++    jacobian.connect([](const void*, void* state) {
++      return static_cast<Proxy*>(state)->jacobian();
++    });
++    auto previous = trajectory.getTrackState(entryIndex);
++    previous.smoothed() = previous.filtered();
++    previous.smoothedCovariance() = previous.filteredCovariance();
++    if (!previous.hasPrevious()) return Acts::Result<void>::success();
++    std::error_code error;
++    trajectory.applyBackwards(previous.previous(), [&](auto state) {
++      const double originalPhi = previous.smoothed()[Acts::eBoundPhi];
++      const double predictedPhi = previous.predicted()[Acts::eBoundPhi];
++      // The temporary 2*pi shift leaves the previous state's direction and
++      // covariance unchanged. Restore its stored chart after the native call.
++      previous.smoothed()[Acts::eBoundPhi] = predictedPhi +
++          Acts::detail::difference_periodic(originalPhi, predictedPhi,
++                                             2. * std::acos(-1.));
++      auto status = native.calculate(&state, &previous, filtered,
++          filteredCovariance, smoothed, predicted, predictedCovariance,
++          smoothedCovariance, jacobian, logger);
++      previous.smoothed()[Acts::eBoundPhi] = originalPhi;
++      if (!status.ok()) {
++        error = status.error();
++        return false;
++      }
++      previous = state;
++      return true;
++    });
++    return error ? Acts::Result<void>::failure(error)
++                 : Acts::Result<void>::success();
++  }
++};
+ 
+ template <typename traj_t>
+ bool FaserActsOutlierFinder::operator()(typename traj_t::ConstTrackStateProxy state) const {
+@@ -29,6 +92,8 @@ struct TrackFitterFunctionImpl final : public TrackFitterFunction {
+ 
+   Acts::GainMatrixUpdater kfUpdater;
+   Acts::GainMatrixSmoother kfSmoother;
++  PhiPeriodicGainMatrixSmoother periodicSmoother;
++  bool wrapSmoothingPhi = false;
+   SimpleReverseFilteringLogic reverseFilteringLogic;
+ 
+   bool multipleScattering = false;
+@@ -46,9 +111,14 @@ struct TrackFitterFunctionImpl final : public TrackFitterFunction {
+     extensions.updater.connect<
+         &Acts::GainMatrixUpdater::operator()<Acts::VectorMultiTrajectory>>(
+         &kfUpdater);
+-    extensions.smoother.connect<
+-        &Acts::GainMatrixSmoother::operator()<Acts::VectorMultiTrajectory>>(
+-        &kfSmoother);
++    if (wrapSmoothingPhi) {
++      extensions.smoother.connect<&PhiPeriodicGainMatrixSmoother::operator()>(
++          &periodicSmoother);
++    } else {
++      extensions.smoother.connect<
++          &Acts::GainMatrixSmoother::operator()<Acts::VectorMultiTrajectory>>(
++          &kfSmoother);
++    }
+     extensions.reverseFilteringLogic
+         .connect<&SimpleReverseFilteringLogic::doBackwardFiltering>(
+             &reverseFilteringLogic);
+@@ -79,9 +149,14 @@ struct TrackFitterFunctionImpl final : public TrackFitterFunction {
+     extensions.updater.connect<
+         &Acts::GainMatrixUpdater::operator()<Acts::VectorMultiTrajectory>>(
+         &kfUpdater);
+-    extensions.smoother.connect<
+-        &Acts::GainMatrixSmoother::operator()<Acts::VectorMultiTrajectory>>(
+-        &kfSmoother);
++    if (wrapSmoothingPhi) {
++      extensions.smoother.connect<&PhiPeriodicGainMatrixSmoother::operator()>(
++          &periodicSmoother);
++    } else {
++      extensions.smoother.connect<
++          &Acts::GainMatrixSmoother::operator()<Acts::VectorMultiTrajectory>>(
++          &kfSmoother);
++    }
+     extensions.reverseFilteringLogic
+         .connect<&SimpleReverseFilteringLogic::doBackwardFiltering>(
+             &reverseFilteringLogic);
+@@ -142,7 +217,7 @@ std::shared_ptr<TrackFitterFunction> makeTrackFitterFunction(
+     bool multipleScattering, bool energyLoss,
+     double reverseFilteringMomThreshold,
+     Acts::FreeToBoundCorrection freeToBoundCorrection,
+-    const Acts::Logger& logger) {
++    const Acts::Logger& logger, bool wrapSmoothingPhi) {
+   // Stepper should be copied into the fitters
+   const Stepper stepper(std::move(magneticField));
+ 
+@@ -165,6 +240,7 @@ std::shared_ptr<TrackFitterFunction> makeTrackFitterFunction(
+   fitterFunction->reverseFilteringLogic.momentumThreshold =
+       reverseFilteringMomThreshold;
+   fitterFunction->freeToBoundCorrection = freeToBoundCorrection;
++  fitterFunction->wrapSmoothingPhi = wrapSmoothingPhi;
+ 
+   return fitterFunction;
+ }
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.h
+index f3cd2fc7..849d737e 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.h
+@@ -100,7 +100,7 @@ std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+ bool multipleScattering, bool energyLoss,
+ double reverseFilteringMomThreshold,
+ Acts::FreeToBoundCorrection freeToBoundCorrection,
+-const Acts::Logger& logger);
++const Acts::Logger& logger, bool wrapSmoothingPhi = false);
+ 
+ 
+ //}  // namespace

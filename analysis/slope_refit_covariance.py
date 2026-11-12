@@ -31,13 +31,18 @@ def paired_fraction_change(entries, before, after, selected, count):
 
 def ckf_closure(paths, baseline):
     result=[]
+    def source_key(path):
+        task=json.loads((path/'source_task.json').read_text())
+        return task['input'],task['skip'],task['events']
+    original={source_key(path):path for path in (baseline/paths[0].parent.name).glob('s*')}
     for p in paths:
         actual=archive(p/'native_states.npz')
-        native=archive(baseline/p.parent.name/p.name/'native_states.npz')
+        reference=original[source_key(p)]
+        native=archive(reference/'native_states.npz')
         ia,ib=np.isin(actual['stage'],[1,3,4,5]),np.isin(native['stage'],[1,3,4,5])
         for key in ['entry','track_index','stage','values','charge','station','layer']:
             assert np.array_equal(actual[key][ia],native[key][ib],equal_nan=True),(p,key)
-        result.append(dict(shard=p.name,seed_CKF_values_and_identity_equal=True,rows=int(ia.sum())))
+        result.append(dict(shard=p.name,original_shard=str(reference),seed_CKF_values_and_identity_equal=True,rows=int(ia.sum())))
     return result
 
 

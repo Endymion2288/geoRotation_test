@@ -43,13 +43,18 @@ def main():
     command=[sys.executable,str(simulation),'digitize',*common,
              '--input',str(scratch/'simulate/diagnostic.HITS.pool.root')]
     run(command,scratch/'digitize',output/'digitize')
-    for variant,cluster_mode in [(v,m) for v in task['variants'] for m in task.get('cluster_modes',['native'])]:
-        label=variant if cluster_mode=='native' else variant+'_'+cluster_mode
+    modes=task.get('reconstruction_modes')
+    if modes is None:
+        modes=[dict(variant=v,cluster_mode=m,label=v if m=='native' else v+'_'+m)
+               for v in task['variants'] for m in task.get('cluster_modes',['native'])]
+    for mode in modes:
+        variant,label=mode['variant'],mode['label']
         source=dict(input=str(scratch/'digitize/diagnostic.RDO.pool.root'),events=task['events'],skip=0,
             sample_entry=0,file_index=task.get('file_index',0),variant=variant,dsid=str(task['pdg']),
             material=task['materials'][variant],runner=str(code/'configs/slope_tracking.py'),
             output=str(output/label),options=['--actual-covariance','--no-seed-writer'])
-        if cluster_mode=='truth_position':source['options'].append('--truth-cluster-position')
+        if mode.get('cluster_mode')=='truth_position':source['options'].append('--truth-cluster-position')
+        source['options'].extend(mode.get('options',[]))
         sourcefile=scratch/(label+'_source.json')
         sourcefile.write_text(json.dumps(source,indent=2)+'\n')
         library=Path(task['libraries'][variant])

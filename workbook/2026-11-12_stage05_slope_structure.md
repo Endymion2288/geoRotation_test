@@ -1,6 +1,6 @@
 # S05：角度结构定位与实测进展
 
-本阶段尚未通过 A1–A5 完整验收。已完成 100044 的 500,000-event beforeGeo/afterGeo 重建、物理角度与原 writer 闭合、预留样本响应检验及真实 Calypso/G4 控制。**历史表达式存在 frame/选样问题；segment 在 seed 之前已有 strip 周期结构；VetoNu 残差的主要宽度与实际靶材料散射相符。旋转前近零尖峰及旋转后剩余肩峰仍需逐阶段和最小控制完成定位。**
+本阶段尚未通过 A1–A5 完整验收。已完成 100044 的 500,000-event beforeGeo/afterGeo 重建、物理角度与原 writer 闭合、预留样本响应检验及真实 Calypso/G4 控制。**历史表达式存在 frame/选样问题；strip coordinate 造成 seed 之前的 segment 周期结构，并对最终 st1 两个肩峰有独立40k事件的配对证据；VetoNu 残差的主要宽度与实际靶材料散射相符。旋转前近零增强已定位到 refit smoothing，具体数值原因正在用原生 Calypso 最小控制验证。**
 
 结果根目录：`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage05_slopes`，下文记为 `S`。本报告保存已经测得的结果；后续补充不修改原 discovery 窗口和运行快照。
 
@@ -127,9 +127,33 @@ afterGeo 已审计 4000 events（`[0,2000)` 与 `[250000,252000)`），3452 条 
 
 beforeGeo 的 refit filtered→smoothed 由 3.2277% 增至 6.2248%，afterGeo 为 1.9120%→2.2945%。beforeGeo 完整 cohort 覆盖 1735/1758 条该选样 final、108/109 条近零 final；afterGeo 为 1569/1590、36/36。改用 truth-p 窗口时 beforeGeo 同一分母1579中的近零条数为35→55，afterGeo 同一分母1559为26→32；sensor 面也有对应增强。这定位到 refit smoothing，不能归因于 final writer 或 st1 外推。尚不能仅凭 stage 计数将全部近零增强归为某个实现缺陷。完整分母、1000次 event-bootstrap 区间及 seed population 在 `S/native_stage_analysis_v3/{beforeGeo,afterGeo}/summary.json`；每版有10张PNG/逐图PDF和10页汇编。
 
-后续单因素为原生 `KalmanFitterTool1.SeedCovarianceScale` 的1/10/100对照；CKF配置、输入、geometry和material固定。两版 CKF2Config 实际将此值设为10，C++类默认100。最初 smoke 错将100当成名义配置，逐值验证发现 final 差异后已在 `S/refit_covariance_controls_v1/baseline_correction.json` 更正：100是敏感性变化，原配置为10。补做的 scale10 20-event/版本 smoke 的 events/truth/tracks/segments/native_states 全部保存字段与原基线逐值一致，见 `native_smoke_validation.json`。生产对照每个配置为10000 events，正在执行；固定原 CKF candidate 的分析入口为 `analysis/slope_refit_covariance.py`，最终配对结论**未测量**。
+后续单因素为原生 `KalmanFitterTool1.SeedCovarianceScale` 的1/10/100对照；CKF配置、输入、geometry和material固定。两版 CKF2Config 实际将此值设为10，C++类默认100。最初 smoke 错将100当成名义配置，逐值验证发现 final 差异后已在 `S/refit_covariance_controls_v1/baseline_correction.json` 更正：100是敏感性变化，原配置为10。补做的 scale10 20-event/版本 smoke 的 events/truth/tracks/segments/native_states 全部保存字段与原基线逐值一致，见 `native_smoke_validation.json`。生产对照每个配置为10000 events，12个jobs已全部exit0；分析入口为 [slope_refit_covariance.py](../analysis/slope_refit_covariance.py)。
+
+固定原scale10候选、原majority、原native-p=50–250 GeV窗口、primary/purity/long和validation范围，不按改变后的动量重选。这个cohort包含前述未获得完整refit state链的少量候选，因此分母为1758/1590，与逐stage表1735/1569不同：
+
+| refit scale | beforeGeo近零数/1758 | 相对原scale10变化及95%区间 / 百分点 | afterGeo近零数/1590 |
+| --- | ---: | ---: | ---: |
+| 1 | 67 | −2.3891 [−3.5502,−1.1434] | 35 |
+| 10（原配置） | 109 | 0 | 36 |
+| 100 | 103 | −0.3413 [−1.5093,+0.8766] | 35 |
+
+scale1的beforeGeo完整same-hit子组1739条中近零64条，配对变化−2.5302 [−3.7321,−1.3019]个百分点；truth-p窗口同分母1595条56→40，变化−1.0031 [−1.8150,−0.1952]个百分点。故scale1差别在固定原动量选择及相同hits时仍存在。三组全部seed/CKF保存向量、事件、truth和segments逐值相同；scale10全部final字段与原10k逐值闭合。afterGeo两个非原scale的变化均为−0.0629个百分点，区间[−0.1946,0]。
+
+原scale10的beforeGeo cohort中，186条有refit smoothed φ超出[−π,π]、154条有θ超出[0,π]、54条有|φ_smt−φ_prt|>π；109条近零track中对应为46/46/15条。afterGeo三个scale的这些flags均为0。越界/相关性用于定位数值问题，不把所有近零tracks归给单一flag，也不将缩小covariance的敏感性结果当作正式修复。
+
+在同一原native-p cohort内，beforeGeo的misID counts（scale1/10/100）为39/37/87，动量负尾为88/191/268；afterGeo为3/5/11及35/32/32。缩小scale1时近零峰及动量负尾减少，但没有证据说明电荷误判同时改善。
+
+结果在 `S/refit_covariance_analysis_v2/{beforeGeo,afterGeo}`，各有1张PNG/逐图PDF及报告。首轮归约1573944用目录名把诊断s0001关联到不存在的原生s0001，实际同一source range在原任务名为s0050，因而在读数据阶段失败；v2按输入路径、skip和events关联源shard，保留全部state/candidate断言，只重做统计（1573947），没有重复重建。
 
 新增 raw angle 诊断保留真实 native writer 的逐measurement φ、θ、q/p及对角误差，未在分析中重新拟合。scale100 smoke 中 beforeGeo refit 出现 φ超出[−π,π]、θ<0，afterGeo未出现相同现象；这是扩大 covariance 的受控配置中的线索，不当作原配置的定量结论。ACTS32.0.2 对应发布源码 [GainMatrixSmoother.cpp](https://github.com/acts-project/acts/blob/v32.0.2/Core/src/TrackFitting/GainMatrixSmoother.cpp) 使用普通参数差分；当前 upstream 已使用 periodic bound-parameter subtraction 和 normalization。这提供检查角度 chart crossing 的具体路径，仍需实际 Calypso 单因素和独立输入验证。
+
+为验证该具体假设，在同一 master commit 的实际 Calypso worktree `geoRotation_calypso_slope_refit` 实现 [0011](../patches/0011_refit_periodic_phi.patch)。新属性 `KalmanFitterTool1.WrapRefitSmoothingPhi` 默认 false；true 保留 ACTS32 原 `GainMatrixSmoother::calculate` 的 gain/covariance 运算，只将 smoother 中的 φ 差分改为2π周期差分；不改 θ normalization、CKF、refit forward 或 covariance scale。编译 cluster1573937 成功，53个实际 translation units，构建和完整 patch 冻结在 `S/periodic_refit_v1/build`。软件由原 `S/software_before` 叠加新编译的实际组件和 Gaudi metadata 组成，逐文件来源见 `software/software.json`。
+
+20-event off/on smoke（1573939）均exit0：关闭属性时，events/truth/tracks/segments/native_states 全部保存字段与原20-event基线逐值相同；开启时 events/truth/segments、80条 seed/CKF states 和38条 refit P/F states仍逐值相同。19条 refit S 中1条变化；这是受控开关工作的验证，不能由20事件判断峰因果。对应验证为 `native_smoke_validation.json`、`periodic_smoke_validation.json`。相同两个5k ranges的10k/模式原生生产控制1573940四jobs及归约1573950均exit0，结果在 `S/periodic_refit_analysis_v1/rdo`。原native-p同一1758条中近零109→104，变化−0.2844个百分点 [−0.6488,0]；truth-p同一1595条56→56，变化0 [−0.2456,+0.2500]个百分点；全p同一4348条320→318，变化−0.0460 [−0.2930,+0.1661]个百分点。**周期φ差分不能解释大部分近零增强。** 所有off final字段及原生states与原10k基线精确闭合，on的seed/CKF及refit P/F原生state也逐值相同。
+
+独立 full G4/digi 的2-event pipeline smoke1573941全部步骤exit0，随后μ±各2000events三模式生产1573948及归约1573952全部完成。在各自固定native p窗口中，μ+同一1974条近零54→54，变化0 [−0.1514,+0.1511]个百分点；μ−同一1973条51→50，变化−0.0507 [−0.1563,0]个百分点。两模式的效率均为μ+1982/2000、μ−1980/2000；misID counts为1/0、动量负尾counts为4/3，前后分别相同。独立输入同样不支持周期φ差分是主要成因。结果在 `S/periodic_gun_analysis_v1/results`。统计入口为 [slope_periodic_refit.py](../analysis/slope_periodic_refit.py)，已用同一真实20-event数据完成3页分析smoke。
+
+下一最小控制在实际 master Calypso 的独立worktree `geoRotation_calypso_slope_canonical` 中增加 `CanonicalRefitSmoothingAngles=false`，补丁[0012](../patches/0012_refit_canonical_angles.patch)为可直接应用于master的完整替代patch。开启时每次实际smoother更新后调用ACTS已有 `normalizePhiTheta`；θ跨pole反射时同步翻转smoothed covariance的θ行/列，保持该等价chart的一阶误差变换。保留真实gain/covariance计算、scale10、前向拟合和CKF，不截断物理方向。默认off、periodic-only及canonical三组先做20-event闭合，再做固定原输入及独立G4。编译1573951进行中；尚无该控制的物理结果，不称为修复。
 
 ### VetoNu 实际材料与完整 G4
 
@@ -164,9 +188,21 @@ false 的 20-event smoke 与原 afterGeo observer 数据逐值一致。生产 RD
 
 独立 full G4 在 st1 z=0、x/y±30 mm、slopes±5 mrad 均匀发射 100 GeV μ±，各 2000 events。同一次 G4/digi 的 RDO 各做两种坐标重建。station-1 segment 谐波 μ+ 0.27034→0.01685、μ− 0.26915→0.02887；效率 μ+ 93.85%→99.90%、μ− 94.40%→99.95%。完整同 hits 的 1613/1617 对中，final st1 harmonic 变化 95% 区间分别 [−0.00538,+0.00227]、[−0.00688,+0.00369]，均含零。
 
-`S/cluster_rdo_v2` 已将生产RDO配对范围扩展到 `[0,25000)` 和 `[250000,275000)` 共50000 events；原10000 truth-coordinate结果和全量native基线全部复用，只新增40000 events的同一Calypso重建。8个jobs为cluster1573932。新增范围的 same-hit 最终谐波、冻结窗口变化和区间**未测量**；不得沿用10k的区间标作50k。
+`S/cluster_rdo_v2` 将生产RDO配对范围扩展到 `[0,25000)` 和 `[250000,275000)` 共50000 events；原10000 truth-coordinate结果和全量native基线全部复用，只新增40000 events的同一Calypso重建。8个jobs（1573932）均exit0。50k中 native / truth-coordinate 的 matched pure long 为43186/44619，truth效率86.370% [86.076,86.682]% / 89.238% [88.974,89.524]%；misID 为305/43186 / 132/44619，动量负尾为747/43186 / 401/44619。此为各配置自己的总体分母；下面的方向控制另固定同一粒子和完整hit集合。
 
-**证据支持 segment 的周期首先来自 measured strip coordinate；尚不能把最终肩峰的全部幅度归因于该机制。** 生产及独立 gun 的结果在 `S/centroid_analysis_v1/{rdo,gun}/`，包含同 hits 配对、逐事件统计、PNG/PDF 和 source manifests。
+50k有14380对 same-hit、native p=50–250 GeV tracks，st1 几何谐波幅度0.0297546→0.00637219，配对变化−0.0233824，95% event-bootstrap [−0.0282167,−0.00810037]。为避免最初10k发现样本进入验证，只用新增40k（与原两个5k ranges不重叠）另做独立归约：34504个共同particles，31176对完整hits相同，native-p窗口11511对；谐波0.0275040→0.00663039，变化−0.0208736 [−0.0267572,−0.00461191]。VetoNu对应变化−0.00086197 [−0.00741790,+0.00708119]，区间含零。
+
+冻结主分析 discovery 窗口后，只增加窗口统计而保持上述全部既有字段逐项相同，验证见 `S/centroid_windows_v1/validation.json`。下表为独立40k中的同一11511对tracks，所有窗口在看该对照之前已冻结；变化以**百分点**表示，CI为500次source-event bootstrap：
+
+| st1窗口中心 | native entries | truth-coordinate entries | 占比变化及95%区间 / 百分点 |
+| --- | ---: | ---: | ---: |
+| −1.89 mrad，半宽0.5 mrad | 1611 | 1619 | +0.0695 [−0.1079,+0.2617] |
+| −0.71 mrad，半宽0.107219 mrad | 358 | 329 | −0.2519 [−0.4256,−0.0653] |
+| +0.59 mrad，半宽0.1 mrad | 260 | 234 | −0.2259 [−0.3929,−0.0602] |
+
+50k的对应两肩窗口453→417、323→293，与独立40k方向一致。−1.89 mrad宽核窗口及VetoNu两个窗口的变化区间均含零。**证据支持 measured strip coordinate 既产生 segment 周期，又对最终 st1 两肩有可重复的贡献；不将该小幅窗口变化解释为肩峰全部面积或全部物理成因。** 生产50k与独立40k结果位于 `S/centroid_windows_v1/{full50k,independent40k}`，各有两张PNG/逐图PDF及2页图集；原独立G4结果保留于 `S/centroid_analysis_v1/gun/`。
+
+![Independent 40k same-hit centroid control](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage05_slopes/centroid_windows_v1/independent40k/production_muplus_same_hits.png)
 
 ## 图表、执行与验证
 
@@ -189,19 +225,37 @@ python3 scripts/submit_momentum.py \
   --exclude-schedd bigbird21.cern.ch
 ```
 
-批量全部经 Condor；每次提交重新比较 schedd，选择兼容的最低 running+idle bigbird20，排除已有 EOS 兼容失败的 bigbird21。源任务、schedd 广告/队列、资源和 cluster ID 保存于 `S` 下对应 `*_worker/submission.json`；home 只保存小型 submit。已完成归约包括 production centroid 1573899、独立 gun 分析1573903、图1573910、近零统计1573911、native stage1573922和phase response1573925；最后两组全部exit0。其24张PNG完整性、24份逐图PDF和10/10/2/2页汇编已验证，记录在 `S/native_stage_analysis_v3/file_validation.json`。已目视beforeGeo st1逐阶段图和afterGeo新phase response图。refit控制1573926/1573927/1573929、新增cluster-coordinate1573932的完整归约仍未完成。
+批量全部经 Condor；每次提交重新比较 schedd，选择兼容的最低 running+idle bigbird20，排除已有 EOS 兼容失败的 bigbird21。源任务、schedd 广告/队列、资源和 cluster ID 保存于 `S` 下对应 `*_worker/submission.json`；home 只保存小型 submit。已完成归约包括 production centroid 1573899、独立 gun 分析1573903、图1573910、近零统计1573911、native stage1573922和phase response1573925；最后两组全部exit0。其24张PNG完整性、24份逐图PDF和10/10/2/2页汇编已验证，记录在 `S/native_stage_analysis_v3/file_validation.json`。已目视beforeGeo st1逐阶段图和afterGeo新phase response图。50k及独立40k归约1573933/1573935、冻结窗口1573938、refit covariance归约1573947、周期φ差分生产1573940及归约1573950、独立G4生产1573948、响应分组系统项1573946和独立周期φ分析1573952均exit0；canonical编译1573951正在执行。
 
-基础及 S05 共24个单测通过；当前工作区另有3个S04 covariance单测同样通过，不计入本次S05提交。新增回归覆盖native state identity重排及response的相同coverage比较；新增native writer归约已用两版真实20-event原配置smoke验证，保存字段逐值闭合。六份变更Python程序的py_compile和git diff --check通过。`S/patch_validation_v1/validation.json` 记录0006–0009可应用且与实际源码对应内容相同。五类共3280个frozen histograms已通过bin counts、sumw2、flows/invalid、共同物理分箱、完整覆盖检查，记录于 `S/figure_counts_validation_v1/results/count_validation.json`。A5最终来源表尚未完成。
+基础及 S05 共25个单测通过，另有3个S04 covariance单测同样通过；新增common-validation-support回归确认统一验证覆盖不裁掉训练样本，全部28个测试通过。native writer归约已用两版真实20-event原配置smoke验证，保存字段逐值闭合。新增Python分析的py_compile和git diff --check通过。`S/patch_validation_v1/validation.json` 记录0006–0009可应用且与实际源码对应内容相同。五类共3280个frozen histograms已通过bin counts、sumw2、flows/invalid、共同物理分箱、完整覆盖检查，记录于 `S/figure_counts_validation_v1/results/count_validation.json`。50k/40k新增4张PNG、4份逐图PDF及两份2页图集验证于 `S/centroid_windows_v1/figure_validation.json`，独立40k同hit图已目视。A5最终来源表尚未完成。
+
+本轮refit covariance、周期φ RDO/独立gun、响应系统项共15张PNG、15份逐图PDF及1/1/3/6/2/2页图集均通过完整性/页数检查；114个新control histograms的counts、sumw2、flows/invalid闭合。各响应模型的共同观测逐bin相同，窗口common+uncovered与full counts精确相加，验证位于 `S/refit_response_validation_v1/validation.json`。已目视beforeGeo covariance、production st1周期φ和afterGeo st1响应系统项。
+
+响应分组系统项使用 [slope_response_systematics.py](../analysis/slope_response_systematics.py)：phase bins=4/8/16、phase8细p分组、phase8细x/y分组，五种选择均只用discovery学习response/效率；在其共同covered validation truth上比较相同观测，再把未覆盖窗口entries全部算入未解释余量上界。两个版本任务1573946均exit0，结果位于 `S/response_systematics_v1/{beforeGeo,afterGeo}`。每版本仍以完整500k source events构造discovery/validation，只有条件response的验证支持域取交集；训练样本不裁掉。
+
+afterGeo st1共同覆盖66781/78360条，VetoNu64236/78360条；fine-position分组的稀疏cells是交集缩小的主要来源，不能隐藏其未覆盖部分。下表为afterGeo冻结窗口；CI采用各模型逐窗口event-bootstrap区间的包络，分母均为该plane全部78360条validation reco。"保守余量"再把未覆盖窗口全部entries分配给额外正过量，不将其解释为已经发现的异常：
+
+| plane与窗口中心 | common covered observed | 五模型prediction范围 | covered差值95%包络 / entries | 未覆盖窗口entries | 全validation保守正过量余量 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| st1 −1.89 mrad，半宽0.5 | 10732 | 10642.25–10691.29 | [−60.90,+182.86] | 802 | ≤1.2568% |
+| st1 −0.71 mrad，半宽0.107219 | 2306 | 2278.38–2353.50 | [−100.74,+106.90] | 246 | ≤0.4504% |
+| st1 +0.59 mrad，半宽0.1 | 1378 | 1297.97–1368.39 | [−39.62,+123.92] | 350 | ≤0.6048% |
+| VetoNu −0.37 mrad，半宽0.164045 | 3596 | 3562.77–3587.90 | [−102.49,+141.26] | 319 | ≤0.5874% |
+| VetoNu +0.43 mrad，半宽0.5 | 10945 | 10946.43–11001.33 | [−223.18,+175.33] | 936 | ≤1.4182% |
+
+这些是声明过的五种分组系统变化和固定窗口内的实测范围，不是全局/同时置信上限，也不覆盖任意更窄的未知峰模型。结合独立40k coordinate控制，它们支持"truth/效率/测量响应的混合可重现主要肩部，strip coordinate提供其中一项周期贡献"；不声称所有未覆盖条件已被解释。beforeGeo对应两肩的保守余量为0.3221%/0.3754%，但它们不是其近零异常的窗口，不用该响应自洽性排除已定位的refit问题。
+
+最终汇编入口为 [slope_final_artifacts.py](../analysis/slope_final_artifacts.py) 和 [图组catalog](../configs/slope_report_catalog.json)，要求25组参考/控制报告及相应证据全部存在后才生成统一PDF和逐图索引；canonical控制尚未完成，当前没有声称最终图集或A5验收通过。
 
 ## 阶段性结论与剩余工作
 
 | 结构 | 已测证据 | 当前判断与未完成验收 |
 | --- | --- | --- |
 | legacy angle 大范围失真、历史 pz 窗口骤减 | 实际 Ntuple 与物理 frame/原宏闭合 | writer/表达式问题已定位；主物理图使用同面正确 slope |
-| segment 周期梳状结构 | full RDO 与独立 G4 的 locX 单因素均大幅抑制 | measured coordinate 来源有独立验证；对最终 shoulders 的量化映射未闭合 |
+| segment 周期梳状结构、final st1两肩 | full RDO 与独立 G4 的 locX 单因素，独立40k same-hit final谐波及冻结窗口变化 | measured coordinate 来源有独立验证；已量化对两肩的贡献，不归因其全部面积 |
 | VetoNu 的 mrad 宽度 | 真实 geometry≈250 X0，full G4 的 100/250 宽度比与 1/p 相符 | 靶散射是宽度主要来源；不是本征 tracker 分辨率 |
 | 逐 state shared smoothing 异常 | 恒等式在隔离后恢复，但 final 逐值不变 | 解释逐 state 污染，不解释该批 final 结构 |
-| beforeGeo 近零尖峰 | 同候选10k/版本定位到refit smoothing；truth-p和sensor面仍增强 | 已定位stage；固定CKF的refit covariance对照和角度chart检查进行中，程序原因未完成 |
-| afterGeo −0.71/+0.59 mrad shoulders | 相同covered分组的phase response预测、窗口均值和宽度区间均相容 | covered证据支持条件响应；未覆盖reco、模型系统项及50k same-hit控制仍需验收 |
+| beforeGeo 近零尖峰 | 同候选10k/版本定位到refit smoothing；scale1使固定cohort近零109→67；周期φ仅109→104，独立gun也无主要效果 | 原始covariance/chart对其有作用；仅φ差分解释不足；θ规范化及其C变换控制进行中，程序原因未完成 |
+| afterGeo −0.71/+0.59 mrad shoulders | 相同covered分组的phase response；独立40k strip-coordinate配对；五种分组与未覆盖余量 | 支持谱/效率/测量response混合及strip周期贡献；冻结窗保守额外正过量余量为全validation的0.4504%/0.6048%，不声称全条件或任意窄峰均已排除 |
 
-下一步领取refit covariance固定CKF对照与50k strip-coordinate配对结果，在原配置统计角度chart crossings和峰区组成，再对具体原因做Calypso最小修改及独立输入检验。完成条件响应与未覆盖部分余量表、统一总PDF/index和A1–A5逐项审计。本报告不将尚未解释的结构转移到后续阶段以宣称S05完成。
+下一步验证canonical角度chart控制的真实Calypso编译、off/on闭合、固定10k和独立full-G4结果；若仍不能解释近零峰，继续检查ACTS→Trk→refit covariance basis，不把本次φ负结果当作终点。补齐最终来源表、统一总PDF/index和A1–A5逐项审计。本报告不将尚未解释的结构转移到后续阶段以宣称S05完成。

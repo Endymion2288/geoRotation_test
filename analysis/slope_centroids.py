@@ -37,9 +37,11 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('mode',choices=['rdo','gun'])
     parser.add_argument('--root',type=Path,required=True)
+    parser.add_argument('--reference',type=Path,help='Frozen discovery peak_windows.json; optional paired window fractions')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     manifest=json.loads((args.root/'manifest.json').read_text())
+    windows=json.loads(args.reference.read_text())['windows'] if args.reference else {}
     cases={'production_muplus':[(Path(p['baseline']),Path(p['truth_position'])) for p in manifest['pairs']]} if args.mode=='rdo' else {
         str(pdg):[(Path(s['output'])/'afterGeo',Path(s['output'])/'afterGeo_truth_position')
                  for s in manifest['sources'] if s['pdg']==pdg] for pdg in [-13,13]}
@@ -118,17 +120,32 @@ def main():
                 axes[i].stairs(ha['counts'],ha['edges'],label='Truth coordinates')
                 axes[i].set(title=plane,xlabel='Physical sy',ylabel='Same-hit tracks / bin');axes[i].legend(fontsize=8);axes[i].grid(alpha=.2)
                 zb,za=np.exp(2j*np.pi*vb/(.08/63.)),np.exp(2j*np.pi*va/(.08/63.))
+                frozen=windows.get(plane+'|reco_p_window',[])
+                before_windows=np.array([np.abs(vb-w['center'])<w['half_width'] for w in frozen]).T
+                after_windows=np.array([np.abs(va-w['center'])<w['half_width'] for w in frozen]).T
+                window_bootstrap=[]
                 # Paired event bootstrap retains the native/ideal correlation.
                 rng=np.random.default_rng(50561);delta=[]
                 for _ in range(500):
                     w=rng.multinomial(count,np.full(count,1./count))[ids]
-                    if w.sum():delta.append(abs(np.sum(w*za)/w.sum())-abs(np.sum(w*zb)/w.sum()))
+                    if w.sum():
+                        delta.append(abs(np.sum(w*za)/w.sum())-abs(np.sum(w*zb)/w.sum()))
+                        if frozen:window_bootstrap.append((w@after_windows-w@before_windows)/w.sum())
                 case['paired']['planes'][plane]=dict(native=hb,truth_position=ha,
                     native_harmonic=harmonic(vb,ids,.08/63.,count),truth_position_harmonic=harmonic(va,ids,.08/63.,count),
                     harmonic_amplitude_change=float(abs(za.mean())-abs(zb.mean())),
                     amplitude_change_interval_95=np.quantile(delta,[.025,.975]).tolist(),
                     max_absolute_slope_change=float(np.max(np.abs(va-vb),initial=0)),
                     rms_slope_change=float(np.sqrt(np.mean((va-vb)**2))))
+                if frozen:
+                    case['paired']['planes'][plane]['frozen_windows']=[dict(window=window,
+                        denominator=len(vb),native_entries=int(before_windows[:,j].sum()),
+                        truth_position_entries=int(after_windows[:,j].sum()),
+                        native_fraction=float(before_windows[:,j].mean()),
+                        truth_position_fraction=float(after_windows[:,j].mean()),
+                        paired_fraction_change=float(after_windows[:,j].mean()-before_windows[:,j].mean()),
+                        paired_fraction_change_interval_95=np.quantile(np.array(window_bootstrap)[:,j],[.025,.975]).tolist(),
+                        bootstrap_repeats=500,unit='source event') for j,window in enumerate(frozen)]
             fig.suptitle(f'Fixed truth and cluster identifiers | {name} | {count:,} source events\nNative total p = 50-250 GeV; candidate membership fixed; only measurement coordinates change')
             save(fig,args.output,name+'_same_hits',report)
             result['cases'][name]=case

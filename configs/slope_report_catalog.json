@@ -1,0 +1,157 @@
+{
+  "reports": [
+    {
+      "name": "100044 reference distributions",
+      "path": "figures_v2/100044/slope_reference_report.pdf",
+      "index": "figures_v2/100044/index.json",
+      "source": "100044 native before/after; 500k",
+      "reference": "problem.pdf p4; geometryRotation.pdf p19-20,p23"
+    },
+    {
+      "name": "100116 reference distributions",
+      "path": "figures_v2/100116/slope_reference_report.pdf",
+      "index": "figures_v2/100116/index.json",
+      "source": "100116 native before/after; 10k",
+      "reference": "problem.pdf p4; geometryRotation.pdf p19-20,p23"
+    },
+    {
+      "name": "100117 reference distributions",
+      "path": "figures_v2/100117/slope_reference_report.pdf",
+      "index": "figures_v2/100117/index.json",
+      "source": "100117 native before/after; 10k",
+      "reference": "problem.pdf p4; geometryRotation.pdf p19-20,p23"
+    },
+    {
+      "name": "110033 reference distributions",
+      "path": "figures_v2/110033/slope_reference_report.pdf",
+      "index": "figures_v2/110033/index.json",
+      "source": "110033 native before/after; 10k/all5files",
+      "reference": "problem.pdf p4; geometryRotation.pdf p19-20,p23"
+    },
+    {
+      "name": "110051 reference distributions",
+      "path": "figures_v2/110051/slope_reference_report.pdf",
+      "index": "figures_v2/110051/index.json",
+      "source": "110051 native before/after; 20k/all20files",
+      "reference": "problem.pdf p4; geometryRotation.pdf p19-20,p23"
+    },
+    {
+      "name": "Free-direction closure",
+      "path": "controls_analysis_v1/direction/controls_report.pdf",
+      "source": "Actual Calypso propagation; 294 equivalent free states per version"
+    },
+    {
+      "name": "Full G4 material validation",
+      "path": "controls_analysis_v1/gun/controls_report.pdf",
+      "source": "Actual Calypso full G4/digi; mu+/- at 100/250 GeV"
+    },
+    {
+      "name": "AfterGeo audit stages",
+      "path": "stage_analysis_v2/results/stage_report.pdf",
+      "source": "Actual Calypso audit; 4000 source events"
+    },
+    {
+      "name": "Independent centroid gun",
+      "path": "centroid_analysis_v1/gun/centroid_control.pdf",
+      "source": "Full G4/digi; mu+/- 2000 events per charge"
+    },
+    {
+      "name": "Centroid 50k",
+      "path": "centroid_windows_v1/full50k/centroid_control.pdf",
+      "source": "Production RDO; native/truth-coordinate; 50000 source events"
+    },
+    {
+      "name": "Independent centroid 40k",
+      "path": "centroid_windows_v1/independent40k/centroid_control.pdf",
+      "source": "Disjoint from initial 10k; frozen same-hit control"
+    },
+    {
+      "name": "Periodic phi control",
+      "path": "periodic_refit_analysis_v1/rdo/periodic_refit_report.pdf",
+      "source": "Native Calypso; 10000 RDO source events per mode"
+    },
+    {
+      "name": "Independent periodic phi gun",
+      "path": "periodic_gun_analysis_v1/results/periodic_refit_report.pdf",
+      "source": "Full G4/digi; mu+/- 2000 events per charge"
+    },
+    {
+      "name": "Canonical angle control",
+      "path": "canonical_refit_analysis_v1/rdo/canonical_refit_report.pdf",
+      "source": "Native Calypso; 10000 RDO source events"
+    },
+    {
+      "name": "Independent canonical angle gun",
+      "path": "canonical_gun_analysis_v1/results/canonical_refit_report.pdf",
+      "source": "Full G4/digi; mu+/- 2000 events per charge"
+    },
+    {
+      "name": "beforeGeo Near-zero composition",
+      "path": "zero_analysis_v1/beforeGeo/near_zero_report.pdf",
+      "source": "Full 500k production RDO; reserved validation events"
+    },
+    {
+      "name": "beforeGeo Native writer stages",
+      "path": "native_stage_analysis_v3/beforeGeo/native_stage_report.pdf",
+      "source": "Actual CKF/refit ROOT writers and Calypso transport; 10k events"
+    },
+    {
+      "name": "beforeGeo Geometry-phase response",
+      "path": "phase_response_v2/beforeGeo/phase_response.pdf",
+      "source": "Full 500k; discovery/validation split; same covered cells"
+    },
+    {
+      "name": "beforeGeo Response grouping systematics",
+      "path": "response_systematics_v1/beforeGeo/response_systematics.pdf",
+      "source": "Five fixed groupings; common covered held-out truths"
+    },
+    {
+      "name": "beforeGeo Refit covariance control",
+      "path": "refit_covariance_analysis_v2/beforeGeo/refit_covariance_report.pdf",
+      "source": "Native refit scale 1/10/100; fixed original candidates and p cuts"
+    },
+    {
+      "name": "afterGeo Near-zero composition",
+      "path": "zero_analysis_v1/afterGeo/near_zero_report.pdf",
+      "source": "Full 500k production RDO; reserved validation events"
+    },
+    {
+      "name": "afterGeo Native writer stages",
+      "path": "native_stage_analysis_v3/afterGeo/native_stage_report.pdf",
+      "source": "Actual CKF/refit ROOT writers and Calypso transport; 10k events"
+    },
+    {
+      "name": "afterGeo Geometry-phase response",
+      "path": "phase_response_v2/afterGeo/phase_response.pdf",
+      "source": "Full 500k; discovery/validation split; same covered cells"
+    },
+    {
+      "name": "afterGeo Response grouping systematics",
+      "path": "response_systematics_v1/afterGeo/response_systematics.pdf",
+      "source": "Five fixed groupings; common covered held-out truths"
+    },
+    {
+      "name": "afterGeo Refit covariance control",
+      "path": "refit_covariance_analysis_v2/afterGeo/refit_covariance_report.pdf",
+      "source": "Native refit scale 1/10/100; fixed original candidates and p cuts"
+    }
+  ],
+  "evidence": [
+    "main_100044_v1/manifest.json",
+    "main_summary_v1/peak_windows.json",
+    "figure_counts_validation_v1/results/count_validation.json",
+    "centroid_windows_v1/validation.json",
+    "periodic_refit_v1/native_smoke_validation.json",
+    "periodic_refit_v1/periodic_smoke_validation.json",
+    "native_stage_analysis_v3/beforeGeo/summary.json",
+    "refit_covariance_analysis_v2/beforeGeo/summary.json",
+    "response_systematics_v1/beforeGeo/summary.json",
+    "native_stage_analysis_v3/afterGeo/summary.json",
+    "refit_covariance_analysis_v2/afterGeo/summary.json",
+    "response_systematics_v1/afterGeo/summary.json",
+    "periodic_refit_analysis_v1/rdo/summary.json",
+    "periodic_gun_analysis_v1/results/summary.json",
+    "canonical_refit_analysis_v1/rdo/summary.json",
+    "canonical_gun_analysis_v1/results/summary.json"
+  ]
+}

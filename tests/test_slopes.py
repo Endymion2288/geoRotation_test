@@ -76,6 +76,21 @@ class SlopeDefinitions(unittest.TestCase):
         self.assertEqual(result['covered_peak_comparison'][0]['observed_entries'],300)
         self.assertEqual(result['covered_peak_comparison'][0]['uncovered_observed_entries'],300)
 
+    def test_common_validation_support_does_not_restrict_training(self):
+        entries = np.arange(1200)
+        true = np.full(1200, .001)
+        common = entries % 2 == 0
+        result = conditional_response(true, np.full(1200, 100.), np.zeros(1200), np.zeros(1200),
+            entries, true+.0003, entries, np.ones(1200, bool), entries, 600,
+            np.linspace(-.01, .01, 101), phase_period=.08/63., conditioning={'phase_bins': 4},
+            validation_truth_mask=common, bootstrap_repeats=10)
+        self.assertEqual(result['discovery_reco'], 600)
+        self.assertEqual(result['validation_reco'], 300)
+        self.assertEqual(result['covered_validation_reco'], 300)
+        self.assertEqual(result['cells'][0]['training_truth'], 600)
+        self.assertEqual(result['cells'][0]['training_reco'], 600)
+        self.assertEqual(sum(result['predicted_counts']), 300)
+
 
 if __name__ == '__main__':
     unittest.main()

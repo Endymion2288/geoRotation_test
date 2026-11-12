@@ -27,6 +27,8 @@ def main():
     parser.add_argument('--physical-ntuple-angles', action='store_true', help='Opt-in physical VetoNu angles in the actual rotated NtupleDumper')
     parser.add_argument('--truth-cluster-position', action='store_true', help='Calypso diagnostic: replace only local measured strip coordinates by majority SiHit centroids')
     parser.add_argument('--refit-covariance-scale', type=float, help='Controlled change to native KalmanFitterTool1.SeedCovarianceScale; CKF remains native')
+    parser.add_argument('--wrap-refit-smoothing-phi', action='store_true', help='Calypso diagnostic: use a periodic phi subtraction in the actual ACTS refit smoother')
+    parser.add_argument('--canonical-refit-smoothing-angles', action='store_true', help='Calypso diagnostic: normalize smoothed phi/theta and transform the covariance on pole reflection')
     args = parser.parse_args()
     from AthenaCommon.Configurable import Configurable
     from AthenaConfiguration.ComponentFactory import CompFactory
@@ -84,6 +86,10 @@ def main():
     ckf.KalmanFitterTool1.SummaryWriter = False
     if args.refit_covariance_scale is not None:
         ckf.KalmanFitterTool1.SeedCovarianceScale=args.refit_covariance_scale
+    if args.wrap_refit_smoothing_phi:
+        ckf.KalmanFitterTool1.WrapRefitSmoothingPhi=True
+    if args.canonical_refit_smoothing_angles:
+        ckf.KalmanFitterTool1.CanonicalRefitSmoothingAngles=True
     acc.merge(cfg)
     result, geometry = ActsTrackingGeometryToolCfg(flags)
     acc.merge(result)
@@ -107,6 +113,8 @@ def main():
         calypso_dir=os.environ.get('Calypso_DIR'), library=os.environ.get('GEOROTATION_LIBRARY_DIR'),
         seed_covariance={p: getattr(ckf.TrackSeed, p) for p in ['covLoc0','covLoc1','covPhi','covTheta','covQOverP']},
         refit_covariance_scale=ckf.KalmanFitterTool1.SeedCovarianceScale,
+        refit_smoothing_phi_periodic=args.wrap_refit_smoothing_phi,
+        refit_smoothing_angles_canonical=args.canonical_refit_smoothing_angles,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False, isolate_smoothing=args.isolate_smoothing, observer=not args.no_observer,
         propagation_material_energy_loss=propagator.InteractionEloss,
         propagation_material_scattering=propagator.InteractionMultiScatering)

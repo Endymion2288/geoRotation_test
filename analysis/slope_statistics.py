@@ -91,10 +91,28 @@ def peak_statistics(values, entries, selected, windows, event_range):
     return results
 
 
+def response_cells(truth_slope, truth_p, truth_x, truth_y, phase_period=None, conditioning=None):
+    """Encode predeclared detector/kinematic cells without using reco values."""
+    config = conditioning or {}
+    momentum_edges = config.get('momentum_edges_GeV', [50., 100., 250., 500., 1000.])
+    slope_edges = config.get('coarse_slope_edges', [-.004, -.002, 0., .002, .004])
+    position_edges = config.get('transverse_position_edges_mm', [0.] if phase_period is not None else [-30., 0., 30.])
+    momentum = np.searchsorted(momentum_edges, truth_p)
+    xbin, ybin = (np.searchsorted(position_edges, x, side='right' if phase_period is not None else 'left') for x in [truth_x, truth_y])
+    sbin = np.searchsorted(slope_edges, truth_slope)
+    positions = len(position_edges)+1
+    cell = ((momentum*positions+xbin)*positions+ybin)*(len(slope_edges)+1)+sbin
+    if phase_period is not None:
+        bins = config.get('phase_bins', 8)
+        phase = np.floor(np.mod(np.where(np.isfinite(truth_slope), truth_slope, 0.), phase_period)/phase_period*bins).astype(int)
+        cell = cell*bins+phase
+    return cell
+
+
 def conditional_response(truth_slope, truth_p, truth_x, truth_y, truth_entries,
                          reco_slope, reco_truth_index, reco_valid, reco_entries, split, edges, seed=50520,
                          bootstrap_repeats=100, windows=None, truth_selected=None,
-                         phase_period=None):
+                         phase_period=None, conditioning=None, validation_truth_mask=None):
     """Learn empirical residuals/multiplicity on discovery and predict held-out truth.
 
     Cells use predeclared p and transverse-position bins. The validation reco
@@ -103,20 +121,16 @@ def conditional_response(truth_slope, truth_p, truth_x, truth_y, truth_entries,
     truth_ok = np.isfinite(truth_slope) & np.isfinite(truth_p) & np.isfinite(truth_x) & np.isfinite(truth_y)
     if truth_selected is not None:
         truth_ok &= truth_selected
-    momentum = np.searchsorted([50.,100.,250.,500.,1000.],truth_p)
-    xbin = np.searchsorted([-30.,0.,30.],truth_x)
-    ybin = np.searchsorted([-30.,0.,30.],truth_y)
-    sbin = np.searchsorted([-.004,-.002,0.,.002,.004],truth_slope)
-    cell = (momentum*16+xbin*4+ybin)*6+sbin
-    if phase_period is not None:
-        phase=np.floor(np.mod(np.where(np.isfinite(truth_slope),truth_slope,0.),phase_period)/phase_period*8).astype(int)
-        cell=(((momentum*4+(truth_x>=0)*2+(truth_y>=0))*6+sbin)*8+phase)
+    cell = response_cells(truth_slope, truth_p, truth_x, truth_y, phase_period, conditioning)
     train_truth = truth_ok & (truth_entries<split)
     validation_truth = truth_ok & (truth_entries>=split)
     train_reco = reco_valid & np.isfinite(reco_slope) & (reco_entries<split)
     train_reco &= truth_ok[reco_truth_index]
     val_reco = reco_valid & np.isfinite(reco_slope) & (reco_entries>=split)
     val_reco &= truth_ok[reco_truth_index]
+    if validation_truth_mask is not None:
+        validation_truth &= validation_truth_mask
+        val_reco &= validation_truth_mask[reco_truth_index]
     rng = np.random.default_rng(seed)
     prediction = np.zeros(len(edges)-1)
     prediction2 = np.zeros(len(edges)-1)
@@ -270,7 +284,7 @@ def conditional_response(truth_slope, truth_p, truth_x, truth_y, truth_entries,
         model='Empirical residual and track multiplicity conditional on production p, same-plane truth slope, and true sensor x/y',
         residual_reference='Calypso-transported truth direction at the same plane; model reference',
         seed=seed,validation_reco_used_for_training=False,
-        conditioning=dict(momentum_edges_GeV=[50,100,250,500,1000],
-            coarse_slope_edges=[-.004,-.002,0.,.002,.004],
-            transverse_position_edges_mm=[0.] if phase_period is not None else [-30.,0.,30.],
-            phase_period=phase_period,phase_bins=8 if phase_period is not None else None))
+        conditioning=dict(momentum_edges_GeV=(conditioning or {}).get('momentum_edges_GeV',[50,100,250,500,1000]),
+            coarse_slope_edges=(conditioning or {}).get('coarse_slope_edges',[-.004,-.002,0.,.002,.004]),
+            transverse_position_edges_mm=(conditioning or {}).get('transverse_position_edges_mm',[0.] if phase_period is not None else [-30.,0.,30.]),
+            phase_period=phase_period,phase_bins=(conditioning or {}).get('phase_bins',8) if phase_period is not None else None))
