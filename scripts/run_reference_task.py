@@ -30,6 +30,8 @@ def run(task, destination):
         '--mask', task.get('mask', '0,1,2,3,4,5')]
     if task.get('isolate_smoothing', False):
         command.append('--isolate-smoothing')
+    if task.get('writer_smoothing_check'):
+        command.append('--audit-states')
     if task.get('initial_variance_inflation') is not None:
         command.extend(['--initial-variance-inflation',
             *map(str, task['initial_variance_inflation'])])
@@ -44,6 +46,9 @@ def run(task, destination):
     if status:
         (destination/'exit_code.txt').write_text(str(status)+'\n')
         return status
+    if task.get('writer_smoothing_check'):
+        from smoothing_recheck import check_writer
+        check_writer(Path.cwd(), destination)
     from reference_truth import attach_production
     result = attach_production(Path.cwd())
     assert result['counts']['source_events'] == task['events']
@@ -75,6 +80,9 @@ def run(task, destination):
         # Close on worker scratch first, then let the filesystem copy report errors.
         shutil.copy2(compact,destination/(prefix+'.root'))
         compact.unlink()
+    if task.get('writer_smoothing_check'):
+        from smoothing_recheck import check_smoke_histograms
+        check_smoke_histograms(destination, Path(task['writer_smoothing_check']))
     resources = dict(raw_root_bytes=Path('track_states.root').stat().st_size,
         temporary_production_truth_bytes=Path('production_truth.jsonl').stat().st_size,
         worker_wall_s=time.monotonic()-started)

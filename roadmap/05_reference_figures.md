@@ -40,3 +40,5 @@ truth来源检查在同一份native writer ROOT上运行原`t_eQOP`与相同majo
 - 保存bin edges、原始bin counts、sumw/sumw2、underflow/overflow/invalid、selection和输入来源，提供可复现绘图命令；图索引记录每张图对应的参考报告/页码和产物路径。
 - 中文workbook嵌入该阶段主要before/after图并链接完整PDF；README或roadmap提供可发现的入口。只列指标表不构成完整的可视化交付。
 - 完成前检查图中文字、面板顺序、legend、轴范围和导出裁切，核对图中entries/tail与冻结summary一致；批量统计按仓库规范通过HTCondor执行。
+
+用户追问 smoothing 是否实际生效的检查见[GitHub cuts 下逐参数复核](../workbook/2026-11-12_stage04_github_smoothing_recheck.md)：保留 GitHub cuts，补充全量 OFF/ON 九层叠图和旧 audit 实现到 writer 的实际参数检查。

@@ -1,5 +1,7 @@
 # S04复核：smoothed动量在−1附近鼓包的来源
 
+最新复核：[GitHub cuts 下 smoothing OFF/ON 与 writer 逐参数检查](2026-11-12_stage04_github_smoothing_recheck.md)。正式主图采用 GitHub cuts + candidate-isolated smoothing；全量 afterGeo S1 L0 左尾 42.63%→22.20%，S3 基本不变。本文历史关闭开关的描述仅指对应旧批次。
+
 日期：2026-11-12。结果目录为`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage05_geometry_comparison/bump_diagnosis_20261112`，下文记为`B`。
 
 **结论：差别由候选smoothing处理和选样共同造成，不是单一cut。S1的突出鼓包主要来自原生shared smoothed slots；旧图开启候选隔离后的smoothing重算，使其显著减少。S3末端的差别主要来自SDO purity及final选样，该层的状态完全不受这次重算影响。**

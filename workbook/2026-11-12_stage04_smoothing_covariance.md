@@ -1,5 +1,7 @@
 # S04：独立 smoothing 与初始 covariance 的全量动量对照
 
+最新复核：[GitHub cuts 下 smoothing OFF/ON 与 writer 逐参数检查](2026-11-12_stage04_github_smoothing_recheck.md)。正式主图采用 GitHub cuts + candidate-isolated smoothing；全量 afterGeo S1 L0 左尾 42.63%→22.20%，S3 基本不变。本报告全量 ON 数据已与旧实现交叉验证。
+
 结果目录：`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_smoothing_covariance/20261112_full110051`，下文记为 `R`。
 
 **全量结果：恢复原 inflation 明显减少 S2 predicted/filtered 的负尾，但未改善 smoothed 左尾。smoothed residual<−0.8 的比例在九层均增加 0.47–1.13 个百分点；S3 L2 从 10.6772% 升至 11.8046%。beforeGeo/afterGeo 全量比较与 covariance 单因素图均已交付。**

@@ -20,6 +20,8 @@ def main():
     parser.add_argument('--variant', required=True)
     parser.add_argument('--mask', default='0,1,2,3,4,5')
     parser.add_argument('--isolate-smoothing', action='store_true')
+    parser.add_argument('--audit-states', action='store_true',
+        help='Diagnostic only: record pre/post-isolation states with an audit-enabled library')
     parser.add_argument('--initial-variance-inflation', type=float, nargs=5,
         help='Override only the five seed variance inflation factors')
     args = parser.parse_args()
@@ -67,6 +69,10 @@ def main():
     ckf = cfg.getEventAlgo('CKF_Reference')
     if args.isolate_smoothing:
         ckf.IsolateCandidateSmoothing = True
+    if args.audit_states:
+        ckf.AuditFile = 'stages.jsonl'
+        ckf.AuditStates = True
+        ckf.AuditSelectedStatesOnly = True
     if args.initial_variance_inflation is not None:
         sigmas = [.9, .019, .033, .00029, .0001]
         for prop, factor, sigma in zip(
@@ -90,7 +96,7 @@ def main():
     manifest = dict(args=vars(args), calypso_dir=os.environ.get('Calypso_DIR'),
         library=os.environ.get('GEOROTATION_LIBRARY_DIR'), python_path=os.environ.get('PYTHONPATH'),
         geometry='FASERNU-04', conditions='OFLCOND-FASER-05', seed_covariance=covariance,
-        audit=False, reset_event_maps=False, isolate_smoothing=args.isolate_smoothing,
+        audit=args.audit_states, reset_event_maps=False, isolate_smoothing=args.isolate_smoothing,
         hostname=socket.gethostname(), athena=os.environ.get('AtlasVersion'))
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     begin = time.monotonic()
