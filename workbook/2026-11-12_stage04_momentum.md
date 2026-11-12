@@ -22,7 +22,7 @@
 
 - 三站 forward 主实验冻结 FASERNU-04、OFLCOND-FASER-05、maskedLayers=0..5；所有候选间比较通过 final ancestry 的 seed/candidate ID。参考动量默认是 production truth；同面真值和上下界另标。所有 p ratio 均使用有效正的 Cartesian norm。
 
-- `current` 为冻结的未旋转 current22，`strict` 为同一 map 的严格刚体旋转 current22。历史 rotated12 改变了 surface 内容与部分中心，未用作纯旋转控制。
+- `current`为冻结的未旋转current22，`strict`为同一map的严格刚体旋转current22。历史AFS rotated12与strict的共同材料数据相同，缺少的10项均为空材料，部分binUtility平移沿法向相差2 mm；本阶段保留22项以固定原map全部IDs。逐项差异见[材料图比较](2026-11-12_stage04_material_maps.md)。本阶段改善不是AFS旋转图→strict的测量。
 
 - 主材料配对和独立验证均使用 S03 的冻结重建库，未同时启用 chart/refit plane 等修正。新 observer/control 的普通开关默认保持原行为。
 

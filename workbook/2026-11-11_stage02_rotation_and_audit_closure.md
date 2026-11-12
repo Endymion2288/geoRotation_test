@@ -79,6 +79,8 @@
 
 当前默认未旋转 map 有 22 surfaces；历史 rotated map 有 12 surfaces，部分中心还相差 2 mm。因此不能把两者对比等同于纯旋转。`scripts/rotate_material.py` 从冻结的当前 map 生成 22-surface 旋转版本，每 surface 4096 points，bin data 和 geometry IDs 完全相同，变换前后 local-coordinate 最大差=0 mm。
 
+2026-11-12逐项补查：AFS旋转图与strict共同12项的86400个材料bin完全相同；strict额外10项的118个bin全为零厚度空材料。2 mm差沿binUtility局部法向，不改变共同项的binX/binY查询，不能将12/22解释为缺失10层非零材料。具体数据与已有Calypso小样本差异见[专项比较](2026-11-12_stage04_material_maps.md)。
+
 实际 Navigator+MaterialInteractor 用 p=150 GeV、2.4 m path、max step=20 mm，在历史 map 和一致旋转 22-surface map 分别测试 energy loss / scattering 的四组合、两电荷；各配置均 8/8 成功。这条路径两种 map 得到下表相同结果，不代表所有轨迹的材料分布相同。
 
 | q | X/X0 | interactions / unique surfaces | loss off 的 Δp | loss on 的 Δp |

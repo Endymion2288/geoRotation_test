@@ -11,6 +11,7 @@
 - [阶段 03 报告](workbook/2026-11-11_stage03_baseline.md)：50,000 事件基线、最终候选路径、动量尾、角度定义与 μ± 电荷误判统计。
 - [阶段 04 报告](workbook/2026-11-12_stage04_momentum.md)：材料坐标根因、逐运算审计、Calypso内T0–T4、50k独立配对、seed与辐射后KF残余。
 - [Calypso源码与结果来源](workbook/2026-11-12_stage04_calypso_provenance.md)：材料坐标问题的详细源码路径、实际任务/库/patch来源，以及独立toy退出验收的记录。
+- [两份旋转材料图的比较](workbook/2026-11-12_stage04_material_maps.md)：AFS rotated12与strict current22的共同材料bin、空surface和法向2 mm平移差异。
 - [S04 动量补图与原脚本核对](workbook/2026-11-12_stage04_reference_figures.md)：材料图旋转前后seed/九层CKF/final分布、good-seed条件图；[完整汇报PDF](../geoRotation_test_results/stage04_momentum/reference_figures/figures/momentum_material_comparison.pdf)。
 - [各阶段参考图清单](roadmap/05_reference_figures.md)：S04–S07对应的参考页、图组和PNG/PDF交付要求。
 - [Calypso patches 与构建](patches/README.md)；[冻结定义](configs/definitions.json)；[诊断字段](configs/fields.md)。
