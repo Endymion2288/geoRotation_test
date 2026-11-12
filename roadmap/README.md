@@ -6,7 +6,9 @@
 
 实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)、[S04](../workbook/2026-11-12_stage04_momentum.md)。S04证实current22材料与旋转几何的坐标不一致，主要通过scattering covariance/gain制造大负尾；严格旋转同一map后，独立110051尾率从34.151%降至10.543%，Good95效率提高4.018个百分点。接口chart/refit起点问题、seed混合和辐射后KF残余分别保留受控实验入口。补充G4退出134已定位修复，同sensor truth关联通过2400事件、81153 steps逐值验证。
 
-110051完整输入的最新动量图见[全20文件专项报告](../workbook/2026-11-12_stage04_full110051_pfs.md)：20,000源事件，材料坐标修正前后final尾率33.858%→10.577%。该报告补齐原10文件逐层图，给出predicted/filtered/smoothed的信息范围、同state尾部迁移、曲率不确定度及7页图集；描述性全样本与上述独立验收样本分别报告。
+110051的S04材料对照见[全20文件专项报告](../workbook/2026-11-12_stage04_full110051_pfs.md)：20,000源事件，材料坐标修正前后final尾率33.858%→10.577%。该报告使用S04 Good95/SDO选择，补齐原10文件逐层图，给出predicted/filtered/smoothed的信息范围、同state尾部迁移与曲率不确定度；这些图不代表整体坐标旋转beforeGeo/afterGeo，也不能代替GitHub原宏的复现。
+
+用户指定的[原宏与整体geometry复核](../workbook/2026-11-12_stage04_native_geometry_truth.md)使用110051全20文件、20,000源事件、原生Calypso master/geoRotation及GitHub原宏cuts。afterGeo的566,369个共同有效states上，两种truth的27图逐bin相同；production仅新增约1.02%的truth覆盖，解释不了旧图的大幅结构差异。AFS/strict材料及历史mask012/4station另作控制。阶段产物位于`stage05_geometry_comparison/`，该目录名不表示已启动下表S05的100044角度研究；第19页规范保留用于S05。
 
 下表保留S03的current22历史基线；strict与独立样本的完整配对表见S04。
 
@@ -33,6 +35,7 @@
 
 ## 目前证据决定的优先级
 
+0. **以已完成的原宏对照为入口，分离局部bias与production-relative能损。** `t_eQOP`与相同majority barcode的production p实测一致；历史图继续保留`t_eQOP`，逐层算法检验使用同面G4 p。beforeGeo/afterGeo的原生covariance不同，后续固定物理先验及共同seed/hits，才能判断旋转、covariance和选择各自的贡献。AFS/strict有小的产额差异，其navigation/candidate来源尚未定位；file0的三个mask控制27图相同。
 1. **S05在current/strict配对上统一物理面。** S04已证明材料能显著改变选择与curvature；先将tanθ_y和truth传播到同一st1/VetoNu面，再分解reco-p窗口、hit pattern和candidate迁移。量化峰的位置、宽度、占比及统计显著性，不能用production方向residual直接充当角分辨率。
 2. **S06先平衡谱与接受度。** 独立strict样本μ+、μ−各剩1条wrong；事件数尚不足以判定残余正负差异。先比较共同truth p/位置/方向支持域与有效样本量，再按目标精度追加。材料配对不代替完整G0/G1的旋转净效应。
 3. **S07逐项处理seed和辐射模型。** 110051 strict有3020条最终祖先seed tail，其中2346条含other-majority segment。固定真hits的电子仍有23条guaranteed local tail，11条在update、12条在smoothing出现同sensor可证实的穿越，并有显著沿程能损。使用纯segment组合/同点方向与field integral、G4 bremsstrahlung控制及piecewise q/p/GSF分别检验。
@@ -87,6 +90,7 @@ flowchart TD
 
 ## 下一轮落地任务
 
+0. 按[原宏复核报告](../workbook/2026-11-12_stage04_native_geometry_truth.md)保留历史图与truth对照；动量后续控制固定物理先验及共同seed/hits，使用同面G4 truth区分实际能损与KF bias。AFS/strict小产额差异保留导航与candidate排查，不将其当作已定位原因。
 1. S05读取S04的paired particles与compact traces，冻结同一物理面和p窗口，分别看truth、seed、selected、refit/final的角度峰及选择迁移；使用A1–A5的显著性与forward-model验收。
 2. S06使用correct material后的μ±共同支持域，检查首次sign flip与谱平衡后的率差；记录既有样本的精度，再确定追加规模。Alma历史selection与完整G0/G1仍单独控制。
 3. S07从已定位的other-segment seed、真实radiative loss后的update/smoothing、chart/refit covariance、IFT策略分别做单因素实验。Gaussian mixture能损的文献可行性和典型事件见S04，未把它当作已验证修复。

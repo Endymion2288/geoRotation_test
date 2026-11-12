@@ -13,12 +13,13 @@
 - [Calypso源码与结果来源](workbook/2026-11-12_stage04_calypso_provenance.md)：材料坐标问题的详细源码路径、实际任务/库/patch来源，以及独立toy退出验收的记录。
 - [两份旋转材料图的比较](workbook/2026-11-12_stage04_material_maps.md)：AFS rotated12与strict current22的共同材料bin、空surface和法向2 mm平移差异。
 - [S04 动量补图与原脚本核对](workbook/2026-11-12_stage04_reference_figures.md)：材料图旋转前后seed/九层CKF/final分布、good-seed条件图；[完整汇报PDF](../geoRotation_test_results/stage04_momentum/reference_figures/figures/momentum_material_comparison.pdf)。
+- [110051原宏、整体geometry与truth复核](workbook/2026-11-12_stage04_native_geometry_truth.md)：原生Calypso master/geoRotation、GitHub原宏选择、同track truth单因素，以及AFS材料图和历史mask设置控制。
 - [各阶段参考图清单](roadmap/05_reference_figures.md)：S04–S07对应的参考页、图组和PNG/PDF交付要求。
 - [Calypso patches 与构建](patches/README.md)；[冻结定义](configs/definitions.json)；[诊断字段](configs/fields.md)。
 - [仓库协作规范](AGENTS.md)。
 
 研究起点：`/eos/home-x/xcheng/FASER/geoRotation_calypso`，commit `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。现有构建为 Athena 24.0.41 / EL9；所有运行产物保存在 `/eos/home-x/xcheng/FASER/geoRotation_test_results`。
 
-S00–S04已完成并分别提交阶段报告。S04证实本配置current22材料查表坐标与旋转几何不一致；严格旋转同一map，在五类独立样本上均降低动量负尾。110051的production p ratio<0.5从34.151%降至10.543%，Good95效率提高4.018个百分点。
+S00–S04已完成并分别提交阶段报告。S04证实当时current22材料查表坐标与旋转几何不一致；该材料图问题已修正，五类独立样本上均降低动量负尾。110051的production p ratio<0.5从34.151%降至10.543%，Good95效率提高4.018个百分点。上述数字和旧图对应材料控制及S04选择；用户指定的整体beforeGeo/afterGeo和GitHub原宏主图由新增复核报告分别给出。
 
 完整truth seed和固定真hits仍可复现错误材料图的低估；正确材料下，剩余seed混合与电子辐射后KF偏差已量化并定位。S05角度结构、S06谱平衡后的μ±误判差异和S07完整修复验收继续按路线图执行。

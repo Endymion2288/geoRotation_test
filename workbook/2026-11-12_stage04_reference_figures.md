@@ -1,5 +1,7 @@
 # S04补充：参考图对照与材料旋转前后动量分布
 
+> 本报告保留S04材料诊断结果；其Good95/SDO选择与GitHub原宏不同。用户最新指定的整体beforeGeo/afterGeo和仅替换truth的对照，按[更新后的规范](../roadmap/05_reference_figures.md)执行。
+
 日期：2026-11-12。结果根目录为 `/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_momentum/reference_figures`，下文记为 `$F`。
 
 110051逐层图在本文使用前10个文件、10,000源事件，占该DSID目录50%；independent final图使用其后10文件。用户指定全文件后，已另行交付[20文件、20,000事件的完整图集与P/F/S研究](2026-11-12_stage04_full110051_pfs.md)，完整110051分布请使用该版本。

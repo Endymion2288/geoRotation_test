@@ -45,7 +45,9 @@ S01 逐类核查 RDO/HITS/PHYS 的 truth 信息。若 SiHit 只提供位置、�
 
 先保留原版作为不可变的测量基线，再增加诊断补丁。所有拟合、传播、truth注入与固定hits实验调用实际Calypso组件，改动保存在geoRotation Calypso源码树并冻结patch与构建。独立ACTS toy或简化探测器模型不进入物理结论和阶段验收；matching、统计与绘图使用仓库分析脚本。软件来源与已执行作业核对见[Calypso来源报告](../workbook/2026-11-12_stage04_calypso_provenance.md)。
 
-建立 on/off 对照的优先方案是相同共同父版 `c95170f2` 加相同诊断，旋转版对应当前两次旋转修改；记录其余源码差异。需要在同一实现中开关时，将 geometry、alignment context、field/gradient、seed、reference surfaces、refit、writers 和 material bins 全部纳入统一配置，并做闭合验证。
+用户指定的整体beforeGeo/afterGeo首先比较本地Calypso `master`（`1eb885ae22299fb39bb352bead6005d41b0f953e`）和旋转分支（`88c457c1e4bf4154e67b96114ee8e7020d9b1a97`）的原生实现与默认covariance，使用同一110051输入及相同显式条件。beforeGeo使用隔离Calypso worktree重编发生变化的geometry/KalmanFilter packages，复用同Athena release的未变依赖。该比较对应G0/G2；不得以S04两张材料图的对照替代。
+
+保持物理先验一致的纯坐标效应另用G0/G1控制：优先使用相同共同父版 `c95170f2` 加相同诊断，并记录其余源码差异。需要在同一实现中开关时，将 geometry、alignment context、field/gradient、seed、reference surfaces、refit、writers 和 material bins 全部纳入统一配置，并做闭合验证。
 
 | 组别 | Frame | 初始 covariance | 用途 |
 | --- | --- | --- | --- |

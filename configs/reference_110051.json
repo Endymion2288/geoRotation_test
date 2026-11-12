@@ -1,0 +1,118 @@
+{
+  "dsid": "110051",
+  "reference": "geometryRotation.pdf page 17",
+  "scope": "All 20 production RDO files; 20,000 CollectionTree entries",
+  "source_entry_measurement": "/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_momentum/full_sample/110051/inputs.json",
+  "directory_and_sizes_rechecked_utc": "2026-11-12T13:24:48.721183+00:00",
+  "samples": [
+    {
+      "dsid": "110051",
+      "species": "Aprime eps1e-4",
+      "files": [
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00000-00009-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 837216619
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00010-00019-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 841496251
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00020-00029-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 850131815
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00030-00039-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 847791304
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00040-00049-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 852070987
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00050-00059-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 825249483
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00060-00069-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 842044560
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00070-00079-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 849476192
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00080-00089-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 836221061
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00090-00099-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 828729133
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00100-00109-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 826007673
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00110-00119-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 829405497
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00120-00129-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 844541510
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00130-00139-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 864605414
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00140-00149-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 848492114
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00150-00159-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 857480959
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00160-00169-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 856995756
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00170-00179-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 839238557
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00180-00189-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 843356014
+        },
+        {
+          "path": "/eos/experiment/faser/data0/sim/mc24/foresee/110051/rdo/master_dev/FaserMC-MC24_FS_Aee_010MeV_1Em4-110051-00190-00199-master_dev-RDO.root",
+          "entries": 1000,
+          "size_bytes": 830648790
+        }
+      ],
+      "total_entries": 20000,
+      "previous_discovery_events": 10000
+    }
+  ],
+  "macro_commit": "33ca2281b961935456dfd4dc9fc06235e24b551e"
+}

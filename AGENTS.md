@@ -21,6 +21,7 @@
 | --- | --- |
 | 输入样本 | `/eos/experiment/faser/data0/sim/mc24/`；已确认的 DSID、RDO/PHYS 和版本见 `roadmap/00_materials_and_source.md`，执行前冻结具体文件与 event range |
 | 旋转版 Calypso | `/eos/home-x/xcheng/FASER/geoRotation_calypso`；研究起点 HEAD `88c457c1e4bf4154e67b96114ee8e7020d9b1a97` |
+| beforeGeo 原生 Calypso worktree | `/eos/home-x/xcheng/FASER/geoRotation_calypso_main`；本地 master `1eb885ae22299fb39bb352bead6005d41b0f953e`；native geometry/KalmanFilter packages 使用与旋转版相同 Athena 24.0.41 编译环境 |
 | 已有构建与安装 | 上述源码目录下 `build/`、`run/`；源码未变时复用 |
 | Geant4 模拟源码，探测器响应细节以此为准 | 上述 Calypso 下 `Simulation/`、`Tracker/TrackerG4/FaserSCT_G4_SD/`；digitization 见 `Tracker/TrackerDigitization/FaserSCT_Digitization/`，实际样本的生产 release/conditions 另行核对 |
 | 所有运行输出，包括日志、图表和模型 | `/eos/home-x/xcheng/FASER/geoRotation_test_results` |
@@ -79,6 +80,7 @@ condor_q -name <schedd> -totals
 - 保留稳定的 event/particle/seed/candidate/state 标识；truth matching 使用 hit/SDO/barcode，电荷与重建动量不参与主匹配条件。失败、未匹配、重复候选和 refit fallback 分别计数。
 - 新增诊断保持 reconstruction 行为一致；先验证观察开关不改变事件和候选结果，再做单因素消融。几何旋转的 on/off 必须覆盖几何、磁场、seed、refit、输出和 covariance；不能只切换 `geometryRotation` 成员。
 - 所有重建结果、物理结论和验收图均基于 `/eos/home-x/xcheng/FASER/geoRotation_calypso` 的实际组件及其匹配构建。新增诊断、truth seed、固定 hits 和消融在该源码树内实现并保存 patch；配置脚本调用 Calypso 组件，仓库分析脚本负责 matching、统计和绘图。禁止使用另写的独立 tracking、简化 detector/field 或 standalone ACTS toy 代替 Calypso 结果。冻结的 `.so` 是该 Calypso 构建的运行副本，记录来源、commit/patch、配置和库目录；实际源码的本地改动必须如实列明。
+- 本研究默认的 beforeGeo/afterGeo 指整体坐标旋转前后；beforeGeo 使用本地 Calypso `master` 的真实源码与原生配置，afterGeo 使用旋转分支。材料图之间的比较单列为 material control。允许同 release 的隔离 Calypso worktree，记录完整 commit、重编 package、共享依赖及实际加载库；不得称不同原生 covariance 的版本比较为保持物理先验一致的纯旋转效应。
 - 对坐标、单位、covariance Jacobian、候选归属和已定位缺陷增加有意义的小型回归检查。文档调整使用链接检查和 `git diff --check`；物理结论使用明确样本上的比较与区间估计。
 - ROOT 分析只读取必要 branch，优先 ROOT RDataFrame 或批量数组计算，避免逐事件 Python 对象循环；保存 `sumw`、`sumw2` 和原始计数。
 
@@ -104,7 +106,9 @@ condor_q -name <schedd> -totals
 
 每阶段最终产物必须包含与参考材料对应的分布图，具体图清单与规范见 `roadmap/05_reference_figures.md`。before/after使用共同分箱和可比较的轴/归一化，标明样本、选择、frame、truth参考与entries；历史定义有误时同时标出legacy与正确物理定义。图表保存PNG、逐图PDF和多页汇报PDF，bin counts及产物索引随结果保存；workbook嵌入主图并链接完整图集。阶段完成前核对图中统计与冻结summary，并目视检查导出效果。
 
-后续动量图优先参考用户提供的 `https://github.com/zsm2024/FASER_tracking/tree/main/test_pResolution` 原代码，保留可用的公式、分箱、颜色和九层布局，并明确必要的truth/选择差异。每张图声明输入文件数、源事件数及覆盖范围；小样本图不能标为全量。全量重画必须逐文件核对entries和event ranges，worker内完成matching及histogram归约，避免长期保存大规模逐state JSON。
+同类动量图以用户提供的 `https://github.com/zsm2024/FASER_tracking/tree/main/test_pResolution` 原代码为准：保留实际启用的 residual 公式、cuts、分箱、raw entries、颜色和九层布局；输入路径、输出、样本标签以及无用越界绘图块的适配保留 diff。S04 的 Good95/fiducial/SDO 选择不替代该主图。geometryRotation.pdf 第17页对应本次110051全20文件，第19页规范用于后续角度研究，不自动追加100044重建。
+
+truth 单因素检查固定同一 writer track、同一 majority barcode，仅替换参考动量；共同有效 states 和缺失 truth 的新增覆盖分别统计。`SiHit->particleLink()->momentum()` 是关联 HepMC particle 的动量，不称为 sensor 局部 G4 动量。原宏的TTreeFormula除零保护及NaN/flow行为原样保留，invalid reconstruction另行计数；有限residual分母不当作原宏raw Entries。每张图声明输入文件数、源事件数及覆盖范围；小样本图不能标为全量。全量重画必须逐文件核对entries和event ranges，worker内完成matching及histogram归约，避免长期保存大规模逐state JSON。
 
 后续提交统一遵循 Angular Conventional Commits：`<type>(<scope>): <subject>`，例如 `feat(gravnet): add vertex distance features`、`docs(workbook): record stage01 validation`。Pull Request 说明改动、意义、验证命令和样本选择，关联相关 issue；模型或可视化变更附相应图表。
 

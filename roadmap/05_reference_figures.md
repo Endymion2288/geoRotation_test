@@ -11,11 +11,17 @@
 | S06 电荷 | `Alma 9 Validation Overview.pdf` p16–18、p23–25；p19–22、p27 | μ+与μ−分别的signed q/p及truth residual/pull，correct/wrong-sign尾部和事件比例；misID随truth p的分箱曲线及区间；truth/reco动量相关图和宽范围动量谱；原始谱与共同支持域/谱平衡后的对比。保留旧/new、几何旋转G0/G1、材料current/strict三种比较轴的准确标签 |
 | S07 修复验收 | 对应S04–S06的全部主图 | 每项修复在预留验证输入上重新生成相同图组；提供原配置、单因素修正及最终配置的共同分箱对比，同时给效率、失败/fallback、duplicates和unmatched-to-signal。最终PDF汇编覆盖三个研究问题 |
 
-S04补图实现入口为 `analysis/momentum_reference_figures.py`，读取已有的compact traces和paired particle表，不需要重新模拟或重建。当前五类样本的实际选择、图和复现命令见[S04补图报告](../workbook/2026-11-12_stage04_reference_figures.md)。S05–S07按本表在阶段开始时冻结各自的图清单。
+S04历史补图入口为 `analysis/momentum_reference_figures.py`，其compact traces使用额外的fiducial/Good95/SDO选择和production truth，记录见[S04补图报告](../workbook/2026-11-12_stage04_reference_figures.md)。这些图用于相应诊断，不能作为GitHub原宏或整体几何旋转前后的复现。S05–S07按本表在阶段开始时冻结各自的图清单。
 
 用户补充的[原绘图脚本目录](https://github.com/zsm2024/FASER_tracking/tree/main/test_pResolution)已在S04补图中按commit核对。阶段开始时必须区分源码实际启用的公式/cuts、注释中的备用配置和PDF文字；核对writer的truth/frame/单位及逐层取值方式后，再声明与参考图的一致程度。
 
-后续同类动量图优先沿用该目录的公式、分箱、颜色和九层布局。小样本发现图与全输入图明确区分；全输入版本逐文件检查CollectionTree entries及无重叠、无遗漏的entry ranges，图上列出源事件数。predicted/filtered/smoothed比较必须包含同state的tail迁移计数、末端filtered=smoothed检查及covariance变化，区分前向信息不足、更新新生tail与后向修复。批量state在worker scratch归约，只保存histogram和紧凑诊断统计。
+后续同类动量主图严格使用该目录的实际公式、cuts、分箱、颜色和九层布局。`ckf_residual_perLayer.C`冻结commit为`33ca2281b961935456dfd4dc9fc06235e24b551e`，cut为`chi2Sum/NDF<20 && rMax_smt<90 && NDF>9`，100 bins、[-1.2,1.2]、raw Entries，P=green/F=red/S=blue。I/O、标签、无用越界绘图块和共同纵轴范围的必要适配保留patch；worker调用该宏的TTree::Draw生成TH1，合并后调用相同绘图块，不以另一套分析选择代替。
+
+本次第17页对照使用110051全部20文件、20,000事件；beforeGeo为Calypso本地master，afterGeo为旋转分支。材料图bug已解决，AFS rotated JSON与strict rotated JSON另作单因素对照。当前两个分支的原生seed covariance不同，整体版本比较与协方差匹配后的纯旋转比较分别命名。第19页的100044 μ+500k角度研究留到后续阶段；保留图中的全谱/pz窗口legacy及正确物理p窗口定义。
+
+truth来源检查在同一份native writer ROOT上运行原`t_eQOP`与相同majority barcode的production q/p两次；另画共同有效states对照。两种参考都不是sensor局部G4 p；NaN、production-only/link-only states、逐bin差异和有限分母单列。实现为`configs/reference_tracking.py`、`scripts/prepare_reference_macro.py`、`scripts/run_reference_task.py`与`analysis/reference_figures.py`。全20文件的beforeGeo、afterGeo、strict主图及truth对照已交付，[复核报告](../workbook/2026-11-12_stage04_native_geometry_truth.md)链接14页完整图集、bin counts和覆盖验证；原宏的TTreeFormula除零/NaN行为与有限residual统计分别记录。
+
+小样本发现图与全输入图明确区分；全输入版本逐文件检查CollectionTree entries及无重叠、无遗漏的entry ranges，图上列出源事件数。predicted/filtered/smoothed诊断另保留同state的tail迁移计数、末端filtered=smoothed检查及covariance变化，区分前向信息不足、更新新生tail与后向修复。批量state在worker scratch归约，只保存histogram和紧凑诊断统计。
 
 ## 每张比较图的约定
 

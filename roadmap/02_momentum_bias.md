@@ -6,6 +6,8 @@
 
 ## M1：先复现分布并分清 truth 与绘图问题
 
+用户指定的复核已按[原生geometry/truth报告](../workbook/2026-11-12_stage04_native_geometry_truth.md)与[原宏规范](05_reference_figures.md)完成：110051全20文件，整体beforeGeo/afterGeo使用Calypso master/geoRotation，材料图为独立控制。同一majority barcode的`t_eQOP`与production truth在共同有效states上27图逐bin相同；production新增约1%的覆盖。后续优先分离旧图选样/候选归属、原生covariance差异及同面G4能损，保持历史主图的原宏口径。
+
 1. 在原版配置保留 generator-referenced residual，复现报告 p24 的 seed 与 p16–18 的 per-layer predicted/filtered/smoothed 图，同时记录 event/track/state、单位与 truth 来源。
 2. 逐事件核对 `p=1/|κ|`、Cartesian norm、truth charge/barcode 和 reference surface。检查无匹配 truth、0/负占位 p、q/p=0、invalid state、histogram under/overflow；有效正 p 的 `δp≥−1`，若小于 −1 则先查定义、单位或无效数据。
 3. 增加同面 truth residual；将生产点→sensor 的真实 ΔE 与 reco−local-truth 分别画出。states writer 当前用 HepMC p，需要 S01 确认真值可用性；没有局部 p 的真实样本只报告 generator-relative 观察，另用 G4 audit 样本做物理归因。

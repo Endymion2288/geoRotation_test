@@ -17,6 +17,9 @@ def main():
     destination = Path(task["output"])
     destination.mkdir(parents=True, exist_ok=False)
     kind=task.get('kind')
+    if kind == 'reference':
+        from run_reference_task import run
+        return run(task, destination)
     if kind == 'full_sample':
         from full_momentum_task import run
         return run(task, destination)
