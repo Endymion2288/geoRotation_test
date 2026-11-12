@@ -1,5 +1,7 @@
 # S04复核：smoothed动量在−1附近鼓包的来源
 
+最新全量图：[beforeGeo/afterGeo，isolated smoothing + final purity > 0.7，native truth](2026-11-12_stage04_native_purity_comparison.md)。两组各20文件、20,000源事件；afterGeo S1 L0 smoothed左尾为10.5236%，beforeGeo为36.5994%。
+
 旧筛选逐项实测已完成，见[isolated smoothing 后的 selection 消融](2026-11-12_stage04_selection_ablation.md)：同一GitHub+isolation样本，仅加**final purity≥0.7**就使S1 L0左尾21.91%→10.40%，左窗/肩部计数比2.50→0.82；每truth排序的作用与purity重叠，Good95在GitHub已筛集合中仅小幅补充。
 
 最新复核：[GitHub cuts 下 smoothing OFF/ON 与 writer 逐参数检查](2026-11-12_stage04_github_smoothing_recheck.md)。正式主图采用 GitHub cuts + candidate-isolated smoothing；全量 afterGeo S1 L0 左尾 42.63%→22.20%，S3 基本不变。本文历史关闭开关的描述仅指对应旧批次。

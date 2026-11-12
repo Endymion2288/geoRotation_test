@@ -20,6 +20,8 @@ def main():
     parser.add_argument('--variant', required=True)
     parser.add_argument('--mask', default='0,1,2,3,4,5')
     parser.add_argument('--isolate-smoothing', action='store_true')
+    parser.add_argument('--native-final-purity', action='store_true',
+        help='Observe final-track SDO purity without reading alternative truth references')
     parser.add_argument('--audit-states', action='store_true',
         help='Diagnostic only: record pre/post-isolation states with an audit-enabled library')
     parser.add_argument('--initial-variance-inflation', type=float, nargs=5,
@@ -89,7 +91,7 @@ def main():
     fitter.SummaryWriter = False
     acc.merge(cfg)
     acc.addEventAlgo(ReferenceTruthObserver('ReferenceTruthObserver', skip=args.skip,
-        rotated=args.variant != 'beforeGeo'))
+        rotated=args.variant != 'beforeGeo', native_final_purity=args.native_final_purity))
     acc.addService(CompFactory.AthenaEventLoopMgr(EventPrintoutInterval=1000))
     acc.getService('MessageSvc').defaultLimit = 20
     covariance = {p: getattr(ckf.TrackSeed, p) for p in ['covLoc0','covLoc1','covPhi','covTheta','covQOverP']}

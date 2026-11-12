@@ -30,6 +30,8 @@ def run(task, destination):
         '--mask', task.get('mask', '0,1,2,3,4,5')]
     if task.get('isolate_smoothing', False):
         command.append('--isolate-smoothing')
+    if task.get('native_final_purity'):
+        command.append('--native-final-purity')
     if task.get('writer_smoothing_check'):
         command.append('--audit-states')
     if task.get('initial_variance_inflation') is not None:
@@ -49,19 +51,38 @@ def run(task, destination):
     if task.get('writer_smoothing_check'):
         from smoothing_recheck import check_writer
         check_writer(Path.cwd(), destination, task.get('sensor_geometry'))
-    from reference_truth import attach_production
-    result = attach_production(Path.cwd())
+    if task.get('native_final_purity'):
+        from native_purity import attach_final_purity
+        result = attach_final_purity(Path.cwd())
+        summary_name = 'native_purity.json'
+    else:
+        from reference_truth import attach_production
+        result = attach_production(Path.cwd())
+        summary_name = 'truth_comparison.json'
     assert result['counts']['source_events'] == task['events']
-    shutil.copy2('truth_comparison.json',destination/'truth_comparison.json')
+    shutil.copy2(summary_name,destination/summary_name)
     shutil.copy2('event_counts.npz',destination/'event_counts.npz')
     import ROOT
     ROOT.gROOT.SetBatch(True)
     ROOT.gROOT.ProcessLine('.L '+task['macro'])
     os.environ['REFERENCE_SCOPE_LABEL'] = f"110051 | {task['variant']} | file {task['file_index']} | {task['events']} source events"
-    for name, branch in [('native','t_eQOP'),('production','prod_eQOP'),
-                         ('common_native','link_common'),('common_production','prod_common')]:
+    references = [('native','t_eQOP')] if task.get('native_final_purity') else [
+        ('native','t_eQOP'),('production','prod_eQOP'),
+        ('common_native','link_common'),('common_production','prod_common')]
+    if task.get('baseline_macro'):
+        references.append(('baseline', 't_eQOP'))
+    for name, branch in references:
+        if name == 'baseline':
+            # Load baseline in a fresh ROOT process to avoid redefining macro globals.
+            invocation = task['baseline_macro']+'('
+            invocation += ','.join([json.dumps('reference_3station_forward.root'),
+                json.dumps('baseline_3station_counts'), json.dumps(task['variant']),
+                json.dumps(branch), 'false'])+')'
+            subprocess.run(['root','-l','-b','-q',invocation], check=True,
+                stdout=subprocess.DEVNULL)
+        else:
+            ROOT.ckf_residual_perLayer('reference_3station_forward.root',name+'_3station_counts',task['variant'],branch,False)
         prefix = name+'_3station_counts'
-        ROOT.ckf_residual_perLayer('reference_3station_forward.root',prefix,task['variant'],branch,False)
         # Keep only source-generated histograms; temporary canvases and raw trees remain on scratch.
         source = ROOT.TFile.Open(prefix+'.root')
         compact = Path(prefix+'.compact.root')
