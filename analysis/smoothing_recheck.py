@@ -23,7 +23,7 @@ def audit_events(path):
         yield rows
 
 
-def check_writer(scratch, destination):
+def check_writer(scratch, destination, sensor_geometry=None):
     """Compare actual writer parameters to old audit snapshots, before scratch cleanup."""
     import ROOT
     source = ROOT.TFile.Open(str(scratch/'track_states.root'))
@@ -41,6 +41,11 @@ def check_writer(scratch, destination):
     ordinal = 0
     max_rmax_error = 0.
     max_relative_writer_error = 0.
+    geometry_error = 0.
+    if sensor_geometry:
+        geometry = json.loads(Path(sensor_geometry).read_text())
+        sensor_transforms = {row['id']: np.array(row['local_to_F']) for row in geometry['tracker']}
+        rotate = np.array([[0., 0., 1., 0.], [0., 1., 0., 0.], [-1., 0., 0., 0.], [0., 0., 0., 1.]])
     for event_index, rows in enumerate(audit_events(scratch/'stages.jsonl')):
         counts['source_events'] += 1
         selected = [r for r in rows if r['stage'] == 'selected']
@@ -85,6 +90,11 @@ def check_writer(scratch, destination):
                 counts['measurement_states'] += 1
                 counts['smoothed_qop_changed'] += old['smoothed'][4] != new['smoothed'][4]
                 transform = np.array(new['surface'])
+                if sensor_geometry:
+                    wafer = new['hit'] >> 53 << 53
+                    expected_transform = rotate @ sensor_transforms[wafer]
+                    geometry_error = max(geometry_error, float(np.max(np.abs(transform-expected_transform))))
+                    assert np.allclose(transform, expected_transform, atol=1e-10, rtol=0.)
                 global_position = transform @ np.array([*new['smoothed'][:2], 0., 1.])
                 rmax = max(rmax, float(np.hypot(global_position[1], global_position[2])))
                 if not passing:
@@ -116,6 +126,10 @@ def check_writer(scratch, destination):
         predicted_filtered_hits_geometry_identical=True,
         selection='Freeze writer ON GitHub passing candidates; use identical states/truth in shared and isolated snapshots',
         bins={k: v.tolist() for k, v in histograms.items()})
+    if sensor_geometry:
+        result.update(sensor_geometry=str(sensor_geometry),
+            maximum_sensor_transform_error=geometry_error,
+            sensor_geometry_matches_actual_acts_surfaces=True)
     (destination/'writer_smoothing_check.json').write_text(json.dumps(result, indent=2)+'\n')
 
 

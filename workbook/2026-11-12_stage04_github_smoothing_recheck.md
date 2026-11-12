@@ -1,5 +1,7 @@
 # S04：GitHub cuts 下 candidate-isolated smoothing 的直接复核
 
+旧筛选逐项实测已完成，见[isolated smoothing 后的 selection 消融](2026-11-12_stage04_selection_ablation.md)：同一GitHub+isolation样本，仅加**final purity≥0.7**就使S1 L0左尾21.91%→10.40%，左窗/肩部计数比2.50→0.82；每truth排序的作用与purity重叠，Good95在GitHub已筛集合中仅小幅补充。
+
 **全量 afterGeo 的 S1 L0 smoothed 左尾率从 42.6341% 降到 22.2013%；S3 L2 从 19.7706% 到 19.8993%。此前图中的 smoothing 已生效，但缺少 OFF/ON 直接叠图，未清楚展示减少发生在哪些层。旧图更小的剩余鼓包还包含 truth purity、final Good95 等额外选择的作用。**
 
 ## 阶段目标

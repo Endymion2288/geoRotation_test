@@ -42,3 +42,5 @@ truth来源检查在同一份native writer ROOT上运行原`t_eQOP`与相同majo
 - 完成前检查图中文字、面板顺序、legend、轴范围和导出裁切，核对图中entries/tail与冻结summary一致；批量统计按仓库规范通过HTCondor执行。
 
 用户追问 smoothing 是否实际生效的检查见[GitHub cuts 下逐参数复核](../workbook/2026-11-12_stage04_github_smoothing_recheck.md)：保留 GitHub cuts，补充全量 OFF/ON 九层叠图和旧 audit 实现到 writer 的实际参数检查。
+
+旧图额外筛选的逐项作用与形状控制见[selection 消融](../workbook/2026-11-12_stage04_selection_ablation.md)：上传图对应10文件，固定actual candidate-isolated states，分别增加、移除各条件，保留完整GitHub集合的主图定义。

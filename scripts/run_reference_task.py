@@ -48,7 +48,7 @@ def run(task, destination):
         return status
     if task.get('writer_smoothing_check'):
         from smoothing_recheck import check_writer
-        check_writer(Path.cwd(), destination)
+        check_writer(Path.cwd(), destination, task.get('sensor_geometry'))
     from reference_truth import attach_production
     result = attach_production(Path.cwd())
     assert result['counts']['source_events'] == task['events']
