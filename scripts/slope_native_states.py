@@ -26,7 +26,7 @@ def extract(output, task, arrays):
     event_ids = events['event'].tolist()
     assert len(set(event_ids)) == len(event_ids), 'Split diagnostics at production-ID repeats'
     entries = dict(zip(event_ids, events['source_entry'].tolist()))
-    rows, inputs = [], []
+    rows, inputs, angle_rows = [], [], []
     checks = dict(source_events=len(event_ids), unmatched_refit_rows=0, ambiguous_refit_rows=0)
     rotated = task['variant'] != 'beforeGeo'
 
@@ -50,6 +50,7 @@ def extract(output, task, arrays):
             'eta_module', 'phi_module', 'side', 'l_x_hit']
     for suffix in ['prt', 'flt', 'smt']:
         base += [f'{name}_{suffix}' for name in ['g_x', 'g_y', 'g_z', 'px', 'py', 'pz', 'eQOP']]
+        base += [f'{name}_{suffix}' for name in ['ePHI','eTHETA','err_ePHI','err_eTHETA','err_eQOP']]
     for label, filename in [('ckf', 'slope_3station_forward_track_states_ckf.root'),
                             ('refit', 'slope_3station_forward_track_states_ckf1.root')]:
         parts[label] = tree_arrays(filename, base)
@@ -79,6 +80,18 @@ def extract(output, task, arrays):
             entry = int(tracks['source_entry'][track_row])
             ordinal = int(tracks['track_index'][track_row]) if 'track_index' in tracks else int(ckf['track_nr'][track_row])
             barcode = int(tracks['barcode'][track_row])
+            # These are original float writer parameters, before any additional
+            # transport or angle normalization in this analysis.
+            angle_columns={field+'_'+suffix:ak.to_numpy(data[field+'_'+suffix][row])
+                for suffix in ['prt','flt','smt']
+                for field in ['ePHI','eTHETA','eQOP','err_ePHI','err_eTHETA','err_eQOP']}
+            modules={field:ak.to_numpy(data[field][row]) for field in ['station','layer','side']}
+            for hit in range(len(modules['station'])):
+                record=dict(entry=entry,track_index=ordinal,barcode=barcode,
+                            writer=0 if label=='ckf' else 1,
+                            **{field:int(values[hit]) for field,values in modules.items()})
+                record.update({field:float(values[hit]) for field,values in angle_columns.items()})
+                angle_rows.append(record)
             for j, suffix in enumerate(['prt', 'flt', 'smt']):
                 values = np.column_stack([ak.to_numpy(data[f'{k}_{suffix}'][row])
                                           for k in ['g_x', 'g_y', 'g_z', 'px', 'py', 'pz']])
@@ -107,6 +120,8 @@ def extract(output, task, arrays):
                    float(seed['track_charge'][row][i]))
     np.savez_compressed('native_states.npz', **{k: np.asarray([r[k] for r in rows]) for k in rows[0]})
     shutil.copy2('native_states.npz', output/'native_states.npz')
+    np.savez_compressed('native_angles.npz', **{k: np.asarray([r[k] for r in angle_rows]) for k in angle_rows[0]})
+    shutil.copy2('native_angles.npz', output/'native_angles.npz')
     (output/'native_inputs.txt').write_text('\n'.join(inputs) + '\n')
     checks.update(stage_labels=LABELS, rows=len(rows), seed_association='Population only; not a same-seed claim',
                   refit_matching='Same source event and complete module/local measurement signature',

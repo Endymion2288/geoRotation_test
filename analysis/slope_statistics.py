@@ -186,10 +186,17 @@ def conditional_response(truth_slope, truth_p, truth_x, truth_y, truth_entries,
                           residual_mean=float(np.mean(residuals)),residual_std=float(np.std(residuals))))
     observed = np.histogram(reco_slope[val_reco],edges)[0]
     uncovered_reco=val_reco & ~np.isin(cell[reco_truth_index],covered_cells)
+    covered_reco=val_reco & ~uncovered_reco
+    observed_covered=np.histogram(reco_slope[covered_reco],edges)[0]
+    observed_covered_bootstrap=np.zeros_like(observed_bootstrap)
+    covered_moments=window_moments(reco_slope[covered_reco],1.)
+    covered_bootstrap_moments=np.zeros_like(observed_bootstrap_moments)
     observed_moments = window_moments(reco_slope[val_reco],1.)
     for b,weights in enumerate(event_weights):
         observed_bootstrap[b] = np.histogram(reco_slope[val_reco],edges,weights=weights[reco_entries[val_reco]].astype(float))[0]
         observed_bootstrap_moments[b] = window_moments(reco_slope[val_reco],weights[reco_entries[val_reco]].astype(float))
+        observed_covered_bootstrap[b]=np.histogram(reco_slope[covered_reco],edges,weights=weights[reco_entries[covered_reco]].astype(float))[0]
+        covered_bootstrap_moments[b]=window_moments(reco_slope[covered_reco],weights[reco_entries[covered_reco]].astype(float))
     a,b = prediction/max(1.,prediction.sum()),observed/max(1,observed.sum())
     midpoint = .5*(a+b)
     def divergence(p):
@@ -200,6 +207,7 @@ def conditional_response(truth_slope, truth_p, truth_x, truth_y, truth_entries,
     tv_bootstrap = .5*np.abs(pa-pb).sum(axis=1)
     centers = .5*(edges[1:]+edges[:-1])
     peak_comparison = []
+    covered_peak_comparison=[]
     for i,window in enumerate(windows):
         predicted_n,observed_n = predicted_moments[i,0],observed_moments[i,0]
         def moments(values):
@@ -218,6 +226,22 @@ def conditional_response(truth_slope, truth_p, truth_x, truth_y, truth_entries,
             difference_mean_interval_95=np.quantile(boot_obs[0]-boot_pred[0],[.025,.975]).tolist(),
             difference_std_interval_95=np.quantile(boot_obs[1]-boot_pred[1],[.025,.975]).tolist(),
             moment_definition='Unbinned conditional moments inside frozen discovery windows'))
+        covered_n=covered_moments[i,0]
+        covered_m= moments(covered_moments[i])
+        covered_boot=moments(covered_bootstrap_moments[:,i])
+        covered_peak_comparison.append(dict(window=window,predicted_entries=float(predicted_n),
+            observed_entries=int(covered_n),uncovered_observed_entries=int(observed_n-covered_n),
+            observed_minus_predicted_entries=float(covered_n-predicted_n),
+            difference_entries_interval_95=np.quantile(covered_bootstrap_moments[:,i,0]-predicted_bootstrap_moments[:,i,0],[.025,.975]).tolist(),
+            predicted_mean=float(predicted_m[0]),observed_mean=float(covered_m[0]),
+            predicted_std=float(predicted_m[1]),observed_std=float(covered_m[1]),
+            difference_mean_interval_95=np.quantile(covered_boot[0]-boot_pred[0],[.025,.975]).tolist(),
+            difference_std_interval_95=np.quantile(covered_boot[1]-boot_pred[1],[.025,.975]).tolist(),
+            cohort='Only validation truths in covered training cells; same coverage for prediction and observation'))
+    covered_a=prediction/max(1.,prediction.sum())
+    covered_b=observed_covered/max(1,observed_covered.sum())
+    covered_pa=predicted_bootstrap/np.maximum(1.,predicted_bootstrap.sum(axis=1))[:,None]
+    covered_pb=observed_covered_bootstrap/np.maximum(1.,observed_covered_bootstrap.sum(axis=1))[:,None]
     return dict(predicted_counts=prediction.tolist(),mc_sumw2=prediction2.tolist(),
         predicted_counts_interval_95=np.quantile(predicted_bootstrap,[.025,.975],axis=0).tolist(),
         observed_counts_interval_95=np.quantile(observed_bootstrap,[.025,.975],axis=0).tolist(),
@@ -226,6 +250,12 @@ def conditional_response(truth_slope, truth_p, truth_x, truth_y, truth_entries,
         normalized_shape_total_variation_interval_95=np.quantile(tv_bootstrap,[.025,.975]).tolist(),
         prediction_expected_total=expected_total,prediction_underflow=underflow,prediction_overflow=overflow,
         peak_comparison=peak_comparison,
+        covered_peak_comparison=covered_peak_comparison,
+        covered_observed_counts=observed_covered.tolist(),
+        covered_validation_reco=int(covered_reco.sum()),
+        covered_observed_minus_predicted_interval_95=np.quantile(observed_covered_bootstrap-predicted_bootstrap,[.025,.975],axis=0).tolist(),
+        covered_normalized_shape_total_variation=float(.5*np.abs(covered_a-covered_b).sum()),
+        covered_normalized_shape_total_variation_interval_95=np.quantile(.5*np.abs(covered_pa-covered_pb).sum(axis=1),[.025,.975]).tolist(),
         bootstrap=dict(repeats=bootstrap_repeats,unit='source event',method='Poisson event bootstrap; four response draws per validation truth per replicate',
                        uncertainty='Training response/multiplicity, validation truth and observed tracks; includes finite response Monte Carlo variance'),
         observed_counts=observed.tolist(),edges=edges.tolist(),cells=cells,

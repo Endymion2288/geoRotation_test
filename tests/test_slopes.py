@@ -62,6 +62,20 @@ class SlopeDefinitions(unittest.TestCase):
         self.assertGreater(first['peak_comparison'][0]['observed_std'],1e-5)
         self.assertNotEqual(first['observed_counts'],second['observed_counts'])
 
+    def test_response_compares_only_the_same_covered_truth_cells(self):
+        n=1200;entries=np.arange(n);true=np.full(n,.001)
+        momentum=np.full(n,100.);momentum[900:]=10.
+        result=conditional_response(true,momentum,np.zeros(n),np.zeros(n),entries,
+            true,entries,np.ones(n,dtype=bool),entries,600,np.linspace(-.01,.01,101),
+            bootstrap_repeats=10,windows=[dict(center=.001,half_width=.0001)])
+        self.assertEqual(result['validation_reco'],600)
+        self.assertEqual(result['covered_validation_reco'],300)
+        self.assertEqual(result['uncovered_validation_reco'],300)
+        np.testing.assert_array_equal(np.array(result['covered_observed_counts'])+
+            result['uncovered_validation_reco_counts'],result['observed_counts'])
+        self.assertEqual(result['covered_peak_comparison'][0]['observed_entries'],300)
+        self.assertEqual(result['covered_peak_comparison'][0]['uncovered_observed_entries'],300)
+
 
 if __name__ == '__main__':
     unittest.main()

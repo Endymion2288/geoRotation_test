@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--isolate-smoothing', action='store_true', help='Controlled candidate-specific smoothing; changes saved states')
     parser.add_argument('--physical-ntuple-angles', action='store_true', help='Opt-in physical VetoNu angles in the actual rotated NtupleDumper')
     parser.add_argument('--truth-cluster-position', action='store_true', help='Calypso diagnostic: replace only local measured strip coordinates by majority SiHit centroids')
+    parser.add_argument('--refit-covariance-scale', type=float, help='Controlled change to native KalmanFitterTool1.SeedCovarianceScale; CKF remains native')
     args = parser.parse_args()
     from AthenaCommon.Configurable import Configurable
     from AthenaConfiguration.ComponentFactory import CompFactory
@@ -81,6 +82,8 @@ def main():
     ckf.KalmanFitterTool1.StatesWriter = args.native_states
     ckf.KalmanFitterTool1.RootTrajectoryStatesWriterTool.noDiagnostics = not args.native_states
     ckf.KalmanFitterTool1.SummaryWriter = False
+    if args.refit_covariance_scale is not None:
+        ckf.KalmanFitterTool1.SeedCovarianceScale=args.refit_covariance_scale
     acc.merge(cfg)
     result, geometry = ActsTrackingGeometryToolCfg(flags)
     acc.merge(result)
@@ -103,6 +106,7 @@ def main():
     manifest = dict(args=vars(args), geometry='FASERNU-04', conditions='OFLCOND-FASER-05',
         calypso_dir=os.environ.get('Calypso_DIR'), library=os.environ.get('GEOROTATION_LIBRARY_DIR'),
         seed_covariance={p: getattr(ckf.TrackSeed, p) for p in ['covLoc0','covLoc1','covPhi','covTheta','covQOverP']},
+        refit_covariance_scale=ckf.KalmanFitterTool1.SeedCovarianceScale,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False, isolate_smoothing=args.isolate_smoothing, observer=not args.no_observer,
         propagation_material_energy_loss=propagator.InteractionEloss,
         propagation_material_scattering=propagator.InteractionMultiScatering)

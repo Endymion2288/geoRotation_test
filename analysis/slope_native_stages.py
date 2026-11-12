@@ -19,6 +19,23 @@ LABELS={3:'CKF predicted',4:'CKF filtered',5:'CKF smoothed',8:'Refit predicted',
         9:'Refit filtered',10:'Refit smoothed',11:'Final'}
 
 
+def align_transport(state, projection):
+    """Match the event-ordered transport output to the writer's stage order."""
+    left=np.rec.fromarrays([state[k] for k in ['entry','track_index','stage']],
+                          names='entry,track,stage')
+    right=np.rec.fromarrays([projection[k] for k in ['source_entry','seed','stage']],
+                           names='entry,track,stage')
+    assert len(np.unique(left))==len(left), 'Duplicate native state identity'
+    assert len(np.unique(right))==len(right), 'Duplicate transported state identity'
+    a,b=np.argsort(left),np.argsort(right)
+    assert np.array_equal(left[a],right[b]), 'Native/transport identity coverage differs'
+    order=np.empty(len(a),dtype=int);order[a]=b
+    result={k:v[order] for k,v in projection.items()}
+    for key in ['barcode','stage','layer']:
+        assert np.array_equal(state[key],result[key]), key
+    return result
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--states',type=Path,required=True)
@@ -42,6 +59,7 @@ def main():
         observer_checks.append(dict(shard=p.name,tables=checked))
         r,t=archive(p/'tracks.npz'),archive(p/'truth.npz')
         state,projection=archive(p/'native_states.npz'),archive(q/'transport.npz')
+        projection=align_transport(state,projection)
         assert np.array_equal(state['entry'],projection['source_entry'])
         assert np.array_equal(state['stage'],projection['stage'])
         assert np.array_equal(state['track_index'],projection['seed'])
