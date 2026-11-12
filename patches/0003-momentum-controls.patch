@@ -1,0 +1,345 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -76,6 +76,18 @@
+     if (!m_audit->out) return StatusCode::FAILURE;
+     m_audit->collection = m_trackCollection.key();
+     m_audit->idHelper = m_idHelper;
++    m_audit->selectedStatesOnly = m_selectedStatesOnly;
++  }
++  if(!m_seedOverrideFile.value().empty()) {
++    std::ifstream input(m_seedOverrideFile.value());
++    if(!input) return StatusCode::FAILURE;
++    size_t entry; int seed;
++    while(input >> entry >> seed) {
++      Acts::BoundVector mean;
++      for(int i=0;i<6;++i) input >> mean[i];
++      if(!input) return StatusCode::FAILURE;
++      m_seedOverrides[{entry,seed}]=mean;
++    }
+   }
+ 
+   // FIXME fix Acts logging level
+@@ -93,10 +105,10 @@
+   double reverseFilteringMomThreshold = 0.1; //@todo: needs to be validated
+   //@todo: the multiple scattering and energy loss are originallly turned off 
+   m_fitter = makeTrackFitterFunction(trackingGeometry, magneticField, 
+-                                  true, true, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger);
++                                  m_scattering, m_energyLoss, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger);
+  
+   m_finder = makeTrackFinderFunction(trackingGeometry, magneticField,
+-                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger);
++                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger, m_scattering, m_energyLoss);
+ 
+   return StatusCode::SUCCESS;
+ }
+@@ -248,6 +260,7 @@
+   
+   Acts::PropagatorPlainOptions pOptions;
+   pOptions.maxSteps = m_maxSteps;
++  if(m_maxStepSize>0) pOptions.maxStepSize=m_maxStepSize;
+   if (m_backwardPropagation) {
+     pOptions.direction = Acts::Direction::Backward;
+   } else {
+@@ -262,10 +275,20 @@
+   ATH_MSG_DEBUG("Invoke track finding with " << initialParameters->size() << " seeds.");
+ 
+   for (std::size_t iseed = 0; iseed < (*initialParameters).size(); ++iseed) {
++    auto initial=initialParameters->at(iseed);
++    auto override=m_seedOverrides.find({m_numberOfEvents-1,iseed});
++    if(override!=m_seedOverrides.end()) {
++      auto mean=initial.parameters();
++      if(m_seedOverrideMode=="qop") mean[4]=override->second[4];
++      else mean=override->second;
++      if(m_audit) m_audit->parameters("seed_original",gctx,initial,iseed,-1);
++      initial=Acts::BoundTrackParameters(initial.referenceSurface().getSharedPtr(),mean,initial.covariance(),initial.particleHypothesis());
++    }
++    if(m_electronHypothesis) initial=Acts::BoundTrackParameters(initial.referenceSurface().getSharedPtr(),initial.parameters(),initial.covariance(),Acts::ParticleHypothesis::electron());
+     if (m_audit) {
+       std::vector<const Tracker::FaserSCT_Cluster*> seedHits;
+       if (Tool) seedHits = Tool->seeds()->at(iseed).clusters;
+-      m_audit->parameters("seed", gctx, initialParameters->at(iseed), iseed, -1, seedHits);
++      m_audit->parameters("seed", gctx, initial, iseed, -1, seedHits);
+       if(Tool) {
+         const auto& seed=Tool->seeds()->at(iseed);
+         m_audit->begin("seed_circle",iseed);
+@@ -273,6 +296,21 @@
+         m_audit->out << ",\"cx\":"; if(seed.stations>1) m_audit->number(seed.cx); else m_audit->out << "null";
+         m_audit->out << ",\"cy\":"; if(seed.stations>1) m_audit->number(seed.cy); else m_audit->out << "null";
+         m_audit->out << ",\"radius_mm\":"; if(seed.stations>1) m_audit->number(seed.r); else m_audit->out << "null";
++        if(m_audit->fullStates) {
++          m_audit->out << ",\"fake_positions_F_mm\":[";
++          for(size_t i=0;i<seed.fakePositions.size();++i) { if(i) m_audit->out << ','; m_audit->vector(seed.fakePositions[i]); }
++          m_audit->out << "],\"spacepoints_F_mm\":[";
++          for(size_t i=0;i<seed.spacePoints.size();++i) { if(i) m_audit->out << ','; m_audit->vector(seed.spacePoints[i]->globalPosition()); }
++          m_audit->out << "],\"segments\":[";
++          for(size_t i=0;i<seed.segs.size();++i) {
++            if(i) m_audit->out << ',';
++            const auto& segment=seed.segs[i];
++            m_audit->out << "{\"station\":" << segment.station << ",\"position_F_mm\":"; m_audit->vector(segment.position);
++            m_audit->out << ",\"momentum_F\":"; m_audit->vector(segment.momentum);
++            m_audit->hits(segment.clusters); m_audit->out << '}';
++          }
++          m_audit->out << ']';
++        }
+         m_audit->end();
+       }
+     }
+@@ -282,18 +320,37 @@
+     // Clear trackContainerTemp and trackStateContainerTemp
+     tracksTemp.clear();
+ 
+-    auto result = (*m_finder)((*initialParameters).at(iseed), options, calibrator, slAccessor, Acts::MeasurementSelector(measurementSelectorCfg), tracksTemp);
+-   
+-    if (!result.ok()) {
++    std::vector<FaserActsTrackContainer::TrackProxy> tracksForSeed;
++    int findingError=0;
++    if(m_fixedTruthHits) {
++      const TrackerSimDataCollection* sd=nullptr;
++      ATH_CHECK(evtStore()->retrieve(sd,"SCT_SDO_Map"));
++      std::vector<ParticleHitCount> seedCounts;
++      if(Tool) identifyContributingParticles(*sd,Tool->seeds()->at(iseed).clusters,seedCounts);
++      int barcode=0;size_t best=0;
++      for(const auto& count:seedCounts) if(count.hitCount>best) { barcode=count.particleId;best=count.hitCount; }
++      std::vector<Acts::SourceLink> fixed;
++      for(const auto& sl:*sourceLinks) {
++        std::vector<ParticleHitCount> counts;
++        identifyContributingParticles(*sd,std::vector<const Tracker::FaserSCT_Cluster*>{sl.hit()},counts);
++        if(counts.size()==1 && counts[0].particleId==barcode) fixed.emplace_back(sl);
++      }
++      if(m_audit) { m_audit->begin("fixed_hits",iseed);m_audit->out << ",\"barcode\":" << barcode << ",\"measurements\":" << fixed.size();m_audit->end(); }
++      auto result=(*m_fitter)(fixed,initial,options,calibrator,tracksTemp);
++      if(result.ok()) tracksForSeed.push_back(result.value()); else findingError=result.error().value();
++    } else {
++      auto result=(*m_finder)(initial,options,calibrator,slAccessor,Acts::MeasurementSelector(measurementSelectorCfg),tracksTemp);
++      if(result.ok()) tracksForSeed=result.value(); else findingError=result.error().value();
++    }
++    if (findingError) {
+       if(m_audit) {
+         m_audit->begin("finder_error",iseed);
+-        m_audit->out << ",\"error\":" << result.error().value(); m_audit->end();
+-      }
+-      ATH_MSG_WARNING("Track finding failed for seed " << iseed << " with error" << result.error());
++        m_audit->out << ",\"error\":" << findingError; m_audit->end();
++      }
++      ATH_MSG_WARNING("Track finding failed for seed " << iseed << " with error" << findingError);
+       continue;
+     }
+ 
+-    auto& tracksForSeed = result.value();
+     m_numberOfFittedTracks += tracksForSeed.size();
+     ATH_MSG_DEBUG("Find " << tracksForSeed.size() << " tracks for this seed");
+     for (auto& track : tracksForSeed) {
+@@ -325,6 +382,11 @@
+     
+     auto destProxy = selectedTracks.getTrack(selectedTracks.addTrack());
+     destProxy.copyFrom(tracks.getTrack(selected.index), true);  // make sure we copy track states!
++    if(m_isolateSmoothing) {
++      if(m_audit) m_audit->track("selected_shared",gctx,destProxy,seedNumber(destProxy),candidateNumber(destProxy));
++      auto status=Acts::GainMatrixSmoother()(gctx,selectedTracks.trackStateContainer(),destProxy.tipIndex(),*m_logger);
++      if(!status.ok()) { ATH_MSG_ERROR("Isolated candidate smoothing failed: " << status.error()); return StatusCode::FAILURE; }
++    }
+     if(m_audit) m_audit->track("selected",gctx,destProxy,seedNumber(destProxy),candidateNumber(destProxy));
+     
+     if(not allTracks.empty()){ 
+@@ -378,7 +440,8 @@
+     if(m_audit) m_audit->trk("converted",trk.get(),auditSeed,auditCandidate);
+     m_numberOfSelectedTracks++;
+     //@todo: make the KF refit configurable 
+-    std::unique_ptr<Trk::Track> trk2 = m_kalmanFitterTool1->fitAudited(
++    std::unique_ptr<Trk::Track> trk2;
++    if(!m_bypassRefit) trk2=m_kalmanFitterTool1->fitAudited(
+       ctx, gctx, trk.get(), Acts::BoundVector::Zero(), m_isMC, m_audit.get(), auditSeed, auditCandidate);
+     if(m_audit) m_audit->trk("final",trk2 ? trk2.get() : trk.get(),auditSeed,auditCandidate,trk2 ? 1 : 0);
+     if (trk2 != nullptr) {
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -81,6 +81,17 @@
+   Gaudi::Property<std::string> m_auditFile {this, "AuditFile", ""};
+   Gaudi::Property<bool> m_auditStates {this, "AuditStates", false};
+   Gaudi::Property<bool> m_auditClosure {this, "AuditClosure", false};
++  Gaudi::Property<bool> m_selectedStatesOnly {this, "AuditSelectedStatesOnly", false};
++  Gaudi::Property<bool> m_isolateSmoothing {this, "IsolateCandidateSmoothing", false};
++  Gaudi::Property<bool> m_energyLoss {this, "MaterialEnergyLoss", true};
++  Gaudi::Property<bool> m_scattering {this, "MaterialScattering", true};
++  Gaudi::Property<bool> m_bypassRefit {this, "BypassRefit", false};
++  Gaudi::Property<bool> m_fixedTruthHits {this, "FixedTruthHits", false};
++  Gaudi::Property<bool> m_electronHypothesis {this, "ElectronHypothesis", false};
++  Gaudi::Property<double> m_maxStepSize {this, "MaxStepSize", 0.};
++  Gaudi::Property<std::string> m_seedOverrideFile {this, "SeedOverrideFile", ""};
++  Gaudi::Property<std::string> m_seedOverrideMode {this, "SeedOverrideMode", "mean"};
++  std::map<std::pair<size_t,int>,Acts::BoundVector> m_seedOverrides;
+   size_t m_numberOfEvents {0};
+   size_t m_numberOfTrackSeeds {0};
+   size_t m_numberOfFittedTracks {0};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+@@ -36,7 +36,7 @@
+   auto magneticField = std::make_shared<FASERMagneticFieldWrapper>();
+   double reverseFilteringMomThreshold = 0.1; //@todo: needs to be validated
+   //@todo: the multiple scattering and energy loss are originallly turned off 
+-  m_fit = makeTrackFitterFunction(m_trackingGeometryTool->trackingGeometry(), magneticField, true, true, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger); 
++  m_fit = makeTrackFitterFunction(m_trackingGeometryTool->trackingGeometry(), magneticField, m_scattering, m_energyLoss, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger);
+   return StatusCode::SUCCESS;
+ }
+ 
+@@ -371,7 +371,7 @@
+   //auto pSurface = Acts::Surface::makeShared<Acts::PlaneSurface>(
+   //    Acts::Vector3 {0, 0, origin}, Acts::Vector3{0, 0, -1});
+   double origin = inputTrack->trackParameters()->front()->position().x() - 10;
+-  if(m_correctInterfaces) origin = inputTrack->trackParameters()->front()->position().x();
++  if(m_correctInterfaces || m_correctSurface) origin = inputTrack->trackParameters()->front()->position().x();
+    Acts::RotationMatrix3 rot = Acts::RotationMatrix3::Identity();
+   rot.col(0) = Acts::Vector3(0, 0, -1);
+   rot.col(1) = Acts::Vector3(0, 1, 0);
+@@ -397,7 +397,7 @@
+   //Inflate the covariance of the starting track parameters
+   //@todo: make the inflation configurable
+   if(trackParameters.covariance().has_value()){ 
+-    trackParameters.covariance() = (trackParameters.covariance().value())*10; 
++    trackParameters.covariance() = (trackParameters.covariance().value())*m_refitCovarianceMultiplier;
+   }
+   if(audit) audit->parameters("refit_input",gctx,trackParameters,auditSeed,auditCandidate);
+  
+@@ -414,6 +414,7 @@
+   GeneralFitterOptions options{
+       gctx, mfContext, calibContext, &(*pSurface),
+       Acts::PropagatorPlainOptions()};
++  if(m_maxStepSize>0) options.propOptions.maxStepSize=m_maxStepSize;
+ 
+   std::vector<Acts::SourceLink> actsSls;
+   for(const auto& sl: sourceLinks){
+@@ -643,7 +644,7 @@
+   for(int i=0; i < cov.cols(); i++){
+     cov(4, i) = cov(4, i)/1_MeV;
+   }
+-  if(m_correctInterfaces) {
++  if(m_correctInterfaces || m_correctCovariance) {
+     // Re-express uncertainty at the same physical point. A shift to a different
+     // plane would require propagation of the mean and covariance together.
+     const Acts::Vector3 direction = inputParameters->momentum().normalized();
+@@ -659,5 +660,5 @@
+     cov(i,i) = m_seedCovarianceScale * cov(i,i);
+   }
+ 
+-  return Acts::BoundTrackParameters(pSurface, params, cov, Acts::ParticleHypothesis::muon());
+-}
++  return Acts::BoundTrackParameters(pSurface, params, cov, m_electronHypothesis ? Acts::ParticleHypothesis::electron() : Acts::ParticleHypothesis::muon());
++}
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+@@ -92,6 +92,13 @@
+   Gaudi::Property<double> m_seedCovarianceScale {this, "SeedCovarianceScale", 100, "scale covariance from initial track"};
+   Gaudi::Property<bool> m_isMC {this, "isMC", false};
+   Gaudi::Property<bool> m_correctInterfaces {this, "CorrectInterfaces", false};
++  Gaudi::Property<bool> m_correctSurface {this, "CorrectRefitSurface", false};
++  Gaudi::Property<bool> m_correctCovariance {this, "CorrectRefitCovariance", false};
++  Gaudi::Property<bool> m_energyLoss {this, "MaterialEnergyLoss", true};
++  Gaudi::Property<bool> m_scattering {this, "MaterialScattering", true};
++  Gaudi::Property<bool> m_electronHypothesis {this, "ElectronHypothesis", false};
++  Gaudi::Property<double> m_refitCovarianceMultiplier {this, "RefitCovarianceMultiplier", 10.};
++  Gaudi::Property<double> m_maxStepSize {this, "MaxStepSize", 0.};
+   Gaudi::Property<bool> m_summaryWriter {this, "SummaryWriter", false};
+   Gaudi::Property<bool> m_statesWriter {this, "StatesWriter", false};
+   Gaudi::Property<bool> m_noDiagnostics {this, "noDiagnostics", true, "Set ACTS logging level to INFO and do not run performance writer, states writer or summary writer"};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+@@ -7,6 +7,8 @@
+   Acts::GainMatrixSmoother kfSmoother;
+   
+   CKF trackFinder;
++  bool multipleScattering = true;
++  bool energyLoss = true;
+ 
+   TrackFinderFunctionImpl(CKF &&f) : trackFinder(std::move(f)) {} 
+   
+@@ -35,6 +37,8 @@
+     TrackFinderOptions ckfOptions(options.geoContext, options.magFieldContext, options.calibrationContext, slAccessorDelegate,
+         extensions, options.propOptions, &(*options.referenceSurface));
+ 
++    ckfOptions.multipleScattering = multipleScattering;
++    ckfOptions.energyLoss = energyLoss;
+     //todo: make this configurable
+     ckfOptions.smoothingTargetSurfaceStrategy =
+         Acts::CombinatorialKalmanFilterTargetSurfaceStrategy::first;
+@@ -60,7 +64,7 @@
+     std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+     std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+     bool resolvePassive, bool resolveMaterial, bool resolveSensitive, 
+-    const Acts::Logger& logger) {
++    const Acts::Logger& logger, bool multipleScattering, bool energyLoss) {
+   Stepper stepper(std::move(magneticField));
+   Navigator::Config cfg{std::move(trackingGeometry)};
+   cfg.resolvePassive = resolvePassive; 
+@@ -72,6 +76,9 @@
+   CKF trackFinder(std::move(propagator), logger.cloneWithSuffix("Finder"));
+ 
+   // build the track finder functions. owns the track finder object.
+-  return std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  auto finder=std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  finder->multipleScattering=multipleScattering;
++  finder->energyLoss=energyLoss;
++  return finder;
+ }
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+@@ -60,7 +60,7 @@
+   std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+   std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+   bool resolvePassive, bool resolveMaterial, bool resolveSensitive,
+-  const Acts::Logger& logger);
++  const Acts::Logger& logger, bool multipleScattering=true, bool energyLoss=true);
+ 
+ 
+ //}  // namespace
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
+@@ -12,6 +12,7 @@
+ #include "TrackerIdentifier/FaserSCT_ID.h"
+ #include "FaserActsKalmanFilter/IndexSourceLink.h"
+ #include "Acts/EventData/TrackParameters.hpp"
++#include "Acts/Material/ISurfaceMaterial.hpp"
+ #include "TrkTrack/Track.h"
+ #include <fstream>
+ #include <iomanip>
+@@ -24,6 +25,7 @@
+       : out(path), fullStates(states) { out << std::setprecision(17); }
+   std::ofstream out;
+   bool fullStates;
++  bool selectedStatesOnly = false;
+   uint64_t run = 0, event = 0, lumi = 0;
+   std::string collection;
+   const TrackerSimDataCollection* simData = nullptr;
+@@ -166,7 +168,7 @@
+       out << ",\"momentum_A_GeV\":"; vector(p.momentum());
+     }
+     hits(clusters); end();
+-    if(!fullStates) return;
++    if(!fullStates || (selectedStatesOnly && std::string(stage)=="found")) return;
+     int index=0;
+     for(const auto& state: trk.trackStatesReversed()) {
+       begin((std::string(stage)+"_state").c_str(),seed,candidate,index++);
+@@ -176,6 +178,16 @@
+           << ",\"outlier_flag\":" << (state.typeFlags().test(Acts::TrackStateFlag::OutlierFlag) ? "true":"false")
+           << ",\"hole_flag\":" << (state.typeFlags().test(Acts::TrackStateFlag::HoleFlag) ? "true":"false");
+       out << ",\"surface\":"; matrix(state.referenceSurface().transform(gctx).matrix());
++      out << ",\"path_length_mm\":"; number(state.pathLength());
++      if(state.hasPredicted() && state.referenceSurface().surfaceMaterial()) {
++        const auto& mean=state.predicted();
++        const Acts::Vector3 direction(std::cos(mean[2])*std::sin(mean[3]),std::sin(mean[2])*std::sin(mean[3]),std::cos(mean[3]));
++        const auto position=state.referenceSurface().localToGlobal(gctx,mean.template head<2>(),direction);
++        const auto& slab=state.referenceSurface().surfaceMaterial()->materialSlab(position);
++        out << ",\"material_full_X0\":"; number(slab.thicknessInX0());
++        out << ",\"material_full_thickness_mm\":"; number(slab.thickness());
++        out << ",\"material_path_correction\":"; number(state.referenceSurface().pathCorrection(gctx,position,direction));
++      }
+       if(state.hasUncalibratedSourceLink()) {
+         const auto sl=state.getUncalibratedSourceLink().template get<IndexSourceLink>();
+         out << ",\"source_index\":" << sl.index() << ",\"hit\":" << sl.hit()->identify().get_compact();

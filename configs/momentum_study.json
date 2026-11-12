@@ -1,0 +1,16 @@
+{
+  "stage": "S04",
+  "baseline": "stage03_baseline/audit_current",
+  "primary_selection": "fiducial + H18 + SDO majority >=0.7 + Good95",
+  "event_identity": "frozen input file + source entry; never production event ID alone",
+  "momentum_truth": "production truth for historical RDO; exact local truth only for separately labelled diagnostic simulation",
+  "tail_thresholds": [0.8, 0.5, 0.2],
+  "requirements": {
+    "M1": "Production/local truth and per-state residual, validity, charge/topology selection",
+    "M2": "Segment/circle seed closure and classified seed tail with fixed inputs",
+    "M3": "Good-seed selection and same-surface truth qop/full-mean/fixed-hits/ideal tests T0-T5",
+    "M4": "Prediction/update/smoothing/target change, gain identity and single-factor controls",
+    "M5": "Conversion/refit/particle hypothesis/candidate selection/output audit",
+    "M6": "Independent paired validation, efficiency/charge/angle/resource regression and unexplained classes"
+  }
+}

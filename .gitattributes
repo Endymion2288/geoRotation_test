@@ -1,0 +1,2 @@
+# Preserve external source whitespace in patch context and removed lines.
+patches/*.patch whitespace=-blank-at-eol

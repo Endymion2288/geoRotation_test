@@ -1,0 +1,29 @@
+diff --git a/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx b/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx
+--- a/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx
++++ b/Tracker/TrackerG4/FaserSCT_G4_SD/src/FaserSctSensorSD.cxx
+@@ -13,6 +13,7 @@
+ 
+ // athena includes
+ #include "FaserMCTruth/FaserTrackHelper.h"
++#include "GaudiKernel/ThreadLocalContext.h"
+ 
+ // Geant4 includes
+ #include "G4Step.hh"
+@@ -118,13 +119,15 @@
+     static thread_local std::ofstream truth(truthPath);
+     static thread_local bool header=false;
+     if(!header) {
+-      truth << "event,track,parent,barcode,pdg,station,layer,row,module,sensor,x_mm,y_mm,z_mm,px_MeV,py_MeV,pz_MeV,post_px_MeV,post_py_MeV,post_pz_MeV\n";
++      truth << "event,source_entry,g4_event,track,parent,barcode,pdg,station,layer,row,module,sensor,x_mm,y_mm,z_mm,px_MeV,py_MeV,pz_MeV,post_px_MeV,post_py_MeV,post_pz_MeV\n";
+       truth << std::setprecision(17); header=true;
+     }
+     const auto pos=aStep->GetPreStepPoint()->GetPosition();
+     const auto p=aStep->GetPreStepPoint()->GetMomentum();
+     const auto post=aStep->GetPostStepPoint()->GetMomentum();
+-    truth << G4RunManager::GetRunManager()->GetCurrentEvent()->GetEventID() << ','
++    const auto& eventContext = Gaudi::Hive::currentContext();
++    truth << eventContext.eventID().event_number() << ',' << eventContext.evt() << ','
++          << G4RunManager::GetRunManager()->GetCurrentEvent()->GetEventID() << ','
+           << aStep->GetTrack()->GetTrackID() << ',' << aStep->GetTrack()->GetParentID() << ','
+           << trHelp.GetParticleLink().barcode() << ',' << aStep->GetTrack()->GetDefinition()->GetPDGEncoding() << ','
+           << station << ',' << plane << ',' << row << ',' << module << ',' << sensor << ','

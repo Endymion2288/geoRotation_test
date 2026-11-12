@@ -2,9 +2,11 @@
 
 本研究要给出三个可复核的答案：动量低估首次出现在哪个运算或候选选择环节、角度分布的剩余结构来自物理混合还是实现问题、μ− 比 μ+ 更易误判电荷的差异在旋转后是否存在及其来源。完成标准包括事件级因果证据、总体发生率及其统计区间、最小修复或经验证的物理解释，以及独立样本回归。
 
-研究起点为本地旋转版 Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00 材料、S01 输入/定义、S02 旋转与诊断检查、S03 的 50,000 事件基线已完成。五类样本各 10,000 事件，50/50 shards 成功且归档复算一致；峰显著性和总体根因由 S04–S06 检验。
+研究起点为本地旋转版 Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00–S04已完成：S03建立五类各10k事件的原版基线，S04完成动量逐运算研究、独立50k母事件的材料配对验证，以及T0–T5控制。
 
-当前实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)。S02 发现 plane/curvilinear covariance chart 和 refit 起点问题，交付默认关闭的实验修正；当前 default material 的 22 surfaces 与历史 rotated map 的 12 surfaces 分开控制。S03 的 10 事件材料配对已显示候选/电荷会变化，总体影响待批量验证。补充 G4 模拟的退出故障记录于 S01，当前 RDO 基线使用 production truth，同 sensor 精确动量尚未测量。
+实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)、[S04](../workbook/2026-11-12_stage04_momentum.md)。S04证实current22材料与旋转几何的坐标不一致，主要通过scattering covariance/gain制造大负尾；严格旋转同一map后，独立110051尾率从34.151%降至10.543%，Good95效率提高4.018个百分点。接口chart/refit起点问题、seed混合和辐射后KF残余分别保留受控实验入口。补充G4退出134已定位修复，同sensor truth关联通过2400事件、81153 steps逐值验证。
+
+下表保留S03的current22历史基线；strict与独立样本的完整配对表见S04。
 
 | DSID | Good95 匹配粒子 | production p ratio <0.5 / % | charge misID / % |
 | --- | --- | --- | --- |
@@ -28,11 +30,11 @@
 
 ## 目前证据决定的优先级
 
-1. **按最终候选路径定位具体更新。** S02–S03 已建立独立 seed/candidate lineage。100044 的 791 条最终 tail 中，33/726/32 条在 seed/found/refit 首次已观测到低比值；110051 对应 2065/2014/103。用已选出的 32 条无匹配歧义代表 track 重放完整 states，补齐 CKF 与 refit 的 predicted/filtered/smoothed、候选选择和 fallback。首次观测阶段仍需通过逐运算证据才能归因。
-2. **把已知接口问题和材料配置分别做配对消融。** 原版基线已保存，下一轮单独启用 chart Jacobian、同点 refit plane、严格旋转 current22 material；先固定候选，再放开排序，量化 tail/misID/效率的共同变化。历史 rotated12 map 同时改变表面内容，不能独自代表纯旋转控制。
-3. **分别解释 seed 与后续 CKF。** 重现报告 good-seed 筛选，执行同 surface truth 参数注入与固定 truth hits 两种实验。局部 p truth 需先解决补充 G4 的退出134；已有 production p ratio 包含真实能损，不能直接当作拟合误差。
-4. **优先拆分角度选择迁移与 μ± 输入谱。** physical 与 legacy 分量公式相差很大，且 110051 的 reco-p/truth-p 50–250GeV 窗口分别选中3374/1401粒子；先统一物理面再检验多峰。μ− 的34条wrong中30/4条首次在found/refit，优先追踪符号更新，并比较共同 truth p/位置/方向支持域。
-5. **建立一致旋转控制并扩展模式。** 当前只完成 3-station forward；完整 G0/G1、backward、4-station 与 merge 后续验证。三分支共享 `momentum tail × slope peak × wrong charge` 母样本，保留独立验证文件，分别报告公共和独立机制。
+1. **S05在current/strict配对上统一物理面。** S04已证明材料能显著改变选择与curvature；先将tanθ_y和truth传播到同一st1/VetoNu面，再分解reco-p窗口、hit pattern和candidate迁移。量化峰的位置、宽度、占比及统计显著性，不能用production方向residual直接充当角分辨率。
+2. **S06先平衡谱与接受度。** 独立strict样本μ+、μ−各剩1条wrong；事件数尚不足以判定残余正负差异。先比较共同truth p/位置/方向支持域与有效样本量，再按目标精度追加。材料配对不代替完整G0/G1的旋转净效应。
+3. **S07逐项处理seed和辐射模型。** 110051 strict有3020条最终祖先seed tail，其中2346条含other-majority segment。固定真hits的电子仍有23条guaranteed local tail，11条在update、12条在smoothing出现同sensor可证实的穿越，并有显著沿程能损。使用纯segment组合/同点方向与field integral、G4 bremsstrahlung控制及piecewise q/p/GSF分别检验。
+4. **保留接口、pruning与IFT实验。** S04全量100k观察配对的final p/charge/Good95均一致，少量rmax改变；转换mean闭合不代表covariance已修复。4-station finding会使用IFT，但既有refit将IFT判outlier；完整四站refit须显式控制该策略。候选pruning损失也有独立计数。
+5. **验证使用新的保留输入。** S04的独立50k已用于材料验收，后续修复使用新的文件/ranges或随机种子；分别报告效率、fakes、failure、angle和charge。历史truth界待定的类别继续保留发生率和输入定位。
 
 ## 阶段、依赖与验收
 
@@ -41,10 +43,10 @@
 | 阶段 | 依赖与问题 | 实施与起始规模 | 必交付结果与验收 |
 | --- | --- | --- | --- |
 | S00 材料研究 | 输入报告与本地软件 | 阅读 3 份 PDF，检查源码、样本路径与现成构建 | 本路线图、补全 AGENTS、中文 workbook；已完成，验证见阶段报告 |
-| S01 输入与定义冻结 | S00；历史图究竟比较了什么 | 已完成 metadata/schema 与每类10事件检查，冻结 Good Track、fiducial、frame、units、truth surface | manifest、诊断入口和字段字典已交付，50事件计数闭合；局部truth记录已写出，补充G4退出134仍待查，见S01报告 |
+| S01 输入与定义冻结 | S00；历史图究竟比较了什么 | 已完成 metadata/schema 与每类10事件检查，冻结 Good Track、fiducial、frame、units、truth surface | manifest、诊断入口和字段字典已交付，50事件计数闭合，见S01报告；当时的补充G4退出134已在S04修复并验证 |
 | S02 旋转与诊断闭合 | S01；观察量与 frame 是否可靠 | 已完成 sensor/field/material/transport/interface 与观察开关配对；保留原版并提供默认关闭的实验修正 | 来源唯一、观察开关前后输出一致；chart/refit问题与material差异已量化，见S02报告；总体物理影响留待S04–S06 |
 | S03 原版复现与基线 | S01；与 S02 可交错做原始量检查 | 已完成五类各10k事件，50/50 shards exit0；紧凑审计归档后完整复算 | particle表、图、cutflow、区间、32条代表track与资源已交付，见S03报告；历史selection未恢复、同面truth与完整G0未测量均已记录 |
-| S04 动量因果定位 | S02–S03 | [动量实验 M1–M6](02_momentum_bias.md)，先几十条代表 track，再按机制扩展到独立批量验证 | 每个主要 tail 类别的首次数值变化/候选替换、消融效果及区间；seed 与后续 CKF 问题分别闭环 |
+| S04 动量因果定位 | S02–S03 | 已完成M1–M6：current/strict全量逐层、T0–T5、独立50k配对、backward/4-station/真实merge | 材料主因与独立改善、seed类别和23条电子local tail运算证据、完整剩余类/资源/测试；[S04报告](../workbook/2026-11-12_stage04_momentum.md) |
 | S05 角度结构定位 | S02–S03；共享 S04 的误差与材料观察 | [角度实验 A1–A5](03_slope_structure.md)，truth 谱与 detector/hit pattern 条件分解 | 峰位置、宽度、占比、稳定性和对应物理/程序来源；剩余结构在 forward model 中可复现或被最小修复消除 |
 | S06 电荷与正负差异 | S02–S03；共享 S04 的 curvature trace | [电荷实验 Q1–Q5](04_charge_misidentification.md)；先 pilot，再扩至每电荷至少约 100k 有效选中粒子或所需精度 | before/after 配对表、误判率/效率/差值区间、谱匹配结果、首次符号翻转与解释；无显著差异时给可排除范围 |
 | S07 修复与独立验收 | S04–S06 各分支形成可检验解释 | 每次一个修改；保留未调参文件作验证；覆盖 μ±、A′ 两样本、forward/backward、3/4 station | 物理指标、效率、失败率与资源回归；中文最终报告、配置、最小 patch、测试和各阶段 commits |
@@ -80,9 +82,9 @@ flowchart TD
 
 ## 下一轮落地任务
 
-1. 使用 S03 的 `representative_cases.json` 按 file_index/source_entry 重放，选择器已排除 final matching ambiguity；保存首个异常更新与前后候选，不能用复用的生产 event ID 合并事件。
-2. 用同一批输入分别检验 current22 严格旋转材料、chart Jacobian、refit plane；恢复历史 Good Track/Twiki 配置后再核对 Alma 数字，完整 G0 对照需保持物理先验一致。
-3. 角度统一到 st1/VetoNu plane；μ± 以 truth p/位置/方向做共同支持域与谱平衡。先报告平衡前后发生率和有效样本量，再决定追加批量规模。
-4. 解决补充 G4 正常结束问题，生成同 sensor p；新批量按 S03 实测 CPU/RSS/I/O 配置资源，提交前重新比较 schedd 负载。
+1. S05读取S04的paired particles与compact traces，冻结同一物理面和p窗口，分别看truth、seed、selected、refit/final的角度峰及选择迁移；使用A1–A5的显著性与forward-model验收。
+2. S06使用correct material后的μ±共同支持域，检查首次sign flip与谱平衡后的率差；记录既有样本的精度，再确定追加规模。Alma历史selection与完整G0/G1仍单独控制。
+3. S07从已定位的other-segment seed、真实radiative loss后的update/smoothing、chart/refit covariance、IFT策略分别做单因素实验。Gaussian mixture能损的文献可行性和典型事件见S04，未把它当作已验证修复。
+4. 所有新批量按S04实测CPU/RSS/I/O配置资源，提交前重新比较兼容schedd；所有源码、数据身份与observer开关继续冻结。
 
 每阶段先写 `workbook/YYYY-MM-DD_stageNN_topic.md`，列明事实、假设、配置、统计和产物路径，再提交代码/配置与报告。根因检验使用预先保留的验证事件，最终不以在调参样本上得到更好看的直方图作为验收。

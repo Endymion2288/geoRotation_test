@@ -61,6 +61,8 @@ python3 /eos/home-x/xcheng/FASER/geoRotation_test/configs/tracking_runner.py --d
 
 `--audit --states --closure` 需要本仓库记录的 Calypso audit patch 及匹配构建；`--correct-interfaces` 和 `--reset-event-maps` 是独立受控实验，不作为未经说明的默认修复。Python observer 的 `events.jsonl` 用于小样本交叉核对，批量用 `--audit --compact-only` 避免重复输出。回归检查在本仓库根目录运行 `python3 -m unittest discover -s tests -v`。
 
+S04 的批量入口为 `scripts/submit_momentum.py`，接受冻结 task JSON、library 目录和唯一任务名，提交前重新选择 schedd。`--states --selected-states-only` 配合 worker 的 `audit_reduce.py` 只保留选中路径的 compact traces；`--isolate-smoothing` 会改变少量 rmax 元数据，不能预设所有字段不变。sensor CSV 必须用 patch0005 的 Athena event/source_entry，G4 event ID 在当前调用中恒为1。实际配置、50k独立配对和复现入口见 S04 workbook；大型统计也通过 Condor 执行。
+
 提交前读取当前 schedd 广告与队列，按实际可见 schedd 进一步查询：
 
 ```bash

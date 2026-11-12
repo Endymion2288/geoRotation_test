@@ -3,10 +3,22 @@ import math
 from copy import deepcopy
 import unittest
 
-from analysis.pilot import event_groups, match, process_event, summarize
+from analysis.pilot import candidate_rank, event_groups, good_track, match, pnorm, process_event, summarize
 
 
 class PhysicsDefinitions(unittest.TestCase):
+    def test_nonfinite_candidate_does_not_hide_valid_tie(self):
+        base=dict(matches=[[10001,18]],hits=list(range(18)),candidate=0,
+                  ndof=13,layers=9,rmax_mm=10)
+        invalid=dict(base,chi2=None)
+        valid=dict(base,chi2=25,candidate=1)
+        self.assertIs(max([invalid,valid],key=candidate_rank),valid)
+        self.assertFalse(good_track(invalid))
+        self.assertTrue(good_track(valid))
+        for value in [None,float('inf'),float('nan')]:
+            self.assertIsNone(pnorm(dict(momentum_A_GeV=[1,value,0])))
+        self.assertIsNone(pnorm(dict(momentum_A_GeV=[0.,0.,0.])))
+
     def test_reused_production_ids_remain_separate_source_events(self):
         records=[dict(schema=2,stage="event",event=0),dict(schema=2,stage="truth",event=0),
                  dict(schema=2,stage="event",event=0),dict(schema=2,stage="truth",event=0)]

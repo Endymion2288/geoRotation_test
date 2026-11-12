@@ -53,12 +53,23 @@ def archive_records(folder,task):
 
 def pnorm(record):
     v = record.get("momentum_A_GeV")
-    return float(np.linalg.norm(v)) if v and all(x is not None for x in v) else None
+    value = float(np.linalg.norm(v)) if v and all(x is not None and math.isfinite(x) for x in v) else None
+    return value if value is not None and math.isfinite(value) and value > 0 else None
+
+
+def chi2_value(record, missing=0.):
+    value = record.get("chi2", missing)
+    return value if value is not None and math.isfinite(value) else float("inf")
+
+
+def candidate_rank(record):
+    return (record["matches"][0][1], len(record.get("hits", [])),
+            -chi2_value(record), -record["candidate"])
 
 
 def good_track(record, radius=95.):
     ndof = record.get("ndof", 0)
-    return (ndof > 0 and record.get("chi2", float("inf"))/ndof < 25.
+    return (ndof > 0 and chi2_value(record, float("inf"))/ndof < 25.
             and record.get("layers", 0) >= 7 and ndof+5 >= 12
             and record.get("rmax_mm", float("inf")) < radius)
 
@@ -113,7 +124,7 @@ def process_event(key, records, dsid):
             if not candidates:
                 row[stage] = None
                 continue
-            candidate = max(candidates, key=lambda r: (r["matches"][0][1], len(r.get("hits", [])), -r.get("chi2", 0), -r["candidate"]))
+            candidate = max(candidates, key=candidate_rank)
             p = pnorm(candidate)
             px, py, pz = candidate["momentum_A_GeV"]
             q = candidate.get("charge", math.copysign(1., candidate.get("bound", [0]*5)[4]))
@@ -142,6 +153,8 @@ def process_event(key, records, dsid):
                       unmatched_to_signal=sum(v for k,v in final_matches.items() if k not in truth),
                       duplicate_signal_tracks=sum(max(final_matches[k]-1,0) for k in truth),
                       invalid_final_momentum=sum(pnorm(r) is None or pnorm(r) <= 0 for r in finals),
+                      nonfinite_seed_chi2=sum(not math.isfinite(chi2_value(r)) for r in stages["seed"]),
+                      nonfinite_final_chi2=sum(not math.isfinite(chi2_value(r)) for r in finals),
                       seeds=len(stages["seed"]), found=len(stages["found"]),
                       selected=len(stages["selected"]), final=len(finals), finder_errors=len(stages["finder_error"]),
                       refit_fallback=sum(r.get("refit") == 0 for r in finals))

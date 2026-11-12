@@ -1,0 +1,30 @@
+diff --git a/Generators/ParticleGun/python/__init__.py b/Generators/ParticleGun/python/__init__.py
+index 4e88fc56..f4c3bf7c 100644
+--- a/Generators/ParticleGun/python/__init__.py
++++ b/Generators/ParticleGun/python/__init__.py
+@@ -76,6 +76,12 @@ class ParticleGun(EvgenAlg):
+           from AthenaPython.PyAthena import HepMC3  as HepMC
+         except ImportError:
+           from AthenaPython.PyAthena import HepMC   as HepMC   
++        # The samplers and Geant4 input converter use MeV and mm. HepMC3's
++        # default is GeV; set units before filling any particle four-vectors.
++        if hasattr(evt, "set_units"):
++            evt.set_units(HepMC.Units.MEV, HepMC.Units.MM)
++        else:
++            evt.use_units(HepMC.Units.MEV, HepMC.Units.MM)
+         evt.weights().push_back(1.0)
+ 
+         ## Make and fill particles
+diff --git a/Simulation/G4Extensions/Pythia8Decayer/CMakeLists.txt b/Simulation/G4Extensions/Pythia8Decayer/CMakeLists.txt
+index d7bfdc71..a8ce53a1 100644
+--- a/Simulation/G4Extensions/Pythia8Decayer/CMakeLists.txt
++++ b/Simulation/G4Extensions/Pythia8Decayer/CMakeLists.txt
+@@ -32,7 +32,7 @@ atlas_subdir( Pythia8Decayer )
+     atlas_add_component( Pythia8Decayer
+                          src/components/*.cxx
+                          INCLUDE_DIRS ${GEANT4_INCLUDE_DIRS} ${XERCESC_INCLUDE_DIRS} ${CLHEP_INCLUDE_DIRS} ${PYTHIA8_INCLUDE_DIRS}
+-                         LINK_LIBRARIES ${GEANT4_LIBRARIES} ${XERCESC_LIBRARIES} ${CLHEP_LIBRARIES} ${PYTHIA8_LIBRARIES} FaserMCTruth Pythia8DecayerLib AthenaBaseComps G4AtlasInterfaces )       
++                         LINK_LIBRARIES "-Wl,--exclude-libs,ALL" ${GEANT4_LIBRARIES} ${XERCESC_LIBRARIES} ${CLHEP_LIBRARIES} ${PYTHIA8_LIBRARIES} FaserMCTruth Pythia8DecayerLib AthenaBaseComps G4AtlasInterfaces )
+ #endif()
+ 
+ # Install files from the package:

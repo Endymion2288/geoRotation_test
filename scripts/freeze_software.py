@@ -15,6 +15,7 @@ def git(repo, *args):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--with-simulation", action='store_true')
     args=parser.parse_args()
     repo=Path(__file__).resolve().parents[1]
     calypso=Path("/eos/home-x/xcheng/FASER/geoRotation_calypso")
@@ -24,6 +25,12 @@ def main():
     (args.output/"lib").mkdir()
     library=calypso/"run/lib/libFaserActsKalmanFilter.so"
     shutil.copy2(library,args.output/"lib"/library.name)
+    shutil.copy2(calypso/"run/lib/Calypso.confdb2",args.output/"lib/Calypso.confdb2")
+    if args.with_simulation:
+        for name in ['libPythia8Decayer.so','libFaserGeant4.so','libFaserGeant4Lib.so']:
+            shutil.copy2(calypso/'run/lib'/name,args.output/'lib'/name)
+        shutil.copytree(calypso/'run/python/ParticleGun',args.output/'python/ParticleGun',ignore=shutil.ignore_patterns('__pycache__'))
+        (args.output/'simulation.patch').write_text(git(calypso,'diff','--','Generators/ParticleGun','Simulation/G4Extensions/Pythia8Decayer','Tracker/TrackerG4/FaserSCT_G4_SD'))
     patch=git(calypso,"diff","--","Tracking/Acts/FaserActsKalmanFilter")
     for name in ["TrackingAudit.h","TrackingClosure.h"]:
         relative=Path("Tracking/Acts/FaserActsKalmanFilter/src")/name

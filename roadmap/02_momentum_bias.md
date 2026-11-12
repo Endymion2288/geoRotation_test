@@ -109,3 +109,9 @@ seed
 - 资源、有效输出 schema、完整复现命令、最小 Calypso patch 和有意义的 closure/regression checks。
 
 若局部 truth 与经验证的能损模型已解释负尾，应将其报告为相应物理/定义效应并量化剩余偏差。若仍有无法解释的类，给其发生率、典型运算与下一项能区分假设的实验；不以少数事件或“峰变小”关闭分支。
+
+## S04实施结果与后续入口
+
+M1–M6阶段交付已完成，实际样本、所有控制、分子分母、配对区间、失败记录与复现入口见[S04报告](../workbook/2026-11-12_stage04_momentum.md)。严格旋转current22材料已通过独立样本验证；完整truth seed与纯hits控制证明错误材料图能在初值正确时产生大负尾。全量逐运算和局部truth界将seed、update、smoothing/refit及候选选择分别量化。
+
+剩余研究由S07继续：同truth segment/方向与field-integral seed、真实辐射后的KF能损模型、measurement C/branch策略及chart/refit/IFT控制。23条固定真hits的电子local tail已有同sensor前后运算和真实沿程p证据，GSF文献与具体区分实验已列入报告；历史truth界待定类也保留发生率。S05/S06分别验收角度峰和谱匹配电荷差异。
