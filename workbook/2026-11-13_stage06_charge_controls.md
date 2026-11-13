@@ -106,7 +106,7 @@ production-only全部文件加权conditional率为before μ+0.219378%、μ−0.2
 
 有10个wrong事件存在primary-supported正确符号candidate被pruned，两电荷各5。全部这些备选都没有majority tie。淘汰reason bits：1为nMeasurements≤12，2为shared hits>6，3为两者。完整候选和winner见`pruning.json`。存在正确备选不证明可以无损恢复，因为改变候选规则也可能改变正常轨迹和duplicates。
 
-[逐运算summary](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/replay_analysis_v1/summary.json) · [119事件详细表](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/replay_analysis_v1/events.json) · [pruning表](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/replay_analysis_v1/pruning.json)。源matrix audit为各重放目录的`charge_audit.jsonl.gz`，来源与58字段验证随输出保存。[charge_replay_analysis.py](../analysis/charge_replay_analysis.py)为实际归约入口。
+[逐运算summary](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/replay_analysis_v2/summary.json) · [119事件详细表](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/replay_analysis_v2/events.json) · [pruning表](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/replay_analysis_v2/pruning.json)。v2单列未进入measurement audit的seed hits，34个events的该字段改变，其余event内容、summary及pruning与v1精确相同。源matrix audit为各重放目录的`charge_audit.jsonl.gz`，来源与58字段验证随输出保存。[charge_replay_analysis.py](../analysis/charge_replay_analysis.py)为实际归约入口。
 
 ![Actual charge-crossing innovations](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/figures_v3/controls_v2/charge_crossing_innovations.png)
 
@@ -195,11 +195,11 @@ hit/qB首轮归约1576276因raw worker表缺少`sample_entry`而exit1，失败�
 
 事实：100k/charge的实际refit控制把before额外错号主要定位到near-pole chart的measurement update；primary source-link控制恢复17个wrong，但另有36个quality failed，6个纯轨迹错误完全不变。q/B全119事件路径与完整C闭合。
 
-假设与待判别：无SDO hits可能含噪声或缺关联；6个primary-only错误的具体seed/分支、测量及covariance响应仍需单因素检验。全500k的834个refit新生错误不按100k比例直接外推。
+后续[测量、seed与角度回归](2026-11-13_stage06_measurement_seed_controls.md)已测量centroid及production seed q/p-only：6个pure wrong在centroid后5条selected正确、1条符号正确但质量失败，q/p-only全部仍错。centroid也改变seed完整均值，下一步固定这些均值以继续归因。无SDO hits可能含噪声或缺关联，不能从audit缺失反推污染。全500k的834个refit新生错误不按100k比例直接外推。
 
 ## 下一步计划
 
-1. 对剩余6个纯轨迹错号检验实际measurement centroid、seed与covariance；保留正常控制及完整质量迁移，区分统计分辨率、实际偏差与程序问题。
+1. 在已完成的centroid与q/p-only控制基础上，固定原生完整seed均值重放6个pure wrong及60正常控制，进一步分离测量与seed响应；保留完整质量迁移。
 2. 补before refit控制的角度/CPU联合回归及新机制图；在新样本和共同候选中报告效果，保留全输出与selected的两套fallback分母。
 3. 完成独立full-Geant4 μ± gun图组验证和主报告汇编；保留100 GeV效率损失及1 TeV残余，量化空间分组与区间。
 4. 完成纯坐标控制的非线性prior及剩余parameterization路径、留出μ±与A′回归。模式fallback精确计数已完成。Q5尚未完成；本阶段不宣称纯旋转或完整生产修复通过。

@@ -5,8 +5,10 @@ import json
 import math
 import os
 from pathlib import Path
+import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 
 def main():
     parser=argparse.ArgumentParser()
@@ -18,6 +20,8 @@ def main():
     parser.add_argument('--input',default='diagnostic.HITS.pool.root')
     parser.add_argument('--output')
     parser.add_argument('--no-sidecar',action='store_true')
+    parser.add_argument('--nominal-alignment',action='store_true')
+    parser.add_argument('--alignment-audit',action='store_true')
     parser.add_argument('--full-geometry',action='store_true')
     parser.add_argument('--gun-z',type=float,default=11.415,help='Physical FASER z [mm]')
     parser.add_argument('--gun-x',type=float,default=20.)
@@ -39,6 +43,8 @@ def main():
     flags.Input.isMC=True;flags.Input.ProjectName='mc24'
     flags.IOVDb.DatabaseInstance='OFLP200';flags.IOVDb.GlobalTag='OFLCOND-FASER-05'
     flags.GeoModel.FaserVersion='FASERNU-04'
+    if args.nominal_alignment:
+        flags.GeoModel.Align.Disable=True
     flags.Concurrency.NumThreads=0;flags.Concurrency.NumConcurrentEvents=1
     detectors=(['Emulsion','Veto','Trigger','Preshower','VetoNu','FaserSCT','Ecal','Dipole','Trench']
                if args.full_geometry else ['FaserSCT','Dipole'])
@@ -87,12 +93,26 @@ def main():
         from FaserGeoModel.FaserGeoModelConfig import FaserGeometryCfg
         from FaserSCT_Digitization.FaserSCT_DigitizationConfigNew import FaserSCT_DigitizationCfg
         from OutputStreamAthenaPool.OutputStreamConfig import OutputStreamCfg
-        acc.merge(PoolReadCfg(flags));acc.merge(FaserGeometryCfg(flags));acc.merge(FaserSCT_DigitizationCfg(flags))
+        acc.merge(PoolReadCfg(flags));acc.merge(FaserGeometryCfg(flags))
+        if args.nominal_alignment or args.alignment_audit:
+            from calypso_alignment import configure_alignment
+            configure_alignment(acc,args.nominal_alignment,'alignment.csv' if args.alignment_audit else None)
+        acc.merge(FaserSCT_DigitizationCfg(flags))
         acc.merge(OutputStreamCfg(flags,'RDO',ItemList=['McEventCollection#*','FaserSiHitCollection#SCT_Hits']))
     acc.getService('MessageSvc').defaultLimit=20
+    if args.mode=='simulate' and args.nominal_alignment and args.alignment_audit:
+        from calypso_alignment import add_simulation_geometry_audit
+        add_simulation_geometry_audit(acc,'alignment.csv')
+    alignment=dict(nominal_alignment=args.nominal_alignment,
+        conditions_displacements_disabled=bool(flags.GeoModel.Align.Disable),
+        tracker_alignment_folders=[folder for folder in acc.getService('IOVDbSvc').Folders
+                                   if '/Tracker/Align' in folder])
     sc=acc.run(maxEvents=args.events)
+    mappings=Path('/proc/self/maps').read_text().splitlines()
     Path(args.mode+'_run.json').write_text(json.dumps(dict(args=vars(args),success=sc.isSuccess(),
         wall_seconds=time.monotonic()-started,geometry='FASERNU-04',conditions='OFLCOND-FASER-05',
+        alignment=alignment,loaded_conditions_libraries=sorted({line.split()[-1] for line in mappings
+            if 'libFaserSCT_ConditionsAlgorithms' in line and '.so' in line}),
         simulated_detectors=detectors,truth_plane_z_F_mm=args.gun_z),indent=2)+'\n')
     return int(sc.isFailure())
 

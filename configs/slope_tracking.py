@@ -29,6 +29,8 @@ def main():
     smoothing.add_argument('--shared-smoothing', action='store_true', help='Explicit historical shared-state control')
     parser.add_argument('--physical-ntuple-angles', action='store_true', help='Opt-in physical VetoNu angles in the actual rotated NtupleDumper')
     parser.add_argument('--truth-cluster-position', action='store_true', help='Calypso diagnostic: replace only local measured strip coordinates by majority SiHit centroids')
+    parser.add_argument('--nominal-alignment', action='store_true', help='Use default GeoModel sensor transforms with a real nominal SCT conditions store')
+    parser.add_argument('--alignment-audit', action='store_true', help='Write actual and default sensor transforms; requires the recorded conditions control library')
     parser.add_argument('--refit-covariance-scale', type=float, help='Controlled change to native KalmanFitterTool1.SeedCovarianceScale; CKF remains native')
     parser.add_argument('--wrap-refit-smoothing-phi', action='store_true', help='Calypso diagnostic: use a periodic phi subtraction in the actual ACTS refit smoother')
     parser.add_argument('--canonical-refit-smoothing-angles', action='store_true', help='Calypso diagnostic: normalize smoothed phi/theta and transform the covariance on pole reflection')
@@ -51,6 +53,10 @@ def main():
                         help='Actual CKF control: retain source links supported by this SDO barcode')
     parser.add_argument('--reverse-charge-and-field', action='store_true',
                         help='Reverse seed q/p and the CKF/refit/extrapolation field together')
+    parser.add_argument('--seed-override-file',
+                        help='Actual CKF seed overrides: local event index, seed index, six bound parameters per row; preserve covariance')
+    parser.add_argument('--seed-override-mode', choices=['qop', 'mean'], default='qop',
+                        help='Replace q/p only or the complete mean; requires the recorded Calypso hit-control library')
     args = parser.parse_args()
     if args.charge_audit and not args.stage_audit:
         parser.error('--charge-audit requires --stage-audit')
@@ -77,6 +83,8 @@ def main():
     flags.IOVDb.DatabaseInstance = 'OFLP200'
     flags.GeoModel.FaserVersion = 'FASERNU-04'
     flags.IOVDb.GlobalTag = 'OFLCOND-FASER-05'
+    if args.nominal_alignment:
+        flags.GeoModel.Align.Disable = True
     flags.TrackingGeometry.MaterialSource = args.material
     flags.Exec.SkipEvents = args.skip
     flags.Concurrency.NumThreads = 0
@@ -86,6 +94,9 @@ def main():
     acc = MainServicesCfg(flags)
     acc.merge(PoolReadCfg(flags))
     acc.merge(FaserGeometryCfg(flags))
+    if args.nominal_alignment or args.alignment_audit:
+        from calypso_alignment import configure_alignment
+        configure_alignment(acc, args.nominal_alignment, 'alignment.csv' if args.alignment_audit else None)
     cluster=FaserSCT_ClusterizationCfg(flags, DataObjectName='SCT_RDOs', checkBadChannels=True)
     if args.truth_cluster_position:
         cluster.getEventAlgo('Tracker::FaserSCT_Clusterization').SCT_ClusteringTool.globalPosAlg.UseTruthClusterPosition=True
@@ -97,7 +108,8 @@ def main():
     acc.merge(xAODTruthCnvAlgCfg(flags))
     mask = [0, 1, 2] if args.four_station else [0, 1, 2, 3, 4, 5]
     if args.merge_directions and (args.backward or args.charge_diagnostics or args.stage_audit or args.native_states
-                                  or args.truth_source_link_barcode or args.reverse_charge_and_field):
+                                  or args.truth_source_link_barcode or args.reverse_charge_and_field
+                                  or args.seed_override_file):
         parser.error('--merge-directions uses two native CKF paths; single-path audit flags do not apply')
     primary_tag = f'slope_{4 if args.four_station else 3}station_'+('backward' if args.backward else 'forward')
     cfg = CKF2Cfg(flags, actsOutputTag=primary_tag, name='CKF_Slope',
@@ -105,6 +117,9 @@ def main():
         BackwardPropagation=args.backward, noDiagnostics=False, seedWriter=not args.no_seed_writer,
         StatesWriter=args.native_states, SummaryWriter=False)
     ckf = cfg.getEventAlgo('CKF_Slope')
+    if args.seed_override_file:
+        ckf.SeedOverrideFile = args.seed_override_file
+        ckf.SeedOverrideMode = args.seed_override_mode
     if args.truth_source_link_barcode:
         ckf.TruthSourceLinkBarcode = args.truth_source_link_barcode
     if args.reverse_charge_and_field:
@@ -222,6 +237,7 @@ def main():
         truth_source_link_barcode=args.truth_source_link_barcode,
         magnetic_field_scale=-1. if args.reverse_charge_and_field else 1.,
         seed_charge_reversed=args.reverse_charge_and_field,
+        seed_override_file=args.seed_override_file, seed_override_mode=args.seed_override_mode,
         backward=args.backward, masked_layers=mask, merge_directions=args.merge_directions,
         output_collection=observer_collection,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False,
@@ -229,6 +245,10 @@ def main():
         isolate_smoothing=bool(getattr(ckf, 'IsolateCandidateSmoothing', False)), observer=not args.no_observer,
         propagation_material_energy_loss=propagator.InteractionEloss,
         propagation_material_scattering=propagator.InteractionMultiScatering)
+    manifest['alignment'] = dict(nominal_alignment=args.nominal_alignment,
+        conditions_displacements_disabled=bool(flags.GeoModel.Align.Disable),
+        tracker_alignment_folders=[folder for folder in acc.getService('IOVDbSvc').Folders
+                                   if '/Tracker/Align' in folder])
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     begin = time.monotonic()
     status = acc.run(maxEvents=args.events)
@@ -239,7 +259,9 @@ def main():
     manifest.update(success=status.isSuccess(), wall_s=time.monotonic()-begin,
                     loaded_acts_libraries=loaded,
                     loaded_cluster_libraries=sorted({line.split()[-1] for line in mappings
-                        if 'libFaserSiClusterizationTool' in line and '.so' in line}))
+                        if 'libFaserSiClusterizationTool' in line and '.so' in line}),
+                    loaded_conditions_libraries=sorted({line.split()[-1] for line in mappings
+                        if 'libFaserSCT_ConditionsAlgorithms' in line and '.so' in line}))
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     return 0 if status.isSuccess() else 1
 

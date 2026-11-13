@@ -116,11 +116,11 @@ before原生角误差核心约177–191 μrad，regular后约21–30 μrad，aft
 
 [gun全量summary](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/gun_analysis_v2/summary.json) · [模式精确计数](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/mode_counter_analysis_v1/summary.json)。
 
-11页gun图任务1577641已冻结并提交，产物核对与目视检查尚未完成。新增5页机制图已经生成并目视；本轮独立核对全部主率、refit计数、动量hist及primary-filter统计与冻结summary相同。PDF五页的graphics操作在解析ExtGState资源后均与单页相同，page boxes一致；动量图仅有等价graphics资源编号重命名，另外四页vector字节也相同。验证在`C/figures_v4/mechanisms/validation.json`，主图集合并继续执行。
+11页gun图最终版为`C/figures_v5/gun`，绘图1577947 exit0。92项plot-summary核对、11页vector PDF与PNG完整性检查通过；完整contact sheet及主率、角度core/tail和wall图已目视。v1/v2全部数值payload相同，v2仅改版式与fallback纵轴。新增5页机制图已经生成并目视；独立核对全部主率、refit计数、动量hist及primary-filter统计与冻结summary相同。PDF五页的graphics操作在解析ExtGState资源后均与单页相同，page boxes一致；动量图仅有等价graphics资源编号重命名，另外四页vector字节也相同。验证在各图目录的`validation.json`。
 
-seed-hit分类发现一个覆盖问题：未出现在任何candidate measurement audit中的seed hit，旧归约将其误记为`no_SDO`。现在区分`not_in_candidate_measurement_audit`与已经审计且SDO为空的hit，并加回归测试；不改变actual crossing的SDO分类。119事件归约v2任务1577640已提交，全部旧物理结论是否不变等待逐项验证，不提前使用修正后的推断。新的主样本同面/共同候选角度回归已经冻结提交；这两项不重复运行tracking。
+seed-hit分类发现一个覆盖问题：未出现在任何candidate measurement audit中的seed hit，旧归约将其误记为`no_SDO`。现在区分`not_in_candidate_measurement_audit`与已经审计且SDO为空的hit，并加回归测试。119事件归约v2任务1577640已exit0：34个seed分类改变；summary、pruning及除此字段外的全部event记录精确相同，31 no-SDO/25 primary-only的actual crossing结论不变。主样本同面/共同候选角度回归也已完成，见[测量与seed控制报告](2026-11-13_stage06_measurement_seed_controls.md)：updater-only的大角尾增加，both联合改善。这两项不重复运行tracking。
 
-实际运行49项单测全部通过，2.137 s；`analysis/scripts/configs/tests` compileall成功，84个相关本地文档链接有效，`git diff --check`通过。日志保存在`C/verification_v5`。本轮centroid smoke的三类各20事件，default58字段全部精确复现，实际cluster两库及替换计数通过；validator首轮因Gaudi属性在日志中带空格而未匹配，修正日志解析后通过，不修改重建。238个centroid/centroid+primary-filter真实Calypso重放已提交cluster1577639，尚未归约；原有seed、测量宽度/误差、noise和缺truth fallback是否变化按单因素边界分别记录。
+前次实际运行49项单测全部通过，2.137 s；`analysis/scripts/configs/tests` compileall成功，84个相关本地文档链接有效，`git diff --check`通过，日志在`C/verification_v5`。centroid smoke的三类各20事件，default58字段全部精确复现，实际cluster两库及替换计数通过；validator首轮因Gaudi属性在日志中带空格而未匹配，修正日志解析后通过，不修改重建。238个centroid/centroid+primary-filter真实重放及归约全部exit0；原59错号中centroid恢复23条selected正确、30仍错、6质量失败。只替换production seed q/p的119重放也完成：57仍错、1质量失败、1低purity，没有selected恢复。完整数值、六条pure cases及后续fixed-seed边界见上述新报告。
 
 ## 阶段性结论
 
@@ -130,7 +130,6 @@ seed-hit分类发现一个覆盖问题：未出现在任何candidate measurement
 
 ## 下一步计划
 
-1. 完成已提交的119事件×2模式SiHit-centroid重放，判别6个纯错号的测量/seed响应，并保留60个正常控制与质量失败。
-2. 对100k主样本补同面truth-model角度、共同候选/hits及实测资源回归，和本独立gun分开报告。
-3. 完成gun图、机制图counts/PDF/目视验证与完整汇报图集；修正seed audit缺失被误记no_SDO的分类并验证其余逐hit结论不变。
-4. 完成Q5的完整共同物理先验、适用的空间/nominal控制及μ±/A′留出回归。目标保持S05/S06完整研究，不以本报告的已完成部分替代剩余验收。
+1. 在6个pure wrong及60个正常控制中，固定原生完整seed mean并替换centroid测量，分离seed响应与CKF更新响应。
+2. 已完成的100k同面/共同候选角度和资源回归与独立gun分别解释；合并已验证的新图与原参考图。
+3. 完成Q5的完整共同物理先验、适用的空间/nominal控制及μ±/A′留出回归。目标保持S05/S06完整研究，不以本报告的已完成部分替代剩余验收。

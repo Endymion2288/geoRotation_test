@@ -45,10 +45,10 @@ def main():
 
     with PdfPages(args.output/'charge_gun_report.pdf') as report:
         def save(fig, name, title, footer):
-            fig.suptitle(title, y=.985, fontsize=14)
-            fig.text(.5, .943, scope, ha='center', fontsize=9)
+            fig.suptitle(title, y=.99, fontsize=14)
+            fig.text(.5, .92, scope, ha='center', fontsize=9)
             fig.text(.5, .018, footer, ha='center', fontsize=8)
-            fig.tight_layout(rect=(.02, .045, .98, .925))
+            fig.tight_layout(rect=(.02, .045, .98, .88))
             fig.savefig(args.output/(name+'.png'), dpi=150)
             fig.savefig(args.output/(name+'.pdf'))
             report.savefig(fig)
@@ -147,6 +147,7 @@ def main():
             axes[1, column].set(ylabel='Fallback / selected tracks [%]')
             for ax in axes[:, column]:
                 ax.set_xticks(range(3), LABELS)
+                ax.set_ylim(bottom=0)
                 ax.legend()
         save(fig, 'gun_refit_fallback', 'Refit fallback depends strongly on the output denominator',
              'Actual refit return status; unselected fallback tracks remain in the all-final denominator; failed G4/reconstruction jobs are checked separately')

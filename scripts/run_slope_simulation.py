@@ -38,6 +38,8 @@ def run(command,folder,output,env=None):
     with (folder/'process.log').open('rb') as source,gzip.open(output/'process.log.gz','wb') as target:
         shutil.copyfileobj(source,target)
     shutil.copy2(folder/'resource.txt',output/'resource.txt')
+    if (folder/'alignment.csv').exists():
+        shutil.copy2(folder/'alignment.csv',output/'alignment.csv')
     (output/'exit_code.txt').write_text(str(status)+'\n')
     if status:raise RuntimeError(f'Calypso step failed: {output}')
 
@@ -53,6 +55,8 @@ def main():
     simulation=code/'configs/momentum_simulation.py'
     common=['--events',str(task['events']),'--full-geometry','--gun-z',str(task.get('gun_z_F_mm',-3112.)),
             '--no-sidecar','--pdg',str(task['pdg']),'--p',str(task['p_GeV'])]
+    if task.get('nominal_alignment'):
+        common.extend(['--nominal-alignment','--alignment-audit'])
     command=[sys.executable,str(simulation),'simulate',*common,
              '--seed',str(task['seed']),'--uniform-angles','--gun-x',str(task.get('x_mm',0.)),
              '--gun-y',str(task.get('y_mm',0.)),'--xy-half-width',str(task.get('xy_half_width_mm',30.)),
@@ -73,6 +77,8 @@ def main():
             material=task['materials'][variant],runner=str(code/'configs/slope_tracking.py'),
             output=str(output/label),options=['--actual-covariance','--no-seed-writer'])
         if mode.get('cluster_mode')=='truth_position':source['options'].append('--truth-cluster-position')
+        if task.get('nominal_alignment'):
+            source['options'].extend(['--nominal-alignment','--alignment-audit'])
         source['options'].extend(mode.get('options',[]))
         sourcefile=scratch/(label+'_source.json')
         sourcefile.write_text(json.dumps(source,indent=2)+'\n')

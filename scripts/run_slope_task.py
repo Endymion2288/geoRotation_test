@@ -74,7 +74,7 @@ def main():
     with Path('tracking.log').open('w') as log:
         status = subprocess.run(['/usr/bin/time', '-v', '-o', 'tracking_resource.txt', *command],
                                 stdout=log, stderr=subprocess.STDOUT).returncode
-    for name in ['run.json', 'tracking_resource.txt']:
+    for name in ['run.json', 'tracking_resource.txt', 'alignment.csv']:
         if Path(name).exists():
             shutil.copy2(name, output/name)
     with Path('tracking.log').open('rb') as source, gzip.open(output/'tracking.log.gz', 'wb') as target:

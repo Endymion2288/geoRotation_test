@@ -13,6 +13,7 @@ S06 isolated-smoothing批次的增量与基底：
 - `0025_charge_hit_and_polarity_controls.patch`：在S04 `software_controls_v3/tracking.patch`之后应用，保留native组合CKF，默认关闭地过滤无指定primary SDO支持的source links；seed mean/C不变。另有seed q/p及完整C交叉项反号、CKF/refit/extrapolator的field/gradient一起反号。与0021不是串接关系。
 - `0026_charge_conjugated_truth_transport.patch`：相对0023后的observer增量，只将原输入production truth用于model transport的charge反号；reco charge已由CKF反号，不重复乘。v2的三DSID smoke默认58字段精确、q/B路径和完整C闭合，见`stage06_charge/20261113_isolated_v1/hitcontrol_smoke_v2/validation.json`。
 - `0027_charge_refit_chart_before.patch`：0022之后的refit五文件增量，来自S05已测量的native regular update/smoother chart；默认关闭，不包含CKF替换。实际beforeGeo build及两电荷20-event默认58字段、全部CKF行闭合，见`refit_control_smoke_v1/validation.json`。
+- `0028-nominal-alignment-store-control.patch`：真实`FaserSCT_AlignCondAlg`默认关闭的nominal store控制与sensor transform只读审计；nominal模式不读alignment folder、不施加conditions displacement，仍生成实际SCT conditions store供detector elements和ACTS消费。相对`88c457c1`、仅conditions package；该package在before/after基底源码相同。实际11个translation units编译成功，6组20事件默认58字段精确，192个sensor实际/default矩阵差为0。匹配G4/digitization/reco链通过，default/nominal六组58字段精确相同，见[固定seed与alignment报告](../workbook/2026-11-14_stage06_fixed_seed_alignment.md)。
 
 S06全量主测量及历史Alma配对的cuts、分母、软件快照与未完成实验同见该报告；不将探索控制视为正式生产修复。
 

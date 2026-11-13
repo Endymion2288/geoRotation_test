@@ -67,7 +67,7 @@ def main():
     dump(output/'tasks.json', jobs)
     dump(output/'manifest.json', dict(phase=args.phase, jobs=len(jobs), source_tasks=sources,
         events_per_charge_and_momentum=per_shard*shards, seed_rule='Same particle-gun random seed for the two charges; verify actual generated positions and momenta',
-        geometry='Full Calypso G4 FASERNU-04, nominal simulation and OFLCOND-FASER-05 reconstruction',
+        geometry='Full Calypso G4 FASERNU-04 with the default OFLCOND-FASER-05 alignment configuration at simulation, digitization and reconstruction',
         scope='Symmetric launch conditions at physical ST1 plane; true apparatus/field/material are retained. No exact mirror symmetry is assumed.',
         isolation=True, intermediate_HITS_RDO='worker scratch only'))
     print(output/'tasks.json', len(jobs), 'jobs')

@@ -1,0 +1,91 @@
+diff --git a/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.cxx b/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.cxx
+index 46b42067..414905da 100644
+--- a/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.cxx
++++ b/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.cxx
+@@ -6,7 +6,11 @@
+ 
+ #include "TrackerReadoutGeometry/SCT_DetectorManager.h"
+ #include "TrackerReadoutGeometry/SiDetectorElement.h"
++#include "AthenaKernel/IOVInfiniteRange.h"
+ 
++#include <algorithm>
++#include <fstream>
++#include <iomanip>
+ #include <memory>
+ 
+ FaserSCT_AlignCondAlg::FaserSCT_AlignCondAlg(const std::string& name, ISvcLocator* pSvcLocator)
+@@ -25,7 +29,7 @@ StatusCode FaserSCT_AlignCondAlg::initialize()
+ 
+   // Read Handles
+   // Static
+-  ATH_CHECK(m_readKeyStatic.initialize(!m_useDynamicAlignFolders.value()));
++  ATH_CHECK(m_readKeyStatic.initialize(!m_useNominalAlignment.value() && !m_useDynamicAlignFolders.value()));
+   // Dynamic
+ //   ATH_CHECK(m_readKeyDynamicL1.initialize(m_useDynamicAlignFolders.value()));
+ //   ATH_CHECK(m_readKeyDynamicL2.initialize(m_useDynamicAlignFolders.value()));
+@@ -68,7 +72,10 @@ StatusCode FaserSCT_AlignCondAlg::execute()
+   std::unique_ptr<GeoAlignmentStore> writeCdo{std::make_unique<GeoAlignmentStore>()};
+   EventIDRange rangeW;
+ 
+-  if (not m_useDynamicAlignFolders.value()) { // Static
++  if (m_useNominalAlignment.value()) {
++    rangeW = IOVInfiniteRange::infiniteMixed();
++    ATH_MSG_INFO("Nominal alignment: no conditions displacements applied");
++  } else if (not m_useDynamicAlignFolders.value()) { // Static
+     // ____________ Get Read Cond Object ____________
+     SG::ReadCondHandle<AlignableTransformContainer> readHandleStatic{m_readKeyStatic};
+     const AlignableTransformContainer* readCdoStatic{*readHandleStatic};
+@@ -145,6 +152,38 @@ StatusCode FaserSCT_AlignCondAlg::execute()
+     oldEl->getMaterialGeom()->getDefAbsoluteTransform(writeCdo.get());
+   }
+ 
++  if (!m_alignmentAuditFile.value().empty()) {
++    std::ofstream audit(m_alignmentAuditFile.value());
++    if (!audit) {
++      ATH_MSG_FATAL("Cannot write alignment audit " << m_alignmentAuditFile.value());
++      return StatusCode::FAILURE;
++    }
++    audit << "wafer_id";
++    for (const char* label: {"actual", "nominal"}) {
++      for (int i=0; i<4; ++i) for (int j=0; j<4; ++j) audit << ',' << label << i << j;
++    }
++    audit << '\n' << std::setprecision(17);
++    double maxDifference = 0.;
++    for (const TrackerDD::SiDetectorElement* oldEl: *oldColl) {
++      TrackerDD::SiDetectorElement element(oldEl->identify(), &(oldEl->design()),
++          oldEl->GeoVDetectorElement::getMaterialGeom(), oldEl->getCommonItems(), writeCdo.get());
++      const Amg::Transform3D actual = element.transform();
++      const Amg::Transform3D nominal = element.defTransform();
++      maxDifference = std::max(maxDifference, (actual.matrix()-nominal.matrix()).cwiseAbs().maxCoeff());
++      audit << oldEl->identify().get_compact();
++      for (const auto* transform: {&actual, &nominal}) {
++        for (int i=0; i<4; ++i) for (int j=0; j<4; ++j) audit << ',' << transform->matrix()(i,j);
++      }
++      audit << '\n';
++    }
++    ATH_MSG_INFO("Alignment audit: sensors=" << oldColl->size()
++                 << " maximum absolute transform difference=" << maxDifference);
++    if (m_useNominalAlignment.value() && maxDifference > 1.e-9) {
++      ATH_MSG_FATAL("Nominal alignment store differs from default sensor transforms");
++      return StatusCode::FAILURE;
++    }
++  }
++
+   if (writeHandle.record(rangeW, std::move(writeCdo)).isFailure()) {
+     ATH_MSG_FATAL("Could not record GeoAlignmentStore " << writeHandle.key() 
+                   << " with EventRange " << rangeW
+diff --git a/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.h b/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.h
+index ca31c631..fc57e2c4 100644
+--- a/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.h
++++ b/Tracker/TrackerConditions/FaserSCT_ConditionsAlgorithms/src/FaserSCT_AlignCondAlg.h
+@@ -47,6 +47,10 @@ class FaserSCT_AlignCondAlg : public AthAlgorithm
+   virtual StatusCode finalize() override;
+ 
+  private:
++  BooleanProperty m_useNominalAlignment{this, "UseNominalAlignment", false,
++      "Populate the real alignment store without conditions displacements"};
++  StringProperty m_alignmentAuditFile{this, "AlignmentAuditFile", "",
++      "Optional actual and default GeoModel sensor transforms in physical FASER coordinates"};
+   BooleanProperty m_useDynamicAlignFolders{this, "UseDynamicAlignFolders", false, "Flag of dynamic or static ID alignment folders"};
+   SG::ReadCondHandleKey<AlignableTransformContainer> m_readKeyStatic{this, "ReadKeyStatic", "/Tracker/Align", "Key for the static alignment folder"};
+ //   SG::ReadCondHandleKey<CondAttrListCollection> m_readKeyDynamicL1{this, "ReadKeyDynamicL1", "/Indet/AlignL1/ID", "Key for the dynamic L1 alignment folder"};

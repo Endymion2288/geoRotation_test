@@ -126,6 +126,6 @@ Alma p2对应 **old=r0019、new=dev**。v1反向配对已标SUPERSEDED；正式�
 
 事实：在本次完整样本和明确cuts下，两版ON的主误判率显著降低，after正负差异在上述区间内与0相容；原生before有refit新生错误，after剩余主要在CKF update。入口条件谱差异显著，accepted overlap后正负差异区间包含0。
 
-已完成的production-only、100k/电荷/模式、119事件r/S/K/C及500k matched-prior实测见[控制报告](2026-11-13_stage06_charge_controls.md)。native组合CKF hit过滤、q/B全重放及100k before refit chart电荷控制均已完成；独立full-G4 ON测量与模式fallback精确计数见[独立控制报告](2026-11-13_stage06_independent_charge_controls.md)。prior仅匹配一阶完整covariance，不证明有限宽度非线性physical prior或全链纯旋转闭合；剩余6个纯轨迹机制与Q5后续回归保持未完成。
+已完成的production-only、100k/电荷/模式、119事件r/S/K/C及500k matched-prior实测见[控制报告](2026-11-13_stage06_charge_controls.md)。native组合CKF hit过滤、q/B全重放及100k before refit chart电荷控制均已完成；独立full-G4 ON测量与模式fallback精确计数见[独立控制报告](2026-11-13_stage06_independent_charge_controls.md)。[测量/seed与联合角度回归](2026-11-13_stage06_measurement_seed_controls.md)进一步显示：59错号中centroid恢复23条selected正确，production seed q/p-only无selected恢复；六条pure wrong的centroid结果为5正确、1质量失败，固定完整seed后的测量归因继续执行。before updater-only虽修电荷却增加角大尾，both才联合改善。prior仅匹配一阶完整covariance，不证明有限宽度非线性physical prior或全链纯旋转闭合；Q5后续回归保持未完成。
 
 下一步以这些冻结控制完成Q4/Q5：任何“算法不对称”“纯旋转改善”或“已修复”的结论须有相应独立证据；本报告不缩小Q1–Q5的原目标。

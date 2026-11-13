@@ -9,9 +9,23 @@ from charge_tables import rank_candidates, weighted_rate
 from charge_analysis import paired_difference
 from charge_lineage_analysis import classify_path
 from charge_replay_analysis import classify_seed_hits
+from charge_fixed_seed_analysis import failed_quality
 
 
 class ChargeMatchingTest(unittest.TestCase):
+    def test_correct_sign_outside_radius_remains_a_quality_failure(self):
+        track = dict(station_bits=14, ndof=13., chi2=.11, n_layers=9, rmax_mm=95.0914)
+        self.assertEqual(failed_quality(track), ['rmax_below_95_mm'])
+        track['rmax_mm'] = 95.
+        self.assertEqual(failed_quality(track), ['rmax_below_95_mm'])
+        track['rmax_mm'] = 94.999
+        self.assertEqual(failed_quality(track), [])
+
+    def test_lost_stations_are_reported_separately_from_a_sign_recovery(self):
+        track = dict(station_bits=2, ndof=1., chi2=.71, n_layers=3, rmax_mm=46.52)
+        self.assertEqual(failed_quality(track), ['three_downstream_stations',
+            'at_least_seven_layers', 'ndof_plus_five_at_least_twelve'])
+
     def test_missing_seed_audit_is_not_classified_as_empty_sdo(self):
         categories = classify_seed_hits([1, 2, 3, 4, 5],
             {1: [], 2: [42], 3: [42, 77], 4: [77]}, primary=42)
