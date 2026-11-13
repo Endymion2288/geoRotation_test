@@ -1,0 +1,162 @@
+diff --git a/Tracking/Acts/FaserActsGeometry/FaserActsGeometry/FASERMagneticFieldWrapper.h b/Tracking/Acts/FaserActsGeometry/FaserActsGeometry/FASERMagneticFieldWrapper.h
+index dfa5dfe6..af58fdf1 100644
+--- a/Tracking/Acts/FaserActsGeometry/FaserActsGeometry/FASERMagneticFieldWrapper.h
++++ b/Tracking/Acts/FaserActsGeometry/FaserActsGeometry/FASERMagneticFieldWrapper.h
+@@ -40,7 +40,7 @@ public:
+       const FaserFieldCacheCondObj* m_faserField;
+   };
+ 
+-  FASERMagneticFieldWrapper() = default;
++  explicit FASERMagneticFieldWrapper(double scale=1.) : m_fieldScale(scale) {}
+ 
+ 
+   MagneticFieldProvider::Cache 
+@@ -77,7 +77,7 @@ public:
+ 
+     bfield = trafo * bfield;
+ 
+-    bfield *= m_bFieldUnit; // kT -> T;
++    bfield *= m_bFieldUnit*m_fieldScale; // kT -> T, with diagnostic polarity control
+ 
+     return Acts::Result<Acts::Vector3>::success(bfield);
+   }
+@@ -116,13 +116,14 @@ public:
+     gradient = rot * gradient * rot.transpose();
+ 
+ 
+-    bfield *= m_bFieldUnit; // kT -> T;
+-    gradient *= m_bFieldUnit;
++    bfield *= m_bFieldUnit*m_fieldScale; // kT -> T
++    gradient *= m_bFieldUnit*m_fieldScale;
+ 
+     return Acts::Result<Acts::Vector3>::success(bfield);
+   }
+ 
+ private:
++  const double m_fieldScale;
+   const double m_bFieldUnit = 1000.*Acts::UnitConstants::T;
+ };
+ 
+diff --git a/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.cxx b/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.cxx
+index b0287342..a08dc3bd 100644
+--- a/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.cxx
++++ b/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.cxx
+@@ -83,7 +83,7 @@ FaserActsExtrapolationTool::initialize()
+   if (m_fieldMode == "FASER") {
+     ATH_MSG_INFO("Using FASER magnetic field service");
+     ATH_CHECK( m_fieldCondObjInputKey.initialize() );
+-    auto bField = std::make_shared<FASERMagneticFieldWrapper>();
++    auto bField = std::make_shared<FASERMagneticFieldWrapper>(m_magneticFieldScale);
+     auto stepper = Acts::EigenStepper<>(std::move(bField));
+     auto propagator = Acts::Propagator<decltype(stepper), Acts::Navigator>(std::move(stepper),
+                                                                       std::move(navigator), Acts::getDefaultLogger("ExtrapolationTool", Acts::Logging::ERROR));
+diff --git a/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.h b/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.h
+index ae20229c..abdda30a 100644
+--- a/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.h
++++ b/Tracking/Acts/FaserActsGeometry/src/FaserActsExtrapolationTool.h
+@@ -122,6 +122,7 @@ private:
+   ToolHandle<IFaserActsTrackingGeometryTool> m_trackingGeometryTool{this, "TrackingGeometryTool", "FaserActsTrackingGeometryTool"};
+ 
+   Gaudi::Property<std::string> m_fieldMode{this, "FieldMode", "FASER"};
++  Gaudi::Property<double> m_magneticFieldScale{this, "MagneticFieldScale", 1.};
+   Gaudi::Property<std::vector<double>> m_constantFieldVector{this, "ConstantFieldVector", {0, 0, 0}};
+ 
+   Gaudi::Property<double> m_ptLoopers{this, "PtLoopers", 300, "PT loop protection threshold. Will be converted to Acts MeV unit"};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+index e681f454..09e0f15f 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -99,7 +99,7 @@ StatusCode CKF2::initialize() {
+     m_logger = Acts::getDefaultLogger("KalmanFitter", Acts::Logging::INFO);
+   }
+ 
+-  auto magneticField = std::make_shared<FASERMagneticFieldWrapper>();
++  auto magneticField = std::make_shared<FASERMagneticFieldWrapper>(m_magneticFieldScale);
+   std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry
+     = m_trackingGeometryTool->trackingGeometry();
+   double reverseFilteringMomThreshold = 0.1; //@todo: needs to be validated
+@@ -237,6 +237,26 @@ StatusCode CKF2::execute() {
+   }
+   IndexSourceLinkAccessor slAccessor;
+   slAccessor.container = &tmp;
++  IndexSourceLinkContainer truthSourceLinks;
++  if (m_truthSourceLinkBarcode > 0) {
++    const TrackerSimDataCollection* sdo=nullptr;
++    ATH_CHECK(evtStore()->retrieve(sdo,"SCT_SDO_Map"));
++    for (const auto& sl : *sourceLinks) {
++      std::vector<ParticleHitCount> counts;
++      identifyContributingParticles(*sdo,std::vector<const Tracker::FaserSCT_Cluster*>{sl.hit()},counts);
++      if (std::any_of(counts.begin(),counts.end(),[&](const auto& p) {
++            return p.particleId == m_truthSourceLinkBarcode.value();
++          })) truthSourceLinks.emplace_hint(truthSourceLinks.end(),sl);
++    }
++    slAccessor.container = &truthSourceLinks;
++    if (m_audit) {
++      m_audit->begin("truth_source_link_filter");
++      m_audit->out << ",\"barcode\":" << m_truthSourceLinkBarcode.value()
++                   << ",\"original\":" << sourceLinks->size()
++                   << ",\"retained\":" << truthSourceLinks.size();
++      m_audit->end();
++    }
++  }
+ 
+   //3) measurement selector 
+   Acts::MeasurementSelector::Config measurementSelectorCfg = {
+@@ -285,6 +305,16 @@ StatusCode CKF2::execute() {
+       initial=Acts::BoundTrackParameters(initial.referenceSurface().getSharedPtr(),mean,initial.covariance(),initial.particleHypothesis());
+     }
+     if(m_electronHypothesis) initial=Acts::BoundTrackParameters(initial.referenceSurface().getSharedPtr(),initial.parameters(),initial.covariance(),Acts::ParticleHypothesis::electron());
++    if (m_reverseChargeHypothesis) {
++      auto mean=initial.parameters();
++      auto covariance=initial.covariance();
++      mean[4]=-mean[4];
++      if (covariance) {
++        covariance->row(4) *= -1.;
++        covariance->col(4) *= -1.;
++      }
++      initial=Acts::BoundTrackParameters(initial.referenceSurface().getSharedPtr(),mean,covariance,initial.particleHypothesis());
++    }
+     if (m_audit) {
+       std::vector<const Tracker::FaserSCT_Cluster*> seedHits;
+       if (Tool) seedHits = Tool->seeds()->at(iseed).clusters;
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+index a6d72170..3d74367b 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -87,6 +87,11 @@ private:
+   Gaudi::Property<bool> m_scattering {this, "MaterialScattering", true};
+   Gaudi::Property<bool> m_bypassRefit {this, "BypassRefit", false};
+   Gaudi::Property<bool> m_fixedTruthHits {this, "FixedTruthHits", false};
++  Gaudi::Property<int> m_truthSourceLinkBarcode {this, "TruthSourceLinkBarcode", 0,
++      "Diagnostic: retain source links supported by this SDO barcode, keeping the native CKF"};
++  Gaudi::Property<double> m_magneticFieldScale {this, "MagneticFieldScale", 1.};
++  Gaudi::Property<bool> m_reverseChargeHypothesis {this, "ReverseChargeHypothesis", false,
++      "Diagnostic: reverse seed q/p and its full covariance cross terms"};
+   Gaudi::Property<bool> m_electronHypothesis {this, "ElectronHypothesis", false};
+   Gaudi::Property<double> m_maxStepSize {this, "MaxStepSize", 0.};
+   Gaudi::Property<std::string> m_seedOverrideFile {this, "SeedOverrideFile", ""};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+index 303ae849..eb60838f 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+@@ -33,7 +33,7 @@ StatusCode KalmanFitterTool::initialize() {
+   } else {
+     m_logger = Acts::getDefaultLogger("KalmanFitter", Acts::Logging::INFO);
+   }
+-  auto magneticField = std::make_shared<FASERMagneticFieldWrapper>();
++  auto magneticField = std::make_shared<FASERMagneticFieldWrapper>(m_magneticFieldScale);
+   double reverseFilteringMomThreshold = 0.1; //@todo: needs to be validated
+   //@todo: the multiple scattering and energy loss are originallly turned off 
+   m_fit = makeTrackFitterFunction(m_trackingGeometryTool->trackingGeometry(), magneticField, m_scattering, m_energyLoss, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger);
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+index dabea001..124ab2b6 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+@@ -95,6 +95,7 @@ private:
+   Gaudi::Property<bool> m_correctSurface {this, "CorrectRefitSurface", false};
+   Gaudi::Property<bool> m_correctCovariance {this, "CorrectRefitCovariance", false};
+   Gaudi::Property<bool> m_energyLoss {this, "MaterialEnergyLoss", true};
++  Gaudi::Property<double> m_magneticFieldScale {this, "MagneticFieldScale", 1.};
+   Gaudi::Property<bool> m_scattering {this, "MaterialScattering", true};
+   Gaudi::Property<bool> m_electronHypothesis {this, "ElectronHypothesis", false};
+   Gaudi::Property<double> m_refitCovarianceMultiplier {this, "RefitCovarianceMultiplier", 10.};

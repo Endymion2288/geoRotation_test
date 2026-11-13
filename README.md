@@ -15,6 +15,9 @@
 - [S04 动量补图与原脚本核对](workbook/2026-11-12_stage04_reference_figures.md)：材料图旋转前后seed/九层CKF/final分布、good-seed条件图；[完整汇报PDF](../geoRotation_test_results/stage04_momentum/reference_figures/figures/momentum_material_comparison.pdf)。
 - [110051原宏、整体geometry与truth复核](workbook/2026-11-12_stage04_native_geometry_truth.md)：原生Calypso master/geoRotation、GitHub原宏选择、同track truth单因素，以及AFS材料图和历史mask设置控制。
 - [两套九层图的smoothed鼓包来源](workbook/2026-11-12_stage04_smoothing_bump_cause.md)：相同10文件的配对控制，区分S1共享state的smoothing覆写与S3的SDO purity/final选样效应。
+- [S05角度来源结论](workbook/2026-11-13_stage05_angle_structure_conclusions.md)及[isolated smoothing全量复核](workbook/2026-11-13_stage05_isolated_validation.md)：两版各500k，ON/OFF最终量与选样成员一致，新增57页ON参考图。
+- [S06全量电荷测量与路径统计](workbook/2026-11-13_stage06_charge_baseline.md)：100116/100117各500k、before/after均ON；误判率、入口条件谱平衡、全量lineage及历史Alma差异。详细机制与对称性控制继续执行。
+- [S06谱、模式与逐运算控制](workbook/2026-11-13_stage06_charge_controls.md)：production-only平衡、100k/电荷的真实方向/IFT/merge、119事件58字段精确重放及500k matched seed covariance；hit/qB/refit与独立gun继续验证。
 - [各阶段参考图清单](roadmap/05_reference_figures.md)：S04–S07对应的参考页、图组和PNG/PDF交付要求。
 - [Calypso patches 与构建](patches/README.md)；[冻结定义](configs/definitions.json)；[诊断字段](configs/fields.md)。
 - [仓库协作规范](AGENTS.md)。
@@ -23,4 +26,4 @@
 
 S00–S04已完成并分别提交阶段报告。S04证实当时current22材料查表坐标与旋转几何不一致；该材料图问题已修正，五类独立样本上均降低动量负尾。110051的production p ratio<0.5从34.151%降至10.543%，Good95效率提高4.018个百分点。上述数字和旧图对应材料控制及S04选择；用户指定的整体beforeGeo/afterGeo和GitHub原宏主图由新增复核报告分别给出。
 
-完整truth seed和固定真hits仍可复现错误材料图的低估；正确材料下，剩余seed混合与电子辐射后KF偏差已量化并定位。S05角度结构、S06谱平衡后的μ±误判差异和S07完整修复验收继续按路线图执行。
+完整truth seed和固定真hits仍可复现错误材料图的低估；正确材料下，剩余seed混合与电子辐射后KF偏差已量化并定位。S05主要角度结构的成因研究已交付；当前按路线图完成S06机制及对称性检验，完整生产修复另在S07验收。

@@ -22,6 +22,12 @@ def main():
     parser.add_argument('--ntuple-check', action='store_true')
     parser.add_argument('--actual-covariance', action='store_true')
     parser.add_argument('--no-observer', action='store_true')
+    parser.add_argument('--isolate-smoothing', action='store_true')
+    parser.add_argument('--stage', default='S05')
+    parser.add_argument('--charge-diagnostics', action='store_true')
+    parser.add_argument('--variants', nargs='+', choices=['beforeGeo', 'afterGeo'],
+                        default=['beforeGeo', 'afterGeo'])
+    parser.add_argument('--held-out-start', type=int)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     root = args.root.resolve()/args.name
@@ -31,6 +37,8 @@ def main():
         (code/folder).mkdir(parents=True)
     for name in ['run_slope_task.py', 'ntuple_tracking_check.py']:
         shutil.copy2(repo/'scripts'/name, code/'scripts'/name)
+    if args.charge_diagnostics:
+        shutil.copy2(repo/'scripts/charge_diagnostics.py', code/'scripts/charge_diagnostics.py')
     shutil.copy2(repo/'configs/slope_tracking.py', code/'configs/slope_tracking.py')
     samples = json.loads((args.samples or repo/'configs/samples.json').read_text())['samples']
     sample = next(s for s in samples if s['dsid'] == args.dsid)
@@ -50,6 +58,10 @@ def main():
         options.append('--ntuple-check')
     if args.actual_covariance:
         options.append('--actual-covariance')
+    if args.isolate_smoothing:
+        options.append('--isolate-smoothing')
+    if args.charge_diagnostics:
+        options.append('--charge-diagnostics')
     if args.no_observer:
         if not args.ntuple_check:
             parser.error('--no-observer requires --ntuple-check')
@@ -59,6 +71,8 @@ def main():
         'afterGeo': '/afs/cern.ch/work/x/xai/public/FASER/develop/run/material-maps-alma9-rotated.json',
     }
     for variant, material in materials.items():
+        if variant not in args.variants:
+            continue
         tasks = []
         for shard, source in enumerate(inputs):
             task = dict(source, variant=variant, material=material, dsid=args.dsid,
@@ -71,10 +85,14 @@ def main():
                 output=task['output']))
         dump(root/(variant+'_tasks.json'), tasks)
     recorded_args = {key: str(value) if isinstance(value, Path) else value for key,value in vars(args).items()}
-    dump(root/'manifest.json', dict(stage='S05', sample=sample, args=recorded_args,
+    dump(root/'manifest.json', dict(stage=args.stage, sample=sample, args=recorded_args,
         source_events_per_variant=sum(s['events'] for s in inputs), ranges=inputs,
+        runtime_invariants=dict(audit=False, reset_event_maps=False,
+                                isolate_smoothing=args.isolate_smoothing,
+                                **({'charge_diagnostics': True} if args.charge_diagnostics else {})),
         native_tracking=True, coordinate_only_observer=True,
-        held_out_split_sample_entry=250000 if args.dsid == '100044' else args.skip+args.events//2))
+        held_out_split_sample_entry=args.held_out_start if args.held_out_start is not None else
+            250000 if args.dsid == '100044' else args.skip+args.events//2))
     print(root)
 
 

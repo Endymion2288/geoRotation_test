@@ -1,0 +1,19 @@
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -50,6 +50,7 @@
+   ToolHandle<ITrackTruthMatchingTool> m_matcher{this,"TruthMatchingTool","TrackTruthMatchingTool"};
+   Gaudi::Property<bool> m_rotated{this,"Rotated",true};
+   Gaudi::Property<bool> m_actualCovariance{this,"ActualCovariance",false};
++  Gaudi::Property<double> m_truthChargeScale{this,"TruthChargeScale",1.};
+   Gaudi::Property<long> m_skip{this,"Skip",0};
+   Gaudi::Property<double> m_st1z{this,"St1Z",0.};
+   Gaudi::Property<double> m_vetoz{this,"VetoNuZ",-3112.};
+@@ -203,7 +204,7 @@
+   Acts::BoundVector pars=Acts::BoundVector::Zero();
+   pars.head<2>()=startSurface->globalToLocal(gctx,position).value();
+   pars[2]=Acts::VectorHelpers::phi(direction);pars[3]=Acts::VectorHelpers::theta(direction);
+-  pars[4]=p->charge()/(.001*p->p4().P());
++  pars[4]=m_truthChargeScale*p->charge()/(.001*p->p4().P());
+   Acts::BoundTrackParameters start(std::move(startSurface),pars,std::nullopt,Acts::ParticleHypothesis::muon());
+   for(int i=0;i<2;++i) {
+     const double z=i==0 ? m_st1z.value() : m_vetoz.value();

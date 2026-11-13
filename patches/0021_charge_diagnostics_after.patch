@@ -1,0 +1,270 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+index ee327a21..611f0857 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -43,6 +43,8 @@ CKF2::CKF2(const std::string& name, ISvcLocator* pSvcLocator) :
+ 
+ 
+ StatusCode CKF2::initialize() {
++  ATH_CHECK(m_chargeSimData.initialize(!m_chargeDiagnosticFile.value().empty()));
++  if (!m_chargeObserver.open(m_chargeDiagnosticFile.value())) return StatusCode::FAILURE;
+   ATH_CHECK(m_fieldCondObjInputKey.initialize());
+   ATH_CHECK(m_trackingGeometryTool.retrieve());
+   ATH_CHECK(m_trackSeedTool.retrieve());
+@@ -138,6 +140,12 @@ StatusCode CKF2::execute() {
+   std::shared_ptr<std::vector<const Tracker::FaserSCT_SpacePoint*>> spacePoints = m_trackSeedTool->spacePoints();
+   std::shared_ptr<std::vector<std::array<std::vector<const Tracker::FaserSCT_Cluster*>, 3>>> seedClusters = m_trackSeedTool->seedClusters();
+ 
++  if (m_chargeObserver.enabled()) {
++    SG::ReadHandle<TrackerSimDataCollection> sdo{m_chargeSimData,ctx};
++    ATH_CHECK(sdo.isValid());
++    m_chargeObserver.begin(m_numberOfEvents-1,ctx.eventID().run_number(),
++                           ctx.eventID().event_number(),sdo.cptr());
++  }
+   TrackInfo::nClusters = sourceLinks->size();
+ 
+ 
+@@ -226,6 +234,7 @@ StatusCode CKF2::execute() {
+   unsigned int nSeed = 0;
+ 
+   for (std::size_t iseed = 0; iseed < (*initialParameters).size(); ++iseed) {
++    m_chargeObserver.seed(iseed,(*initialParameters)[iseed]);
+     ATH_MSG_DEBUG("  position: " << (*initialParameters)[iseed].position(gctx).transpose());
+     ATH_MSG_DEBUG("  momentum: " << (*initialParameters)[iseed].momentum().transpose());
+     ATH_MSG_DEBUG("  charge:   " << (*initialParameters)[iseed].charge());
+@@ -248,6 +257,7 @@ StatusCode CKF2::execute() {
+       seedNumber(track) = nSeed - 1;
+       auto destProxy = tracks.getTrack(tracks.addTrack());
+       destProxy.copyFrom(track, true);  // make sure we copy track states!
++      m_chargeObserver.candidate(destProxy,iseed);
+     }
+   }
+   
+@@ -271,10 +281,27 @@ StatusCode CKF2::execute() {
+     
+     auto destProxy = selectedTracks.getTrack(selectedTracks.addTrack());
+     destProxy.copyFrom(tracks.getTrack(selected.index), true);  // make sure we copy track states!
++    // CKF branches share ancestor states. Their smoothed values may have been
++    // overwritten by another branch before the finder returned. Deep-copying
++    // alone preserves those values: recompute only after the states are private.
++    if (m_isolateSmoothing) {
++      const auto status = Acts::GainMatrixSmoother()(
++          gctx, selectedTracks.trackStateContainer(), destProxy.tipIndex(), *m_logger);
++      if (!status.ok()) {
++        ATH_MSG_ERROR("Isolated candidate smoothing failed for candidate "
++                      << selected.index << ": " << status.error());
++        return StatusCode::FAILURE;
++      }
++    }
+     
++    m_chargeObserver.selected(destProxy,selected.index);
+     if(not allTracks.empty()){ 
+       allTracks.remove_if([&](const TrackInfo &p) {
+-        return ((p.nMeasurements <= 12) || ((p.clusterSet & selected.clusterSet).count() > 6));
++        const bool rejected=(p.nMeasurements <= 12) || ((p.clusterSet & selected.clusterSet).count() > 6);
++        if (rejected && m_chargeObserver.enabled()) m_chargeObserver.rejected(
++            tracks.getTrack(p.index),selected.index,
++            (p.nMeasurements<=12 ? 1 : 0) | ((p.clusterSet & selected.clusterSet).count()>6 ? 2 : 0));
++        return rejected;
+       });
+       //allTracks.remove_if([&](const TrackInfo &p) {
+       //  	      ATH_MSG_DEBUG("selected"<<selected.index<<" | nMeas="<<selected.nMeasurements<<" chi2="<<selected.chi2);
+@@ -319,6 +346,7 @@ StatusCode CKF2::execute() {
+     }
+ 
+     std::unique_ptr<Trk::Track> trk = m_createTrkTrackTool->createTrack(gctx, track, fittedParams, m_backwardPropagation);
++    m_chargeObserver.converted(trk.get(),track.index());
+     m_numberOfSelectedTracks++;
+     //@todo: make the KF refit configurable 
+     std::unique_ptr<Trk::Track> trk2 = m_kalmanFitterTool1->fit(
+@@ -331,6 +359,8 @@ StatusCode CKF2::execute() {
+       refitStatus[track.index()] = false;
+       ATH_MSG_WARNING("Re-Fit either not performed or failed.");
+     }
++    m_chargeObserver.final(outputTracks->back(),track.index(),outputTracks->size()-1,
++                           refitStatus[track.index()]);
+   }
+ 
+     //write out all acts found tracks for debugging 
+@@ -358,6 +388,7 @@ StatusCode CKF2::execute() {
+ 
+ 
+ StatusCode CKF2::finalize() {
++  if (!m_chargeObserver.close()) return StatusCode::FAILURE;
+   ATH_MSG_INFO("CombinatorialKalmanFilterAlg::finalize()");
+   ATH_MSG_INFO("BackwardPropagation: " << m_backwardPropagation);
+   ATH_MSG_INFO(m_numberOfEvents << " events processed.");
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+index 44338063..895b57b2 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -24,6 +24,7 @@
+ #include <boost/dynamic_bitset.hpp>
+ #include "CreateTrkTrackTool.h"
+ #include "xAODEventInfo/EventInfo.h"
++#include "ChargeDiagnostics.h"
+ 
+ 
+ using ClusterSet = boost::dynamic_bitset<>;
+@@ -89,11 +90,17 @@ private:
+   const TrackerDD::SCT_DetectorManager* m_detManager {nullptr};
+ 
+   Gaudi::Property<std::string> m_actsLogging {this, "ActsLogging", "VERBOSE"};
++  Gaudi::Property<std::string> m_chargeDiagnosticFile {this,"ChargeDiagnosticFile","","Read-only actual candidate lineage CSV"};
++  SG::ReadHandleKey<TrackerSimDataCollection> m_chargeSimData {this,"ChargeSimData","SCT_SDO_Map"};
++  CalypsoChargeDiagnostics m_chargeObserver;
+   Gaudi::Property<int> m_minNumberMeasurements {this, "MinNumberMeasurements", 12};
+   Gaudi::Property<bool> m_backwardPropagation {this, "BackwardPropagation", false};
+   Gaudi::Property<bool> m_performanceWriter {this, "PerformanceWriter", true};
+   Gaudi::Property<bool> m_noDiagnostics {this, "noDiagnostics", true, "Set ACTS logging level to INFO and do not run performance writer, states writer or summary writer"};
+   Gaudi::Property<bool> m_summaryWriter {this, "SummaryWriter", true};
++  Gaudi::Property<bool> m_isolateSmoothing {
++      this, "IsolateCandidateSmoothing", true,
++      "Recompute smoothed parameters and covariance on each selected candidate's private states"};
+   Gaudi::Property<bool> m_statesWriter {this, "StatesWriter", false};
+   Gaudi::Property<bool> m_seedWriter {this, "seedWriter", true};
+   Gaudi::Property<bool> m_alignmentWriter {this, "alignmentWriter", false};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/ChargeDiagnostics.h b/Tracking/Acts/FaserActsKalmanFilter/src/ChargeDiagnostics.h
+new file mode 100644
+index 00000000..2e728255
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/ChargeDiagnostics.h
+@@ -0,0 +1,138 @@
++// Read-only S06 observer of the actual Calypso candidate and conversion path.
++#pragma once
++#include "Acts/EventData/TrackParameters.hpp"
++#include "FaserActsKalmanFilter/IndexSourceLink.h"
++#include "TrackerSimData/TrackerSimDataCollection.h"
++#include "TrackerPrepRawData/FaserSCT_Cluster.h"
++#include "TrkTrack/Track.h"
++#include <fstream>
++#include <iomanip>
++#include <map>
++#include <set>
++#include <sstream>
++
++class CalypsoChargeDiagnostics {
++ public:
++  bool open(const std::string& path) {
++    if (path.empty()) return true;
++    m_file.open(path);
++    m_file << std::setprecision(17)
++        << "local_event_index,run,event,stage,seed,candidate,selected,ordinal,state_order,"
++           "geometry_id,hit_id,qop_GeVinv,c44_GeVinv2,chi2,n_measurements,status,"
++           "phi,theta,loc0,loc1,truth_barcodes\n";
++    return bool(m_file);
++  }
++  bool enabled() const { return m_file.is_open(); }
++  bool close() {
++    if (!enabled()) return true;
++    m_file.close();
++    return !m_file.fail();
++  }
++  void begin(size_t entry, unsigned long long run, unsigned long long event,
++             const TrackerSimDataCollection* sdo) {
++    m_entry=entry; m_run=run; m_event=event; m_sdo=sdo;
++    m_seed.clear(); m_origin.clear(); m_barcodeCache.clear();
++  }
++  void seed(size_t index, const Acts::BoundTrackParameters& p) {
++    if (!enabled()) return;
++    const auto cov=p.covariance().value_or(Acts::BoundSquareMatrix::Constant(NAN));
++    emit(0,index,-1,-1,-1,-1,0,0,p.parameters(),cov,0.,0,0,"");
++  }
++  template<class Track> void candidate(const Track& track, size_t seedIndex) {
++    if (!enabled()) return;
++    m_seed[track.index()]=seedIndex;
++    reference(1,track,seedIndex,track.index(),-1,0);
++    int order=0;
++    for (const auto& state:track.trackStatesReversed()) {
++      if (!state.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag)) continue;
++      const auto* cluster=state.getUncalibratedSourceLink().template get<IndexSourceLink>().hit();
++      if (state.hasFiltered()) emit(8,seedIndex,track.index(),-1,-1,order,
++          state.referenceSurface().geometryId().value(),cluster->identify().get_compact(),
++          state.filtered(),state.filteredCovariance(),state.chi2(),track.nMeasurements(),
++          0,barcodes(cluster));
++      ++order;
++    }
++  }
++  template<class Track> void selected(const Track& track, size_t origin) {
++    if (!enabled()) return;
++    m_origin[track.index()]=origin;
++    const auto seedIndex=m_seed.at(origin);
++    reference(5,track,seedIndex,origin,track.index(),0);
++    int order=0;
++    for (const auto& state:track.trackStatesReversed()) {
++      if (!state.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag)) continue;
++      const auto* cluster=state.getUncalibratedSourceLink().template get<IndexSourceLink>().hit();
++      const auto geometry=state.referenceSurface().geometryId().value();
++      const auto hit=cluster->identify().get_compact();
++      const auto truth=barcodes(cluster);
++      if (state.hasPredicted()) emit(2,seedIndex,origin,track.index(),-1,order,geometry,hit,
++          state.predicted(),state.predictedCovariance(),state.chi2(),track.nMeasurements(),0,truth);
++      if (state.hasFiltered()) emit(3,seedIndex,origin,track.index(),-1,order,geometry,hit,
++          state.filtered(),state.filteredCovariance(),state.chi2(),track.nMeasurements(),0,truth);
++      if (state.hasSmoothed()) emit(4,seedIndex,origin,track.index(),-1,order,geometry,hit,
++          state.smoothed(),state.smoothedCovariance(),state.chi2(),track.nMeasurements(),0,truth);
++      ++order;
++    }
++  }
++  template<class Track> void rejected(const Track& track,size_t winner,int reason) {
++    if (!enabled()) return;
++    reference(10,track,m_seed.at(track.index()),track.index(),winner,reason);
++  }
++  void converted(const Trk::Track* track, size_t selected) { trk(6,track,selected,-1,0); }
++  void final(const Trk::Track* track, size_t selected,size_t ordinal,bool refit) {
++    trk(7,track,selected,ordinal,refit ? 1 : 0);
++  }
++ private:
++  std::ofstream m_file;
++  size_t m_entry=0;
++  unsigned long long m_run=0,m_event=0;
++  const TrackerSimDataCollection* m_sdo=nullptr;
++  std::map<size_t,size_t> m_seed,m_origin;
++  std::map<unsigned long long,std::string> m_barcodeCache;
++  std::string barcodes(const Tracker::FaserSCT_Cluster* cluster) {
++    const auto id=cluster->identify().get_compact();
++    auto found=m_barcodeCache.find(id);
++    if (found!=m_barcodeCache.end()) return found->second;
++    std::set<int> values;
++    if (m_sdo) for (const auto rdo:cluster->rdoList()) {
++      const auto it=m_sdo->find(rdo);
++      if (it!=m_sdo->end()) for (const auto& deposit:it->second.getdeposits())
++        values.insert(deposit.first.barcode());
++    }
++    std::ostringstream out;
++    for (const int barcode:values) { if(out.tellp()>0) out<<'|'; out<<barcode; }
++    return m_barcodeCache[id]=out.str();
++  }
++  template<class Vector,class Matrix> void emit(int stage,long seed,long candidate,long selected,
++      long ordinal,int order,unsigned long long geometry,unsigned long long hit,
++      const Vector& p,const Matrix& c,double chi2,long measurements,int status,const std::string& truth) {
++    m_file<<m_entry<<','<<m_run<<','<<m_event<<','<<stage<<','<<seed<<','<<candidate<<','
++      <<selected<<','<<ordinal<<','<<order<<','<<geometry<<','<<hit<<','<<p[4]<<','<<c(4,4)<<','
++      <<chi2<<','<<measurements<<','<<status<<','<<p[2]<<','<<p[3]<<','<<p[0]<<','<<p[1]<<','<<truth<<'\n';
++  }
++  template<class Track> void reference(int stage,const Track& track,long seed,long candidate,
++      long selected,int status) {
++    if (track.hasReferenceSurface()) emit(stage,seed,candidate,selected,-1,-1,0,0,
++        track.parameters(),track.covariance(),track.chi2(),track.nMeasurements(),status,"");
++    else {
++      const Acts::BoundVector p=Acts::BoundVector::Constant(NAN);
++      const Acts::BoundSquareMatrix c=Acts::BoundSquareMatrix::Constant(NAN);
++      emit(stage,seed,candidate,selected,-1,-1,0,0,p,c,track.chi2(),track.nMeasurements(),-1,"");
++    }
++  }
++  void trk(int stage,const Trk::Track* track,size_t selected,long ordinal,int status) {
++    if (!enabled()) return;
++    Acts::BoundVector p=Acts::BoundVector::Constant(NAN);
++    Acts::BoundSquareMatrix c=Acts::BoundSquareMatrix::Constant(NAN);
++    if (track && track->trackParameters() && !track->trackParameters()->empty() &&
++        track->trackParameters()->front()) {
++      const auto* par=track->trackParameters()->front();
++      p.head<5>()=par->parameters(); p[4]*=1000.;
++      if(par->covariance()) { c.topLeftCorner<5,5>()=*par->covariance();c(4,4)*=1e6; }
++    } else status=-1;
++    const auto origin=m_origin.at(selected);
++    emit(stage,m_seed.at(origin),origin,selected,ordinal,-1,0,0,p,c,
++         track && track->fitQuality() ? track->fitQuality()->chiSquared() : NAN,
++         track && track->measurementsOnTrack() ? track->measurementsOnTrack()->size() : 0,status,"");
++  }
++};

@@ -35,9 +35,11 @@ def component_metadata(output, package, library):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--source', type=Path,
+                        default=Path('/eos/home-x/xcheng/FASER/geoRotation_calypso'))
     args = parser.parse_args()
-    source = Path('/eos/home-x/xcheng/FASER/geoRotation_calypso')
-    build = source/'build'
+    source = args.source.resolve()
+    build = Path('/eos/home-x/xcheng/FASER/geoRotation_calypso/build')
     output = args.output.resolve()
     lib = output/'lib'
     lib.mkdir(parents=True, exist_ok=True)

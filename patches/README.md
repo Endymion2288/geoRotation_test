@@ -4,6 +4,18 @@
 
 补丁保留外部源码上下文和删除行的原有空白，`.gitattributes` 为这些文件关闭行尾空白检查；补丁中的新增源码行另行确认没有行尾空白。
 
+S06 isolated-smoothing批次的增量与基底：
+
+- `0021_charge_diagnostics_after.patch`：相对旋转基底`88c457c1`，默认isolated smoothing ON；只读seed/candidate、P/F/S、native cached reference、conversion/refit和pruning记录。真实seed索引另存，不修正原生trackGroup，保留物理基线。
+- `0022_charge_diagnostics_before.patch`：相对master`1eb885ae`的对应诊断与默认ON。0021/0022是两套替代基底补丁，不能串联。
+- `0023_charge_observer_qop.patch`：相对已有S05 observer的q/p及variance字段增量；不包含此前transport probe。与tracking库组成四库overlay，6组20-event ON/OFF的58数组精确一致，见`stage06_charge/20261113_isolated_v1/charge_smoke/validation.json`。
+- `0024_matched_seed_prior_after.patch`：在0021之后应用，仅修改CircleFitTrackSeedTool；默认关闭的`MatchFaserSeedCovariance`以实际两套seed surface basis和方向Jacobian映射完整6×6 covariance。`SeedPriorAuditFile`保存实际输入C、J和输出C供验证。基底prior数值必须使用beforeGeo配置；它只匹配seed先验，不代表全链纯旋转已闭合。实际编译与后续数值验证状态见[S06报告](../workbook/2026-11-13_stage06_charge_baseline.md)。
+- `0025_charge_hit_and_polarity_controls.patch`：在S04 `software_controls_v3/tracking.patch`之后应用，保留native组合CKF，默认关闭地过滤无指定primary SDO支持的source links；seed mean/C不变。另有seed q/p及完整C交叉项反号、CKF/refit/extrapolator的field/gradient一起反号。与0021不是串接关系。
+- `0026_charge_conjugated_truth_transport.patch`：相对0023后的observer增量，只将原输入production truth用于model transport的charge反号；reco charge已由CKF反号，不重复乘。v2的三DSID smoke默认58字段精确、q/B路径和完整C闭合，见`stage06_charge/20261113_isolated_v1/hitcontrol_smoke_v2/validation.json`。
+- `0027_charge_refit_chart_before.patch`：0022之后的refit五文件增量，来自S05已测量的native regular update/smoother chart；默认关闭，不包含CKF替换。实际beforeGeo build及两电荷20-event默认58字段、全部CKF行闭合，见`refit_control_smoke_v1/validation.json`。
+
+S06全量主测量及历史Alma配对的cuts、分母、软件快照与未完成实验同见该报告；不将探索控制视为正式生产修复。
+
 - `0001-sct-local-truth.patch`：环境变量 `FASER_SCT_LOCAL_TRUTH_FILE` 启用 G4 SCT pre/post momentum CSV。使用单进程、单 G4 worker；退出134已在S04定位修复，跨事件关联需同时应用0005。
 - `0002-tracking-audit.patch`：event/truth/seed/candidate/CKF/conversion/refit/final JSONL、完整 states 和实际 transport closure；修正 seed lineage 的索引。`AuditFile` 为空时不写记录。
 - `CorrectCovariance` / `CorrectInterfaces`：实验开关，分别转换 plane↔curvilinear covariance，并将 refit 初始 plane 放在相同物理点；默认 false。

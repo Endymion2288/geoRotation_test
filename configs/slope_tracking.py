@@ -22,8 +22,11 @@ def main():
     parser.add_argument('--no-seed-writer', action='store_true')
     parser.add_argument('--no-observer', action='store_true', help='Native Ntuple baseline for the read-only observer check')
     parser.add_argument('--stage-audit', action='store_true', help='Read-only detailed states; requires the recorded Calypso audit library')
+    parser.add_argument('--charge-audit', action='store_true', help='Retain r/S/K and full C for the frozen small charge replay sample')
     parser.add_argument('--native-states', action='store_true', help='Enable existing Calypso CKF/refit ROOT state writers for both native branches')
-    parser.add_argument('--isolate-smoothing', action='store_true', help='Controlled candidate-specific smoothing; changes saved states')
+    smoothing = parser.add_mutually_exclusive_group()
+    smoothing.add_argument('--isolate-smoothing', action='store_true', help='Recompute each selected candidate on its private state path')
+    smoothing.add_argument('--shared-smoothing', action='store_true', help='Explicit historical shared-state control')
     parser.add_argument('--physical-ntuple-angles', action='store_true', help='Opt-in physical VetoNu angles in the actual rotated NtupleDumper')
     parser.add_argument('--truth-cluster-position', action='store_true', help='Calypso diagnostic: replace only local measured strip coordinates by majority SiHit centroids')
     parser.add_argument('--refit-covariance-scale', type=float, help='Controlled change to native KalmanFitterTool1.SeedCovarianceScale; CKF remains native')
@@ -36,7 +39,23 @@ def main():
     parser.add_argument('--correct-refit-basis', action='store_true', help='Calypso diagnostic: transform input curvilinear covariance to the actual refit plane basis')
     parser.add_argument('--refit-input-reference-plane', action='store_true', help='Calypso diagnostic: keep the refit plane at the input point, independently of covariance changes')
     parser.add_argument('--refit-outcomes', action='store_true', help='Read-only actual Calypso selected-track refit success/fallback CSV')
+    parser.add_argument('--charge-diagnostics', action='store_true', help='Read-only seed, candidate, selected state and conversion/refit lineage')
+    parser.add_argument('--mode-refit-counters', action='store_true',
+                        help='Read-only compact refit counters for every native direction, including merge')
+    parser.add_argument('--backward', action='store_true', help='Actual Calypso backward CKF path')
+    parser.add_argument('--four-station', action='store_true', help='Use the native four-station mask [0,1,2]')
+    parser.add_argument('--merge-directions', action='store_true', help='Run native forward/backward CKF and MergeTracksAlg')
+    parser.add_argument('--match-faser-seed-prior', action='store_true', help='Use the beforeGeo seed covariance transformed with the actual surface and angular Jacobians')
+    parser.add_argument('--seed-prior-audit', action='store_true', help='Read-only full matched seed covariance and Jacobian CSV')
+    parser.add_argument('--truth-source-link-barcode', type=int, default=0,
+                        help='Actual CKF control: retain source links supported by this SDO barcode')
+    parser.add_argument('--reverse-charge-and-field', action='store_true',
+                        help='Reverse seed q/p and the CKF/refit/extrapolation field together')
     args = parser.parse_args()
+    if args.charge_audit and not args.stage_audit:
+        parser.error('--charge-audit requires --stage-audit')
+    if args.mode_refit_counters and args.charge_diagnostics:
+        parser.error('--mode-refit-counters and --charge-diagnostics use different compact outputs')
     from AthenaCommon.Configurable import Configurable
     from AthenaConfiguration.ComponentFactory import CompFactory
     from CalypsoConfiguration.AllConfigFlags import initConfigFlags
@@ -76,17 +95,47 @@ def main():
                              MinClustersPerFit=5, TanThetaXZCut=.083))
     acc.merge(GhostBustersCfg(flags))
     acc.merge(xAODTruthCnvAlgCfg(flags))
-    cfg = CKF2Cfg(flags, actsOutputTag='slope_3station_forward', name='CKF_Slope',
-        maskedLayers=[0, 1, 2, 3, 4, 5], OutputCollection='CKFTrackCollectionWithoutIFT',
-        BackwardPropagation=False, noDiagnostics=False, seedWriter=not args.no_seed_writer,
+    mask = [0, 1, 2] if args.four_station else [0, 1, 2, 3, 4, 5]
+    if args.merge_directions and (args.backward or args.charge_diagnostics or args.stage_audit or args.native_states
+                                  or args.truth_source_link_barcode or args.reverse_charge_and_field):
+        parser.error('--merge-directions uses two native CKF paths; single-path audit flags do not apply')
+    primary_tag = f'slope_{4 if args.four_station else 3}station_'+('backward' if args.backward else 'forward')
+    cfg = CKF2Cfg(flags, actsOutputTag=primary_tag, name='CKF_Slope',
+        maskedLayers=mask, OutputCollection='CKFTrackCollectionWithoutIFT',
+        BackwardPropagation=args.backward, noDiagnostics=False, seedWriter=not args.no_seed_writer,
         StatesWriter=args.native_states, SummaryWriter=False)
     ckf = cfg.getEventAlgo('CKF_Slope')
+    if args.truth_source_link_barcode:
+        ckf.TruthSourceLinkBarcode = args.truth_source_link_barcode
+    if args.reverse_charge_and_field:
+        ckf.ReverseChargeHypothesis = True
+        ckf.MagneticFieldScale = -1.
+        ckf.KalmanFitterTool1.MagneticFieldScale = -1.
+    if args.match_faser_seed_prior:
+        if args.variant == 'beforeGeo':
+            parser.error('--match-faser-seed-prior requires the rotated Calypso control library')
+        # Exact beforeGeo CKF2Config.py expressions, including its local swap.
+        for name, inflation, sigma in zip(
+                ['covLoc0', 'covLoc1', 'covPhi', 'covTheta', 'covQOverP'],
+                [100, 100, 100, 100, 1000], [.9, .019, .033, .00029, .0001]):
+            setattr(ckf.TrackSeed, name, inflation*sigma*sigma)
+        ckf.TrackSeed.MatchFaserSeedCovariance = True
+    if args.seed_prior_audit:
+        if not args.match_faser_seed_prior:
+            parser.error('--seed-prior-audit requires --match-faser-seed-prior')
+        ckf.TrackSeed.SeedPriorAuditFile = 'seed_covariance.csv'
+    if args.charge_diagnostics:
+        ckf.ChargeDiagnosticFile = 'charge_lineage.csv'
+    if args.mode_refit_counters:
+        ckf.ChargeDiagnosticFile = 'mode_refit_forward.csv'
     if args.stage_audit:
         ckf.AuditFile = 'stages.jsonl'
         ckf.AuditStates = True
         ckf.AuditSelectedStatesOnly = True
     if args.isolate_smoothing:
         ckf.IsolateCandidateSmoothing = True
+    if args.shared_smoothing:
+        ckf.IsolateCandidateSmoothing = False
     ckf.KalmanFitterTool1.noDiagnostics = not args.native_states
     ckf.KalmanFitterTool1.StatesWriter = args.native_states
     ckf.KalmanFitterTool1.RootTrajectoryStatesWriterTool.noDiagnostics = not args.native_states
@@ -113,21 +162,43 @@ def main():
     if args.refit_outcomes:
         ckf.RefitOutcomeFile='refit_outcomes.csv'
     acc.merge(cfg)
+    observer_collection = 'CKFTrackCollectionWithoutIFT'
+    if args.merge_directions:
+        backward_cfg = CKF2Cfg(flags, actsOutputTag='slope_native_backward', name='CKF_Slope_Backward',
+            maskedLayers=mask, OutputCollection='CKFTrackCollectionBackwardWithoutIFT',
+            BackwardPropagation=True, noDiagnostics=True, seedWriter=False,
+            StatesWriter=False, SummaryWriter=False)
+        backward_ckf = backward_cfg.getEventAlgo('CKF_Slope_Backward')
+        if args.isolate_smoothing:
+            backward_ckf.IsolateCandidateSmoothing=True
+        if args.shared_smoothing:
+            backward_ckf.IsolateCandidateSmoothing=False
+        if args.mode_refit_counters:
+            backward_ckf.ChargeDiagnosticFile = 'mode_refit_backward.csv'
+        acc.merge(backward_cfg)
+        from FaserActsKalmanFilter.MergeTracksConfig import MergeTrackCfg
+        acc.merge(MergeTrackCfg(flags, TrackCollectionForward='CKFTrackCollectionWithoutIFT',
+            TrackCollectionBackward='CKFTrackCollectionBackwardWithoutIFT',
+            MergeTrackCollection='CKFTrackCollectionMergeWithoutIFT', acceptTrackSeenByOne=True))
+        observer_collection = 'CKFTrackCollectionMergeWithoutIFT'
     result, geometry = ActsTrackingGeometryToolCfg(flags)
     acc.merge(result)
     propagator = CompFactory.FaserActsExtrapolationTool('SlopeNativeExtrapolator',
         TrackingGeometryTool=geometry, MaxSteps=10000)
+    if args.reverse_charge_and_field:
+        propagator.MagneticFieldScale = -1.
     if not args.no_observer:
+        observer_options = {'TruthChargeScale': -1.} if args.reverse_charge_and_field else {}
         acc.addEventAlgo(CompFactory.CalypsoSlopeDiagnosticsAlg('CalypsoSlopeDiagnostics',
             ExtrapolationTool=propagator, Rotated=args.variant != 'beforeGeo', Skip=args.skip,
-            ActualCovariance=args.actual_covariance))
+            ActualCovariance=args.actual_covariance, TrackCollection=observer_collection, **observer_options))
     if args.ntuple_check:
         from ntuple_tracking_check import EmptyWaveforms
         from NtupleDumper.NtupleDumperConfig import NtupleDumperAlgCfg
         acc.addEventAlgo(EmptyWaveforms('SlopeEmptyWaveforms'))
         ntuple_options = {'RotatedPhysicalAngles':True} if args.physical_ntuple_angles else {}
         acc.merge(NtupleDumperAlgCfg(flags, 'native_ntuple.root', McEventCollection='TruthEvent',
-            TrackCollection='CKFTrackCollectionWithoutIFT', TrackCollectionWithoutIFT='CKFTrackCollectionWithoutIFT',
+            TrackCollection=observer_collection, TrackCollectionWithoutIFT=observer_collection,
             RunVertexing=False, DoBlinding=False, DoTrackFilter=False, StableOnly=False, DoCalib=False, **ntuple_options))
     acc.addService(CompFactory.AthenaEventLoopMgr(EventPrintoutInterval=1000))
     acc.getService('MessageSvc').defaultLimit = 20
@@ -144,7 +215,17 @@ def main():
         refit_covariance_basis_corrected=args.correct_refit_basis,
         refit_uses_input_reference_plane=args.refit_input_reference_plane,
         refit_outcome_observer=args.refit_outcomes,
+        charge_diagnostics=args.charge_diagnostics,
+        mode_refit_counters=args.mode_refit_counters,
+        matched_faser_seed_prior=args.match_faser_seed_prior,
+        full_seed_prior_audit=args.seed_prior_audit,
+        truth_source_link_barcode=args.truth_source_link_barcode,
+        magnetic_field_scale=-1. if args.reverse_charge_and_field else 1.,
+        seed_charge_reversed=args.reverse_charge_and_field,
+        backward=args.backward, masked_layers=mask, merge_directions=args.merge_directions,
+        output_collection=observer_collection,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False,
+        charge_matrix_audit=args.charge_audit,
         isolate_smoothing=bool(getattr(ckf, 'IsolateCandidateSmoothing', False)), observer=not args.no_observer,
         propagation_material_energy_loss=propagator.InteractionEloss,
         propagation_material_scattering=propagator.InteractionMultiScatering)

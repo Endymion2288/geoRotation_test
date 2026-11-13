@@ -129,12 +129,23 @@ def main():
             fallback=int((fields['refit_success'] == 0).sum()),
             identity='Checked against observer source entry, run, event and final ordinal')
     if '--stage-audit' in task.get('options', []):
+        if '--charge-audit' in task.get('options', []):
+            from charge_audit import extract as extract_charge_audit
+            summary['charge_matrix_audit'] = extract_charge_audit('stages.jsonl', output, task)
         from slope_stage_extract import extract
         summary['audit_state_rows'] = extract('stages.jsonl', output, task)
         Path('stages.jsonl').unlink()
     if '--native-states' in task.get('options', []):
         from slope_native_states import extract
         summary['native_state_rows'] = extract(output, task, arrays)
+    if '--charge-diagnostics' in task.get('options', []):
+        from charge_diagnostics import extract
+        summary['charge_diagnostics'] = extract(output, task, arrays)
+    if '--mode-refit-counters' in task.get('options', []):
+        from charge_diagnostics import refit_counters
+        summary['mode_refit_counters'] = refit_counters(output, task)
+    if '--seed-prior-audit' in task.get('options', []):
+        shutil.copy2('seed_covariance.csv', output/'seed_covariance.csv')
     summary['compact_bytes'] = sum(p.stat().st_size for p in output.glob('*.npz'))
     (output/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
     print(json.dumps(summary), flush=True)

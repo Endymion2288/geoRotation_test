@@ -137,17 +137,19 @@ def main():
         env = dict(os.environ, LD_LIBRARY_PATH=str(lib)+':'+os.environ.get('LD_LIBRARY_PATH', ''))
         generated = scratch/'genconf'
         generated.mkdir()
-        subprocess.run([str(tools/'listcomponents'), '--output',
-            str(lib/'libFaserActsKalmanFilter.components'), 'libFaserActsKalmanFilter.so'], env=env, check=True)
-        subprocess.run([str(tools/'genconf'), '-o', str(generated), '-p', 'FaserActsKalmanFilter',
-            '--no-init', '-i', 'libFaserActsKalmanFilter.so'], env=env, check=True)
-        shutil.copy2(generated/'FaserActsKalmanFilter.confdb', lib/'FaserActsKalmanFilter.confdb')
-        inputs = generated/'inputs.txt'
-        inputs.write_text(str(generated/'FaserActsKalmanFilter.confdb2_part')+'\n')
         merge = Path('/cvmfs/atlas.cern.ch/repo/sw/software/24.0/Athena/24.0.41/InstallArea/x86_64-el9-gcc13-opt/cmake/modules/scripts/mergeConfdb2.py')
-        subprocess.run([str(merge), str(lib/'FaserActsKalmanFilter.confdb2'), str(inputs)], env=env, check=True)
-        shutil.copy2(generated/'FaserActsKalmanFilterConf.py',
-            output/'python/FaserActsKalmanFilter/FaserActsKalmanFilterConf.py')
+        packages = ['FaserActsKalmanFilter'] + ([] if args.reuse_geometry else ['FaserActsGeometry'])
+        for package in packages:
+            library = 'lib'+package
+            subprocess.run([str(tools/'listcomponents'), '--output',
+                str(lib/(library+'.components')), library+'.so'], env=env, check=True)
+            subprocess.run([str(tools/'genconf'), '-o', str(generated), '-p', package,
+                '--no-init', '-i', library+'.so'], env=env, check=True)
+            shutil.copy2(generated/(package+'.confdb'), lib/(package+'.confdb'))
+            inputs = generated/(package+'_inputs.txt')
+            inputs.write_text(str(generated/(package+'.confdb2_part'))+'\n')
+            subprocess.run([str(merge), str(lib/(package+'.confdb2')), str(inputs)], env=env, check=True)
+            shutil.copy2(generated/(package+'Conf.py'), output/'python'/package/(package+'Conf.py'))
     print(json.dumps(manifest), flush=True)
 
 

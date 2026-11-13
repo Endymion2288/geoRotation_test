@@ -68,7 +68,8 @@ def main():
     for mode in modes:
         variant,label=mode['variant'],mode['label']
         source=dict(input=str(scratch/'digitize/diagnostic.RDO.pool.root'),events=task['events'],skip=0,
-            sample_entry=0,file_index=task.get('file_index',0),variant=variant,dsid=str(task['pdg']),
+            sample_entry=task.get('sample_entry',0),file_index=task.get('file_index',0),
+            variant=variant,dsid=str(task.get('dsid',task['pdg'])),
             material=task['materials'][variant],runner=str(code/'configs/slope_tracking.py'),
             output=str(output/label),options=['--actual-covariance','--no-seed-writer'])
         if mode.get('cluster_mode')=='truth_position':source['options'].append('--truth-cluster-position')

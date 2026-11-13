@@ -1,0 +1,14 @@
+{
+  "stage": "S06",
+  "samples": {"100116": {"pdg": -13, "charge": 1}, "100117": {"pdg": 13, "charge": -1}},
+  "baseline": {"isolated_smoothing": true, "geometry": "FASERNU-04", "conditions": "OFLCOND-FASER-05", "mode": "3-station forward", "masked_layers": [0, 1, 2, 3, 4, 5]},
+  "truth": {"generator": "status=1, 0<barcode<200000, PDG as specified per DSID", "fiducial": "production radius<100 mm and each of station 1/2/3 mean SiHit radii<100 mm", "H18": "Separate reported coverage category; not required for the primary charge denominator"},
+  "matching": {"basis": "SDO majority barcode; no reconstructed charge/momentum condition", "purity": "strict final purity>0.7", "ranking": ["matched hit count descending", "measurement count descending", "chi2 ascending", "ordinal ascending"], "ordering": "Rank eligible matched candidates first, then apply Good Track to the winner; no rescue by a lower-ranked candidate"},
+  "quality": {"chi2_ndof_max": 25, "layers_min": 7, "ndof_plus_five_min": 12, "radius_mm": [95, 100], "historical": "Alma PDF gives r<100 and exactly one Good Track; 25/7/12 thresholds are the executable source-based reconstruction, pending recovery of the original Alma analysis"},
+  "truth_momentum_bins_GeV": [0, 50, 100, 250, 500, 1000, 10000],
+  "discovery_file_indices": [0, 1, 2],
+  "held_out_file_indices": [3, 4],
+  "minimum_selected_particles_per_charge": 100000,
+  "uncertainty": "Source-event intervals, retaining all production entries; weights report sumw2 and effective N",
+  "required_controls": ["native beforeGeo/afterGeo with isolated smoothing", "matched physical seed prior", "forward/backward", "three/four stations", "actual merge", "symmetric full Geant4 muon gun", "consistent charge and magnetic-field reversal"]
+}

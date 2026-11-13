@@ -1,0 +1,28 @@
+--- a/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -69,6 +69,7 @@
+   int m_truthReferenceOK[2]{};
+   std::vector<unsigned long long> m_hitIds;
+   double m_upRaw[6]{},m_upF[6]{},m_minZ=0,m_boundAngles[2]{},m_angleCov[2][2]{};
++  double m_qop=NAN,m_qopVariance=NAN;
+   double m_projection[3][8]{}; // x,y,z [mm], px,py,pz [GeV], var(s_y), legacy angle
+   int m_projectionOK[3]{};
+   double m_segment[6]{};
+@@ -135,6 +136,8 @@
+   m_trackTree->Branch("ordinal",&m_ordinal,"ordinal/I");
+   m_trackTree->Branch("purity",&m_purity,"purity/D");
+   m_trackTree->Branch("charge",&m_charge,"charge/D");
++  m_trackTree->Branch("qop_GeVinv",&m_qop,"qop_GeVinv/D");
++  m_trackTree->Branch("qop_variance_GeVinv2",&m_qopVariance,"qop_variance_GeVinv2/D");
+   m_trackTree->Branch("chi2",&m_chi2,"chi2/D");
+   m_trackTree->Branch("ndof",&m_ndof,"ndof/D");
+   m_trackTree->Branch("rmax_mm",&m_rmax,"rmax_mm/D");
+@@ -304,6 +307,8 @@
+     if(m_nHits) m_clusterWidthMean/=m_nHits;
+     if(track->trackStateOnSurfaces()) for(const auto* state:*track->trackStateOnSurfaces())
+       if(state->type(Trk::TrackStateOnSurface::Outlier)) ++m_outliers;
++    m_qop=upstream->parameters()[4]*1000.;
++    m_qopVariance=upstream->covariance() ? (*upstream->covariance())(4,4)*1e6 : NAN;
+     m_charge=upstream->charge();m_chi2=track->fitQuality()->chiSquared();m_ndof=track->fitQuality()->numberDoF();
+     m_rmax=0.;m_minZ=std::numeric_limits<double>::infinity();
+     for(const auto* p:*track->trackParameters()) {

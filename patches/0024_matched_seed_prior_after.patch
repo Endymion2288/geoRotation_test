@@ -1,0 +1,116 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+index e5500728..08c2750e 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+@@ -12,6 +12,7 @@
+ #include "TrackClassification.h"
+ #include <array>
+ #include <algorithm>
++#include <iomanip>
+ 
+ 
+ std::map<Identifier,Index> CircleFitTrackSeedTool::s_indexMap {};
+@@ -31,12 +32,26 @@ StatusCode CircleFitTrackSeedTool::initialize() {
+       ATH_CHECK(m_spacePointContainerKey.initialize());
+   // ATH_CHECK(m_simDataCollectionKey.initialize());
+   // ATH_CHECK(m_mcEventCollectionKey.initialize());
++  if (!m_seedPriorAuditFile.value().empty()) {
++    m_seedPriorAudit.open(m_seedPriorAuditFile.value());
++    if (!m_seedPriorAudit) return StatusCode::FAILURE;
++    m_seedPriorAudit << std::setprecision(17) << "local_event_index,seed,backward";
++    for (int i=0;i<3;++i) m_seedPriorAudit << ",directionF_" << i;
++    for (int i=0;i<6;++i) m_seedPriorAudit << ",meanA_" << i;
++    for (const auto& name : {"basisF","basisA"})
++      for (int i=0;i<3;++i) for (int j=0;j<3;++j) m_seedPriorAudit << ',' << name << '_' << i << '_' << j;
++    for (const auto& name : {"covF","jacobian","covA"})
++      for (int i=0;i<6;++i) for (int j=0;j<6;++j) m_seedPriorAudit << ',' << name << '_' << i << '_' << j;
++    m_seedPriorAudit << '\n';
++  }
+   return StatusCode::SUCCESS;
+ }
+ 
+ 
+ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backward) {
+ 
++  const size_t localEvent = m_seedPriorEvent++;
++
+   SG::ReadHandle<Tracker::FaserSCT_ClusterContainer> clusterContainer {m_clusterContainerKey};
+       ATH_CHECK(clusterContainer.isValid());
+ 
+@@ -190,7 +205,52 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+     ATH_MSG_DEBUG("seed size: " << seed.size << ", chi2: " << seed.chi2);
+     //TODO: pt-dependent p resolution?
+     //cov(Acts::eBoundQOverP, Acts::eBoundQOverP) = 10. / (seed.momentum * seed.momentum);
+-    initParams.push_back(seed.get_params(origin, cov, backward));
++    auto initial = seed.get_params(origin, cov, backward);
++    if (m_matchFaserSeedCovariance) {
++      // Same mean as the native rotated seed. Configured covariance is the
++      // original FASER bound prior and must include both surface and angle maps.
++      Acts::RotationMatrix3 frame;
++      frame << 0,0,1, 0,1,0, -1,0,0;
++      const auto before = Acts::Surface::makeShared<Acts::PlaneSurface>(
++          Acts::Vector3(0,0,initial.position(Acts::GeometryContext()).x()),
++          Acts::Vector3(0,0,-1));
++      const Acts::GeometryContext context;
++      const Acts::Vector3 directionF = seed.direction.normalized();
++      const Acts::Vector3 directionA = frame*directionF;
++      const double phiF = std::atan2(directionF.y(),directionF.x());
++      const double thetaF = std::atan2(std::hypot(directionF.x(),directionF.y()),directionF.z());
++      const double st = std::sin(thetaF), ct = std::cos(thetaF);
++      const Acts::Vector3 dPhi(-st*std::sin(phiF),st*std::cos(phiF),0.);
++      const Acts::Vector3 dTheta(ct*std::cos(phiF),ct*std::sin(phiF),-st);
++      const double transverse2 = directionA.x()*directionA.x()+directionA.y()*directionA.y();
++      const double transverse = std::sqrt(transverse2);
++      if (!(transverse>1e-12)) throw std::runtime_error("Matched seed covariance at rotated angular pole");
++      const Acts::Vector3 phiGradient(-directionA.y()/transverse2,directionA.x()/transverse2,0.);
++      const Acts::Vector3 thetaGradient(directionA.z()*directionA.x()/transverse,
++          directionA.z()*directionA.y()/transverse,-transverse);
++      Acts::BoundSquareMatrix jacobian=Acts::BoundSquareMatrix::Identity();
++      jacobian.block<2,2>(0,0)=initial.referenceSurface().transform(context).rotation().leftCols<2>().transpose()
++          *frame*before->transform(context).rotation().leftCols<2>();
++      jacobian(2,2)=phiGradient.dot(frame*dPhi);
++      jacobian(2,3)=phiGradient.dot(frame*dTheta);
++      jacobian(3,2)=thetaGradient.dot(frame*dPhi);
++      jacobian(3,3)=thetaGradient.dot(frame*dTheta);
++      const Acts::BoundSquareMatrix mapped=jacobian*cov*jacobian.transpose();
++      initial=Acts::BoundTrackParameters(initial.referenceSurface().getSharedPtr(),
++          initial.parameters(),mapped,initial.particleHypothesis());
++      if (m_seedPriorAudit.is_open()) {
++        m_seedPriorAudit << localEvent << ',' << initParams.size() << ',' << backward;
++        for (int i=0;i<3;++i) m_seedPriorAudit << ',' << directionF[i];
++        for (int i=0;i<6;++i) m_seedPriorAudit << ',' << initial.parameters()[i];
++        for (const auto& basis : {Acts::RotationMatrix3(before->transform(context).rotation()),
++                                 Acts::RotationMatrix3(initial.referenceSurface().transform(context).rotation())})
++          for (int i=0;i<3;++i) for (int j=0;j<3;++j) m_seedPriorAudit << ',' << basis(i,j);
++        for (const auto& matrix : {cov,jacobian,Acts::BoundSquareMatrix(*initial.covariance())})
++          for (int i=0;i<6;++i) for (int j=0;j<6;++j) m_seedPriorAudit << ',' << matrix(i,j);
++        m_seedPriorAudit << '\n';
++      }
++    }
++    initParams.push_back(initial);
+   }
+   m_seeds = std::make_shared<std::vector<Seed>>(selectedSeeds);
+   m_initialTrackParameters = std::make_shared<std::vector<Acts::BoundTrackParameters>>(initParams);
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+index 3b88b324..b9fc6582 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+@@ -18,6 +18,7 @@
+ // #include "TrackerSimData/TrackerSimDataCollection.h"
+ // #include "GeneratorObjects/McEventCollection.h"
+ #include <array>
++#include <fstream>
+ #include <memory>
+ #include <string>
+ #include <vector>
+@@ -134,6 +135,10 @@ private:
+ 
+   Gaudi::Property<double> m_std_cluster {this, "std_cluster", 0.04};
+   // covariance of the initial parameters
++  Gaudi::Property<bool> m_matchFaserSeedCovariance {this,"MatchFaserSeedCovariance",false,"Map the configured FASER-frame bound seed covariance to the rotated seed surface"};
++  Gaudi::Property<std::string> m_seedPriorAuditFile {this,"SeedPriorAuditFile","","Read-only full covariance and Jacobian audit for the matched seed prior"};
++  std::ofstream m_seedPriorAudit;
++  size_t m_seedPriorEvent = 0;
+   Gaudi::Property<double> m_covLoc0 {this, "covLoc0", 1};
+   Gaudi::Property<double> m_covLoc1 {this, "covLoc1", 1};
+   Gaudi::Property<double> m_covPhi {this, "covPhi", 1};
