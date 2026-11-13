@@ -78,7 +78,10 @@ def merge_tables(root, variant):
         run = json.loads((output/'run.json').read_text())
         assert source['output'] == str(output) and source['variant'] == variant
         assert source['events'] == summary['source_events'] and run['success']
-        assert not any(run[k] for k in ['audit', 'reset_event_maps', 'isolate_smoothing'])
+        expected = manifest.get('runtime_invariants', dict(
+            audit=False, reset_event_maps=False, isolate_smoothing=False))
+        for key, value in expected.items():
+            assert run[key] == value, (output, key, run[key], value)
         resources.append(dict(output=str(output),wall_s=run['wall_s']))
         for name in rows:
             with np.load(output/(name+'.npz'), allow_pickle=False) as archive:

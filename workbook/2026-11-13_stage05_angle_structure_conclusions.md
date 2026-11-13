@@ -1,5 +1,7 @@
 # S05：角度结构来源与验收结论
 
+用户指定isolated smoothing ON后的[全量复核](2026-11-13_stage05_isolated_validation.md)已完成：两版各500k，最终角度/动量/电荷及选样成员与OFF完全一致；仅少量rmax元数据变化，新增57页ON参考图。
+
 S05角度结构定位已完成：主要来源由生产样本和独立 full-G4 控制验证，290页统一图集及A1–A5交付核对通过。beforeGeo额外近零结构来自near-pole方向参数化下的refit update/smoothing；联合regular chart控制在RDO与独立μ±中移除主要增强并改善角误差核心和大尾。afterGeo主要结构具有strip控制及预留样本response证据。完整实验记录见[阶段报告](2026-11-12_stage05_slope_structure.md)，要求见[角度路线图](../roadmap/03_slope_structure.md)及[验收审计](2026-11-12_stage05_acceptance.md)。
 
 ## 阶段目标
