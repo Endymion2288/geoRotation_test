@@ -19,7 +19,11 @@ def main():
     parser.add_argument('--material', required=True)
     parser.add_argument('--variant', required=True)
     parser.add_argument('--mask', default='0,1,2,3,4,5')
-    parser.add_argument('--isolate-smoothing', action='store_true')
+    smoothing = parser.add_mutually_exclusive_group()
+    smoothing.add_argument('--isolate-smoothing', action='store_true',
+        help='Explicitly enable candidate-isolated smoothing (new CKF2 default)')
+    smoothing.add_argument('--shared-smoothing', action='store_true',
+        help='Explicitly restore legacy shared-state smoothing for controlled checks')
     parser.add_argument('--native-final-purity', action='store_true',
         help='Observe final-track SDO purity without reading alternative truth references')
     parser.add_argument('--seed-unbiased', action='store_true',
@@ -75,6 +79,8 @@ def main():
         ckf.seedWriter = True
     if args.isolate_smoothing:
         ckf.IsolateCandidateSmoothing = True
+    elif args.shared_smoothing:
+        ckf.IsolateCandidateSmoothing = False
     if args.audit_states:
         ckf.AuditFile = 'stages.jsonl'
         ckf.AuditStates = True
@@ -102,7 +108,8 @@ def main():
     manifest = dict(args=vars(args), calypso_dir=os.environ.get('Calypso_DIR'),
         library=os.environ.get('GEOROTATION_LIBRARY_DIR'), python_path=os.environ.get('PYTHONPATH'),
         geometry='FASERNU-04', conditions='OFLCOND-FASER-05', seed_covariance=covariance,
-        audit=args.audit_states, reset_event_maps=False, isolate_smoothing=args.isolate_smoothing,
+        audit=args.audit_states, reset_event_maps=False,
+        isolate_smoothing=bool(getattr(ckf, 'IsolateCandidateSmoothing', False)),
         hostname=socket.gethostname(), athena=os.environ.get('AtlasVersion'))
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     begin = time.monotonic()

@@ -144,7 +144,8 @@ def main():
         refit_covariance_basis_corrected=args.correct_refit_basis,
         refit_uses_input_reference_plane=args.refit_input_reference_plane,
         refit_outcome_observer=args.refit_outcomes,
-        audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False, isolate_smoothing=args.isolate_smoothing, observer=not args.no_observer,
+        audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False,
+        isolate_smoothing=bool(getattr(ckf, 'IsolateCandidateSmoothing', False)), observer=not args.no_observer,
         propagation_material_energy_loss=propagator.InteractionEloss,
         propagation_material_scattering=propagator.InteractionMultiScatering)
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')

@@ -169,6 +169,7 @@ def main():
     manifest["hostname"] = socket.gethostname()
     manifest["software_manifest"] = os.environ.get("GEOROTATION_SOFTWARE_MANIFEST")
     manifest["library_override"] = os.environ.get("GEOROTATION_LIBRARY_DIR")
+    manifest["isolate_smoothing"] = bool(getattr(ckf, "IsolateCandidateSmoothing", False))
     Path("run.json").write_text(json.dumps(manifest, indent=2) + "\n")
     sc = acc.run(maxEvents=args.events)
     manifest.update(success=sc.isSuccess(), wall_seconds=time.monotonic() - started)

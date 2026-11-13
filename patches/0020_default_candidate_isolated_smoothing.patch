@@ -1,0 +1,346 @@
+From 1c06c7b65135a88e5ebd864050b10a638b152c98 Mon Sep 17 00:00:00 2001
+From: Endymion in lxplus <chengx22@mails.tsinghua.edu.cn>
+Date: Fri, 13 Nov 2026 14:38:53 +0100
+Subject: [PATCH 1/2] fix(tracking): isolate selected CKF2 candidate smoothing
+ by default
+
+---
+ .../Acts/FaserActsKalmanFilter/CMakeLists.txt |   7 +
+ .../doc/candidate_smoothing.md                |  39 ++++
+ .../Acts/FaserActsKalmanFilter/src/CKF2.cxx   |  12 ++
+ .../Acts/FaserActsKalmanFilter/src/CKF2.h     |   3 +
+ .../test/CandidateIsolatedSmoothing_test.cxx  | 189 ++++++++++++++++++
+ 5 files changed, 250 insertions(+)
+ create mode 100644 Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md
+ create mode 100644 Tracking/Acts/FaserActsKalmanFilter/test/CandidateIsolatedSmoothing_test.cxx
+
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt b/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt
+index 21318f25..b9c14203 100755
+--- a/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt
++++ b/Tracking/Acts/FaserActsKalmanFilter/CMakeLists.txt
+@@ -150,6 +150,13 @@ atlas_add_component(FaserActsKalmanFilter
+ )
+ 
+ # Install files from the package:
++atlas_add_test( CandidateIsolatedSmoothing
++    SOURCES test/CandidateIsolatedSmoothing_test.cxx
++    INCLUDE_DIRS ${EIGEN_INCLUDE_DIRS} ${BOOST_INCLUDE_DIRS}
++    LINK_LIBRARIES ActsCore ${EIGEN_LIBRARIES}
++    POST_EXEC_SCRIPT nopost.sh
++)
++
+ # atlas_install_headers(FaserActsKalmanFilter)
+ atlas_install_python_modules( python/*.py )
+ atlas_install_scripts( test/*.py )
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md b/Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md
+new file mode 100644
+index 00000000..0feb353d
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md
+@@ -0,0 +1,39 @@
++# Candidate-isolated smoothing in CKF2
++
++`CKF2.IsolateCandidateSmoothing` defaults to `True`. No Python configuration
++change is required to enable it.
++
++The CKF can return several candidates whose state paths share ancestors in an
++ACTS `VectorMultiTrajectory`. The gain-matrix smoother writes its result into
++each visited state's smoothed parameter and covariance buffers. Smoothing a
++later branch can therefore overwrite an earlier branch's shared ancestors.
++Deep-copying the candidates after the finder returns also copies these
++overwritten values.
++
++After candidate selection, CKF2 deep-copies the selected candidate's entire
++state path with `copyFrom(..., true)`, then reruns `Acts::GainMatrixSmoother` on
++that private path. Downstream track conversion, refitting and state writers
++receive candidate-specific smoothed parameters and covariance. A smoothing
++error fails the event rather than exporting partially recomputed states.
++
++The repair leaves candidate ranking, hit selection, predicted/filtered states,
++seed covariance and the CKF's reference-surface fitted parameters unchanged.
++It does not replace the subsequent Kalman refit or modify the ACTS library.
++It recomputes smoothing only for selected candidates, reusing the existing
++deep copy, with work linear in their total number of states.
++
++For a controlled comparison with the previous shared-state output, explicitly
++set `IsolateCandidateSmoothing=False` in the arguments to `CKF2Cfg`, or on the
++configured CKF2 algorithm. This option should be recorded with the results.
++
++The `CandidateIsolatedSmoothing` CTest uses the actual ACTS containers and
++gain-matrix smoother. It reproduces shared-ancestor parameter and covariance
++overwrites, checks the analytical RTS solution after isolation, tests both
++candidate orders, verifies unchanged filtering inputs and reference parameters,
++and checks the single-state endpoint case. Run it after configuring/building
++Calypso in the usual Athena environment:
++
++```sh
++cmake --build build --target FaserActsKalmanFilter_CandidateIsolatedSmoothing --parallel 2
++ctest --test-dir build -R FaserActsKalmanFilter_CandidateIsolatedSmoothing --output-on-failure --no-tests=error
++```
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+index ee327a21..c4eba0c7 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -271,6 +271,18 @@ StatusCode CKF2::execute() {
+     
+     auto destProxy = selectedTracks.getTrack(selectedTracks.addTrack());
+     destProxy.copyFrom(tracks.getTrack(selected.index), true);  // make sure we copy track states!
++    // CKF branches share ancestor states. Their smoothed values may have been
++    // overwritten by another branch before the finder returned. Deep-copying
++    // alone preserves those values: recompute only after the states are private.
++    if (m_isolateSmoothing) {
++      const auto status = Acts::GainMatrixSmoother()(
++          gctx, selectedTracks.trackStateContainer(), destProxy.tipIndex(), *m_logger);
++      if (!status.ok()) {
++        ATH_MSG_ERROR("Isolated candidate smoothing failed for candidate "
++                      << selected.index << ": " << status.error());
++        return StatusCode::FAILURE;
++      }
++    }
+     
+     if(not allTracks.empty()){ 
+       allTracks.remove_if([&](const TrackInfo &p) {
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+index 44338063..48450270 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -94,6 +94,9 @@ private:
+   Gaudi::Property<bool> m_performanceWriter {this, "PerformanceWriter", true};
+   Gaudi::Property<bool> m_noDiagnostics {this, "noDiagnostics", true, "Set ACTS logging level to INFO and do not run performance writer, states writer or summary writer"};
+   Gaudi::Property<bool> m_summaryWriter {this, "SummaryWriter", true};
++  Gaudi::Property<bool> m_isolateSmoothing {
++      this, "IsolateCandidateSmoothing", true,
++      "Recompute smoothed parameters and covariance on each selected candidate's private states"};
+   Gaudi::Property<bool> m_statesWriter {this, "StatesWriter", false};
+   Gaudi::Property<bool> m_seedWriter {this, "seedWriter", true};
+   Gaudi::Property<bool> m_alignmentWriter {this, "alignmentWriter", false};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/test/CandidateIsolatedSmoothing_test.cxx b/Tracking/Acts/FaserActsKalmanFilter/test/CandidateIsolatedSmoothing_test.cxx
+new file mode 100644
+index 00000000..1e096746
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/test/CandidateIsolatedSmoothing_test.cxx
+@@ -0,0 +1,189 @@
++// Exercise the ACTS state containers and RTS smoother used by CKF2.
++#include "Acts/EventData/TrackContainer.hpp"
++#include "Acts/EventData/VectorMultiTrajectory.hpp"
++#include "Acts/EventData/VectorTrackContainer.hpp"
++#include "Acts/Surfaces/PlaneSurface.hpp"
++#include "Acts/TrackFitting/GainMatrixSmoother.hpp"
++
++#include <array>
++#include <iostream>
++#include <stdexcept>
++#include <vector>
++
++namespace {
++using Tracks = Acts::TrackContainer<Acts::VectorTrackContainer,
++                                    Acts::VectorMultiTrajectory>;
++
++void require(bool condition, const char* message) {
++  if (!condition) throw std::runtime_error(message);
++}
++
++struct State {
++  Acts::BoundVector predicted, filtered, smoothed;
++  Acts::BoundMatrix predictedCovariance, filteredCovariance, smoothedCovariance;
++  Acts::BoundMatrix jacobian;
++};
++
++std::vector<State> snapshot(const Tracks::TrackProxy& track) {
++  std::vector<State> states;
++  for (const auto state : track.trackStatesReversed()) {
++    states.push_back({state.predicted(), state.filtered(), state.smoothed(),
++                      state.predictedCovariance(), state.filteredCovariance(),
++                      state.smoothedCovariance(), state.jacobian()});
++  }
++  return states;
++}
++
++void checkEqual(const std::vector<State>& a, const std::vector<State>& b,
++                bool checkSmoothed) {
++  require(a.size() == b.size(), "State count changed");
++  for (std::size_t i = 0; i < a.size(); ++i) {
++    require(a[i].predicted == b[i].predicted &&
++                a[i].filtered == b[i].filtered &&
++                a[i].predictedCovariance == b[i].predictedCovariance &&
++                a[i].filteredCovariance == b[i].filteredCovariance &&
++                a[i].jacobian == b[i].jacobian,
++            "Smoothing changed filtering inputs");
++    if (checkSmoothed) {
++      require(a[i].smoothed == b[i].smoothed &&
++                  a[i].smoothedCovariance == b[i].smoothedCovariance,
++              "Another candidate changed saved smoothed values");
++    }
++  }
++}
++
++void run() {
++  const Acts::GeometryContext gctx;
++  const auto logger = Acts::getDefaultLogger("CandidateSmoothingTest",
++                                            Acts::Logging::WARNING);
++  const auto surface = Acts::Surface::makeShared<Acts::PlaneSurface>(
++      Acts::Transform3::Identity());
++  Acts::BoundVector base = Acts::BoundVector::Zero();
++  base[Acts::eBoundPhi] = 0.1;
++  base[Acts::eBoundTheta] = 1.0;
++  base[Acts::eBoundQOverP] = 0.001;
++
++  Acts::VectorTrackContainer backend;
++  Acts::VectorMultiTrajectory states;
++  Tracks source(backend, states);
++  const auto mask = Acts::TrackStatePropMask::Predicted |
++                    Acts::TrackStatePropMask::Filtered |
++                    Acts::TrackStatePropMask::Smoothed |
++                    Acts::TrackStatePropMask::Jacobian;
++  auto append = [&](auto track, const Acts::BoundVector& filtered,
++                    double variance) {
++    auto state = track.appendTrackState(mask);
++    state.setReferenceSurface(surface);
++    state.predicted() = base;
++    state.predictedCovariance() = 2.0 * Acts::BoundMatrix::Identity();
++    state.filtered() = filtered;
++    state.filteredCovariance() = variance * Acts::BoundMatrix::Identity();
++    state.smoothed().setZero();
++    state.smoothedCovariance().setZero();
++    state.jacobian().setIdentity();
++    state.typeFlags().set(Acts::TrackStateFlag::MeasurementFlag);
++    return state.index();
++  };
++  auto a = source.getTrack(source.addTrack());
++  append(a, base, 1.0);
++  const auto prefixTip = append(a, base, 1.0);
++  Acts::BoundVector endA = base, endB = base;
++  endA[Acts::eBoundLoc0] = 2.0;
++  endA[Acts::eBoundQOverP] = 0.002;
++  endB[Acts::eBoundLoc0] = -3.0;
++  endB[Acts::eBoundQOverP] = 0.0005;
++  append(a, endA, 0.4);
++  auto b = source.getTrack(source.addTrack());
++  b.tipIndex() = prefixTip;
++  append(b, endB, 0.8);
++  for (auto track : source) {
++    track.parameters() = base;
++    track.covariance().setIdentity();
++    track.nMeasurements() = 3;
++    track.setReferenceSurface(surface);
++  }
++  auto smooth = [&](Tracks& tracks, auto track) {
++    const auto status = Acts::GainMatrixSmoother()(
++        gctx, tracks.trackStateContainer(), track.tipIndex(), *logger);
++    require(status.ok(), "ACTS smoother failed");
++  };
++
++  // Reproduce the ownership bug: B overwrites both of A's shared ancestors.
++  smooth(source, a);
++  const auto correctA = snapshot(a);
++  smooth(source, b);
++  const auto contaminatedA = snapshot(a);
++  require(!correctA.back().smoothed.isApprox(contaminatedA.back().smoothed),
++          "Fixture did not reproduce shared parameter overwrite");
++  require(!correctA.back().smoothedCovariance.isApprox(
++              contaminatedA.back().smoothedCovariance),
++          "Fixture did not reproduce shared covariance overwrite");
++  const auto correctB = snapshot(b);
++
++  // CKF2's repair: deep-copy selected paths, then recompute their smoothing.
++  // Repeat in both candidate orders, including within one destination backend.
++  for (const bool reverse : {false, true}) {
++    Acts::VectorTrackContainer outputBackend;
++    Acts::VectorMultiTrajectory outputStates;
++    Tracks output(outputBackend, outputStates);
++    std::array<std::vector<State>, 2> saved;
++    for (unsigned int step = 0; step < 2; ++step) {
++      const unsigned int candidate = reverse ? 1 - step : step;
++      auto input = source.getTrack(candidate);
++      auto copied = output.getTrack(output.addTrack());
++      copied.copyFrom(input, true);
++      const auto before = snapshot(copied);
++      checkEqual(before, snapshot(input), true);
++      smooth(output, copied);
++      const auto after = snapshot(copied);
++      checkEqual(before, after, false);
++      checkEqual(after, candidate == 0 ? correctA : correctB, true);
++      // For identity transport, the two backward gains are both 1/2.
++      const auto& end = candidate == 0 ? endA : endB;
++      const double variance = candidate == 0 ? 0.4 : 0.8;
++      require(after.back().smoothed.isApprox(base + 0.25 * (end - base)),
++              "Incorrect candidate-specific RTS parameters");
++      require(after.back().smoothedCovariance.isApprox(
++                  (0.625 + 0.0625 * variance) * Acts::BoundMatrix::Identity()),
++              "Incorrect candidate-specific RTS covariance");
++      require(copied.nMeasurements() == input.nMeasurements() &&
++                  copied.parameters() == input.parameters() &&
++                  copied.covariance() == input.covariance(),
++              "Track metadata or reference-surface parameters changed");
++      for (const auto state : copied.trackStatesReversed()) {
++        require(state.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag) &&
++                    &state.referenceSurface() == surface.get(),
++                "Measurement flags or surfaces changed");
++      }
++      saved[step] = after;
++      if (step == 1) checkEqual(saved[0], snapshot(output.getTrack(0)), true);
++      checkEqual(contaminatedA, snapshot(a), true);
++      checkEqual(correctB, snapshot(b), true);
++    }
++  }
++
++  // A one-state candidate must keep its filtered mean and covariance exactly.
++  Acts::VectorTrackContainer singleBackend;
++  Acts::VectorMultiTrajectory singleStates;
++  Tracks single(singleBackend, singleStates);
++  auto one = single.getTrack(single.addTrack());
++  append(one, endA, 0.4);
++  smooth(single, one);
++  const auto only = snapshot(one).front();
++  require(only.smoothed == only.filtered &&
++              only.smoothedCovariance == only.filteredCovariance,
++          "One-state smoothing changed the endpoint");
++}
++}  // namespace
++
++int main() {
++  try {
++    run();
++    std::cout << "Shared overwrite reproduced; isolated parameters/covariance, "
++                 "candidate order, unchanged inputs and single-state case passed\n";
++    return 0;
++  } catch (const std::exception& error) {
++    std::cerr << error.what() << '\n';
++    return 1;
++  }
++}
+-- 
+2.52.0
+
+
+From 25147d8028e2e7439700a1395a38884d640b7581 Mon Sep 17 00:00:00 2001
+From: Endymion in lxplus <chengx22@mails.tsinghua.edu.cn>
+Date: Fri, 13 Nov 2026 14:56:05 +0100
+Subject: [PATCH 2/2] docs(tracking): record isolated smoothing regression
+ results
+
+---
+ .../FaserActsKalmanFilter/doc/candidate_smoothing.md  | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md b/Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md
+index 0feb353d..d2b79969 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md
++++ b/Tracking/Acts/FaserActsKalmanFilter/doc/candidate_smoothing.md
+@@ -37,3 +37,14 @@ Calypso in the usual Athena environment:
+ cmake --build build --target FaserActsKalmanFilter_CandidateIsolatedSmoothing --parallel 2
+ ctest --test-dir build -R FaserActsKalmanFilter_CandidateIsolatedSmoothing --output-on-failure --no-tests=error
+ ```
++
++Validated with Athena 24.0.41 (`x86_64-el9-gcc13-opt`): the package CTest passes.
++A real Calypso smoke run uses DSID 110051, the first RDO file's entries [0,20),
++rotated geometry and unchanged seed/selection settings. Its 42 writer tracks
++contain 718 measurement states. All 103 saved parameter, uncertainty, hit and
++metadata arrays match exactly between the new default and explicit `True`.
++The 27 native-truth P/F/S histograms also match the previous explicitly isolated
++build in all 102 bins including flow, raw entries and sumw2. Against explicit
++`False`, the non-smoothed arrays remain identical while 156 states change their
++smoothed q/p. This is a software regression sample, not a full-sample resolution
++measurement. The original GitHub plotting cuts are used for this regression.
+-- 
+2.52.0
