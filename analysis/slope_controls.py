@@ -3,12 +3,15 @@
 import argparse
 import json
 from pathlib import Path
+import shutil
+import tempfile
 
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
+from PIL import Image
 
 from slope_tables import histogram, join_truth, slope
 from slope_statistics import distribution_structure, event_ratio_interval
@@ -24,8 +27,15 @@ def archive(path):
 
 def save(fig,output,name,report):
     fig.tight_layout()
-    fig.savefig(output/(name+'.png'),dpi=160)
-    fig.savefig(output/(name+'.pdf'))
+    # Close seek-heavy image/PDF writes locally before copying to EOS.
+    with tempfile.TemporaryDirectory(prefix='slope-figure-') as directory:
+        local = Path(directory)
+        fig.savefig(local/(name+'.png'),dpi=160)
+        fig.savefig(local/(name+'.pdf'))
+        for suffix in ['.png', '.pdf']:
+            shutil.copyfile(local/(name+suffix), output/(name+suffix))
+        with Image.open(output/(name+'.png')) as image:
+            image.verify()
     report.savefig(fig)
     plt.close(fig)
 

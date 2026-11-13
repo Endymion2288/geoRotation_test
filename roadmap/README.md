@@ -2,7 +2,7 @@
 
 本研究要给出三个可复核的答案：动量低估首次出现在哪个运算或候选选择环节、角度分布的剩余结构来自物理混合还是实现问题、μ− 比 μ+ 更易误判电荷的差异在旋转后是否存在及其来源。完成标准包括事件级因果证据、总体发生率及其统计区间、最小修复或经验证的物理解释，以及独立样本回归。
 
-研究起点为本地旋转版Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00–S04已交付：S03建立五类各10k事件的原版基线，S04完成动量逐运算研究、独立50k母事件的材料配对验证及Calypso内T0–T4控制。此前独立ACTS toy退出验收，T5在Calypso实际几何/组件内的完整统计closure未测量，列入S07；[源码与软件来源](../workbook/2026-11-12_stage04_calypso_provenance.md)列明实际路径与patch。
+研究起点为本地旋转版Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00–S05已交付：S03建立五类各10k事件的原版基线，S04完成动量逐运算研究、独立50k母事件的材料配对验证及Calypso内T0–T4控制，S05完成角度主要结构来源、独立控制及限定窗口余量。此前独立ACTS toy退出验收，T5在Calypso实际几何/组件内的完整统计closure未测量，列入S07；[源码与软件来源](../workbook/2026-11-12_stage04_calypso_provenance.md)列明实际路径与patch。
 
 实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)、[S04](../workbook/2026-11-12_stage04_momentum.md)。S04证实current22材料与旋转几何的坐标不一致，主要通过scattering covariance/gain制造大负尾；严格旋转同一map后，独立110051尾率从34.151%降至10.543%，Good95效率提高4.018个百分点。接口chart/refit起点问题、seed混合和辐射后KF残余分别保留受控实验入口。补充G4退出134已定位修复，同sensor truth关联通过2400事件、81153 steps逐值验证。
 
@@ -24,7 +24,7 @@
 
 以上使用 fiducial+H18、SDO purity≥0.7、Good95；完整 cutflow、区间与匹配歧义检查见 S03。μ−−μ+ 总误判率差为 0.571 个百分点，bootstrap95 为 [0.333,0.829] 个百分点；输入谱不同，尚未隔离算法的电荷不对称或旋转净效应。
 
-S05 正在推进，实测入口为[角度结构报告](../workbook/2026-11-12_stage05_slope_structure.md)：100044 500k/版本全量已完成，物理 frame/同面传播和原 writer 闭合；真实 cluster locX 控制在生产 RDO 与独立 G4 中均抑制 seed 之前的 segment 周期，VetoNu 宽度与实际靶散射及 1/p 标度相符。beforeGeo 近零尖峰及 afterGeo 剩余肩峰的 final-stage 因果归属仍未闭合，A5 尚未完成。
+S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11-13_stage05_angle_structure_conclusions.md)、[完整实验记录](../workbook/2026-11-12_stage05_slope_structure.md)和[逐项审计](../workbook/2026-11-12_stage05_acceptance.md)。100044每版500k全量完成；beforeGeo额外近零结构来自near-pole方向参数化下的refit update/smoothing。联合regular chart控制在RDO近零109→61（truth58），独立μ+1299→765（truth783）、μ−1321→753（truth749），固定native及same-hit对照均改善，所列窗口剩余差与0相容；角误差核心和大尾同时改善。afterGeo两肩有独立40k strip控制及预留样本response证据，固定窗口保守正过量余量0.4504%/0.6048%；VetoNu宽度主要与靶散射及1/p标度相符。[290页统一图集及来源索引](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage05_slopes/final_report_v1/results/index.md)已逐页核对；独立gun效率下降约2个百分点、pull未校准，正式生产修复留待新输入验收。
 
 ## 阅读与执行入口
 
@@ -41,7 +41,7 @@ S05 正在推进，实测入口为[角度结构报告](../workbook/2026-11-12_st
 
 0. **以已完成的原宏对照为入口，分离局部bias与production-relative能损。** `t_eQOP`与相同majority barcode的production p实测一致；历史图继续保留`t_eQOP`，逐层算法检验使用同面G4 p。beforeGeo/afterGeo的原生covariance不同，后续固定物理先验及共同seed/hits，才能判断旋转、covariance和选择各自的贡献。AFS/strict有小的产额差异，其navigation/candidate来源尚未定位；file0的三个mask控制27图相同。
    原生共享smoothed slots与候选隔离重算分开呈现，truth purity分组保留共同母样本；两者对旧图形状的作用已定量，按鼓包复核报告使用各自适用的states。
-1. **S05以整体beforeGeo/afterGeo比较统一物理面。** 已完成100044每版500k的真实重建与同面传播，AFS/strict另列材料控制。下一步定位before近零尖峰的首次stage、量化after肩峰的phase响应与未覆盖余量，分解reco-p窗口、hit pattern和candidate迁移；不能用production方向residual直接充当角分辨率。
+1. **S05成因定位与生产修复分别验收。** 整体beforeGeo/afterGeo的统一物理面、near-pole联合chart、独立μ± full-G4、after肩峰strip/response余量及A′拓扑均已测量。后续S07在新保留输入上检查chart补丁的全量效率与pull校准；固定输入的成因改善不代替生产验收。同面truth model与实际G4真值继续分别标注。
 2. **S06先平衡谱与接受度。** 独立strict样本μ+、μ−各剩1条wrong；事件数尚不足以判定残余正负差异。先比较共同truth p/位置/方向支持域与有效样本量，再按目标精度追加。材料配对不代替完整G0/G1的旋转净效应。
 3. **S07逐项处理seed和辐射模型。** 110051 strict有3020条最终祖先seed tail，其中2346条含other-majority segment。固定真hits的电子仍有23条guaranteed local tail，11条在update、12条在smoothing出现同sensor可证实的穿越，并有显著沿程能损。使用纯segment组合/同点方向与field integral、G4 bremsstrahlung控制及piecewise q/p/GSF分别检验。
 4. **保留接口、pruning与IFT实验。** S04全量100k观察配对的final p/charge/Good95均一致，少量rmax改变；转换mean闭合不代表covariance已修复。4-station finding会使用IFT，但既有refit将IFT判outlier；完整四站refit须显式控制该策略。候选pruning损失也有独立计数。
@@ -58,7 +58,7 @@ S05 正在推进，实测入口为[角度结构报告](../workbook/2026-11-12_st
 | S02 旋转与诊断闭合 | S01；观察量与 frame 是否可靠 | 已完成 sensor/field/material/transport/interface 与观察开关配对；保留原版并提供默认关闭的实验修正 | 来源唯一、观察开关前后输出一致；chart/refit问题与material差异已量化，见S02报告；总体物理影响留待S04–S06 |
 | S03 原版复现与基线 | S01；与 S02 可交错做原始量检查 | 已完成五类各10k事件，50/50 shards exit0；紧凑审计归档后完整复算 | particle表、图、cutflow、区间、32条代表track与资源已交付，见S03报告；历史selection未恢复、同面truth与完整G0未测量均已记录 |
 | S04 动量因果定位 | S02–S03 | current/strict全量逐层、Calypso内T0–T4、独立50k配对、backward/4-station/真实merge已完成；T5完整Calypso统计closure列入S07 | 材料主因与独立改善、seed类别和23条电子local tail运算证据、完整剩余类/资源/测试；[S04报告](../workbook/2026-11-12_stage04_momentum.md) |
-| S05 角度结构定位 | S02–S03；共享 S04 的误差与材料观察 | [角度实验 A1–A5](03_slope_structure.md)，truth 谱与 detector/hit pattern 条件分解 | 峰位置、宽度、占比、稳定性和对应物理/程序来源；剩余结构在 forward model 中可复现或被最小修复消除 |
+| S05 角度结构定位 | S02–S03；共享 S04 的误差与材料观察 | [角度实验 A1–A5](03_slope_structure.md)，完整500k/版、固定候选最小控制与独立full-G4 | 主要来源、固定窗口余量及效率/pull副作用已量化；[最终结论与图集](../workbook/2026-11-13_stage05_angle_structure_conclusions.md)、[A1–A5审计](../workbook/2026-11-12_stage05_acceptance.md)；完整生产修复另在S07验收 |
 | S06 电荷与正负差异 | S02–S03；共享 S04 的 curvature trace | [电荷实验 Q1–Q5](04_charge_misidentification.md)；先 pilot，再扩至每电荷至少约 100k 有效选中粒子或所需精度 | before/after 配对表、误判率/效率/差值区间、谱匹配结果、首次符号翻转与解释；无显著差异时给可排除范围 |
 | S07 修复与独立验收 | S04–S06 各分支形成可检验解释 | 每次一个修改；保留未调参文件作验证；覆盖μ±、A′两样本、forward/backward、3/4 station；补齐实际Calypso内T5统计closure | 物理指标、效率、失败率与资源回归；中文最终报告、配置、最小patch、测试和各阶段commits |
 
@@ -96,7 +96,7 @@ flowchart TD
 ## 下一轮落地任务
 
 0. 按[原宏复核报告](../workbook/2026-11-12_stage04_native_geometry_truth.md)保留历史图与truth对照；动量后续控制固定物理先验及共同seed/hits，使用同面G4 truth区分实际能损与KF bias。AFS/strict小产额差异保留导航与candidate排查，不将其当作已定位原因。
-1. S05完成已提交的native writer同面传播，定位beforeGeo近零尖峰的首次stage，并做固定候选的最小控制；afterGeo肩峰保留geometry-phase响应、same-hit truth-coordinate实验与未覆盖余量，按A1–A5完成因果和图表验收。已测数据及产物见S05 workbook。
+1. S05按已测来源表保留原生基线、联合chart及独立验证入口；后续比较使用相同physical surface、native固定候选和same-hit子组，继续同时报告效率、残差大尾、pull及窗口余量。完整图表与冻结证据见S05最终结论报告。
 2. S06使用correct material后的μ±共同支持域，检查首次sign flip与谱平衡后的率差；记录既有样本的精度，再确定追加规模。Alma历史selection与完整G0/G1仍单独控制。
 3. S07从已定位的other-segment seed、真实radiative loss后的update/smoothing、chart/refit covariance、IFT策略分别做单因素实验。Gaussian mixture能损的文献可行性和典型事件见S04，未把它当作已验证修复。
 4. 所有新批量按S04实测CPU/RSS/I/O配置资源，提交前重新比较兼容schedd；所有源码、数据身份与observer开关继续冻结。

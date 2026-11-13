@@ -29,6 +29,13 @@ def main():
     parser.add_argument('--refit-covariance-scale', type=float, help='Controlled change to native KalmanFitterTool1.SeedCovarianceScale; CKF remains native')
     parser.add_argument('--wrap-refit-smoothing-phi', action='store_true', help='Calypso diagnostic: use a periodic phi subtraction in the actual ACTS refit smoother')
     parser.add_argument('--canonical-refit-smoothing-angles', action='store_true', help='Calypso diagnostic: normalize smoothed phi/theta and transform the covariance on pole reflection')
+    parser.add_argument('--canonical-refit-update-angles', action='store_true', help='Calypso diagnostic: normalize the native refit update output and transform theta covariance before transport')
+    parser.add_argument('--regular-refit-smoothing-chart', action='store_true', help='Calypso diagnostic: use a beam-regular angular chart for the actual native smoother, transforming all covariance and transport Jacobian blocks')
+    parser.add_argument('--regular-refit-update-chart', action='store_true', help='Calypso diagnostic: perform the native measurement update in beam-regular angles and transform filtered mean/covariance back before actual native transport')
+    parser.add_argument('--correct-conversion-basis', action='store_true', help='Calypso diagnostic: transform ACTS surface covariance to the actual Trk curvilinear local basis')
+    parser.add_argument('--correct-refit-basis', action='store_true', help='Calypso diagnostic: transform input curvilinear covariance to the actual refit plane basis')
+    parser.add_argument('--refit-input-reference-plane', action='store_true', help='Calypso diagnostic: keep the refit plane at the input point, independently of covariance changes')
+    parser.add_argument('--refit-outcomes', action='store_true', help='Read-only actual Calypso selected-track refit success/fallback CSV')
     args = parser.parse_args()
     from AthenaCommon.Configurable import Configurable
     from AthenaConfiguration.ComponentFactory import CompFactory
@@ -90,6 +97,21 @@ def main():
         ckf.KalmanFitterTool1.WrapRefitSmoothingPhi=True
     if args.canonical_refit_smoothing_angles:
         ckf.KalmanFitterTool1.CanonicalRefitSmoothingAngles=True
+    if args.canonical_refit_update_angles:
+        ckf.KalmanFitterTool1.CanonicalRefitUpdateAngles=True
+    if args.regular_refit_smoothing_chart:
+        ckf.KalmanFitterTool1.RegularRefitSmoothingChart=True
+    if args.regular_refit_update_chart:
+        ckf.KalmanFitterTool1.RegularRefitUpdateChart=True
+    if args.correct_conversion_basis:
+        ckf.CreateTrkTrackTool=CompFactory.CreateTrkTrackTool('SlopeCKFConverter', CorrectCovarianceBasis=True)
+        ckf.KalmanFitterTool1.CreateTrkTrackTool=CompFactory.CreateTrkTrackTool('SlopeRefitConverter', CorrectCovarianceBasis=True)
+    if args.correct_refit_basis:
+        ckf.KalmanFitterTool1.CorrectCovarianceBasis=True
+    if args.refit_input_reference_plane:
+        ckf.KalmanFitterTool1.UseInputReferencePlane=True
+    if args.refit_outcomes:
+        ckf.RefitOutcomeFile='refit_outcomes.csv'
     acc.merge(cfg)
     result, geometry = ActsTrackingGeometryToolCfg(flags)
     acc.merge(result)
@@ -115,13 +137,24 @@ def main():
         refit_covariance_scale=ckf.KalmanFitterTool1.SeedCovarianceScale,
         refit_smoothing_phi_periodic=args.wrap_refit_smoothing_phi,
         refit_smoothing_angles_canonical=args.canonical_refit_smoothing_angles,
+        refit_update_angles_canonical=args.canonical_refit_update_angles,
+        refit_smoothing_chart_regular=args.regular_refit_smoothing_chart,
+        refit_update_chart_regular=args.regular_refit_update_chart,
+        conversion_covariance_basis_corrected=args.correct_conversion_basis,
+        refit_covariance_basis_corrected=args.correct_refit_basis,
+        refit_uses_input_reference_plane=args.refit_input_reference_plane,
+        refit_outcome_observer=args.refit_outcomes,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False, isolate_smoothing=args.isolate_smoothing, observer=not args.no_observer,
         propagation_material_energy_loss=propagator.InteractionEloss,
         propagation_material_scattering=propagator.InteractionMultiScatering)
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     begin = time.monotonic()
     status = acc.run(maxEvents=args.events)
-    manifest.update(success=status.isSuccess(), wall_s=time.monotonic()-begin)
+    loaded = sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines()
+                     if any(name in line for name in ['libFaserActsGeometry',
+                         'libFaserActsKalmanFilter', 'libCalypsoSlopeDiagnostics'])})
+    manifest.update(success=status.isSuccess(), wall_s=time.monotonic()-begin,
+                    loaded_acts_libraries=loaded)
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     return 0 if status.isSuccess() else 1
 

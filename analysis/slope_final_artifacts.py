@@ -3,9 +3,8 @@
 import argparse
 import json
 from pathlib import Path
-import re
 import shutil
-import subprocess
+import sys
 import tempfile
 
 from PIL import Image
@@ -14,16 +13,20 @@ from slope_tables import write_json
 
 
 def pages(path):
-    info = subprocess.check_output(['pdfinfo', str(path)], text=True)
-    return int(re.search(r'Pages:\s+(\d+)', info).group(1))
+    from pypdf import PdfReader
+    return len(PdfReader(path).pages)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--catalog', type=Path, required=True)
+    parser.add_argument('--pdf-tools', type=Path, required=True,
+                        help='Frozen pypdf installation used on Condor workers')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    sys.path.insert(0, str(args.pdf_tools))
+    from pypdf import PdfWriter, __version__ as pdf_version
     catalog = json.loads(args.catalog.read_text())
     args.output.mkdir(parents=True, exist_ok=True)
     reports, figures = [], []
@@ -37,6 +40,8 @@ def main():
         for png in pngs:
             with Image.open(png) as image:
                 image.verify()
+            with Image.open(png) as image:
+                image.load()
             pdf = png.with_suffix('.pdf')
             assert pages(pdf) == 1, pdf
             row = dict(name=png.stem, png=str(png), pdf=str(pdf), report=str(report),
@@ -64,12 +69,21 @@ def main():
     destination = args.output/'stage05_analysis_report.pdf'
     with tempfile.TemporaryDirectory(prefix='s05_report_') as scratch:
         local = Path(scratch)/destination.name
-        subprocess.run(['pdfunite', *[r['pdf'] for r in reports], str(local)], check=True)
+        writer = PdfWriter()
+        for i, report in enumerate(reports):
+            source = Path(scratch)/(str(i)+'.pdf')
+            shutil.copyfile(report['pdf'], source)
+            writer.append(source, outline_item=report['name'])
+        with local.open('wb') as stream:
+            writer.write(stream)
+        writer.close()
         assert pages(local) == page-1
         shutil.copyfile(local, destination)
     assert pages(destination) == page-1
     write_json(args.output/'index.json', dict(report=str(destination), pages=page-1,
         figure_count=len(figures), reports=reports, figures=figures, evidence=evidence,
+        pdf_tools=str(args.pdf_tools), pdf_tools_version=pdf_version,
+        pdf_assembler='pypdf; frozen input reports copied to local scratch; report bookmarks retained',
         validation='All required evidence JSON parses; every indexed PNG opens; every single PDF has one page; each report and combined page count closes. Physical conclusions remain in the workbook.'))
     lines = ['# S05 图集与证据索引', '', f'[完整图集]({destination})，{page-1}页，{len(figures)}张图。', '',
              '| 图组 | 汇编页码 | 输入/统计来源 |', '| --- | --- | --- |']

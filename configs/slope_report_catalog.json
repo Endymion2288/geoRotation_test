@@ -42,7 +42,7 @@
     },
     {
       "name": "Full G4 material validation",
-      "path": "controls_analysis_v1/gun/controls_report.pdf",
+      "path": "controls_analysis_v2/gun/controls_report.pdf",
       "source": "Actual Calypso full G4/digi; mu+/- at 100/250 GeV"
     },
     {
@@ -67,23 +67,27 @@
     },
     {
       "name": "Periodic phi control",
-      "path": "periodic_refit_analysis_v1/rdo/periodic_refit_report.pdf",
-      "source": "Native Calypso; 10000 RDO source events per mode"
+      "path": "refit_display_v2/periodic_refit_analysis_v1/rdo/periodic_refit_report.pdf",
+      "source": "Native Calypso; 10000 RDO source events per mode",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
     },
     {
       "name": "Independent periodic phi gun",
-      "path": "periodic_gun_analysis_v1/results/periodic_refit_report.pdf",
-      "source": "Full G4/digi; mu+/- 2000 events per charge"
+      "path": "refit_display_v2/periodic_gun_analysis_v1/results/periodic_refit_report.pdf",
+      "source": "Full G4/digi; mu+/- 2000 events per charge",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
     },
     {
       "name": "Canonical angle control",
-      "path": "canonical_refit_analysis_v1/rdo/canonical_refit_report.pdf",
-      "source": "Native Calypso; 10000 RDO source events"
+      "path": "refit_display_v2/canonical_refit_analysis_v1/rdo/canonical_refit_report.pdf",
+      "source": "Native Calypso; 10000 RDO source events",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
     },
     {
       "name": "Independent canonical angle gun",
-      "path": "canonical_gun_analysis_v1/results/canonical_refit_report.pdf",
-      "source": "Full G4/digi; mu+/- 2000 events per charge"
+      "path": "refit_display_v2/canonical_gun_analysis_v1/results/canonical_refit_report.pdf",
+      "source": "Full G4/digi; mu+/- 2000 events per charge",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
     },
     {
       "name": "beforeGeo Near-zero composition",
@@ -134,6 +138,158 @@
       "name": "afterGeo Refit covariance control",
       "path": "refit_covariance_analysis_v2/afterGeo/refit_covariance_report.pdf",
       "source": "Native refit scale 1/10/100; fixed original candidates and p cuts"
+    },
+    {
+      "name": "Spatial interface control: basis",
+      "path": "refit_display_v2/basis_refit_analysis_v1/basis/basis_refit_report.pdf",
+      "source": "Actual native Calypso; 10000 RDO source events; native candidate and momentum cohort fixed; actual refit outcomes",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Spatial interface control: plane",
+      "path": "refit_display_v2/basis_refit_analysis_v1/plane/plane_refit_report.pdf",
+      "source": "Actual native Calypso; 10000 RDO source events; native candidate and momentum cohort fixed; actual refit outcomes",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Spatial interface control: basis_plane",
+      "path": "refit_display_v2/basis_refit_analysis_v1/basis_plane/basis_plane_refit_report.pdf",
+      "source": "Actual native Calypso; 10000 RDO source events; native candidate and momentum cohort fixed; actual refit outcomes",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "110033 beforeGeo pair-topology groups",
+      "path": "topology_analysis_v2/110033/beforeGeo/topology_report.pdf",
+      "source": "Actual Calypso; complete 10000 source events; decay z/opening/ST1 SiHit-centroid separation"
+    },
+    {
+      "name": "110033 afterGeo pair-topology groups",
+      "path": "topology_analysis_v2/110033/afterGeo/topology_report.pdf",
+      "source": "Actual Calypso; complete 10000 source events; decay z/opening/ST1 SiHit-centroid separation"
+    },
+    {
+      "name": "110051 beforeGeo pair-topology groups",
+      "path": "topology_analysis_v3/110051/beforeGeo/topology_report.pdf",
+      "source": "Actual Calypso; complete 20000 source events; decay z/opening/ST1 SiHit-centroid separation"
+    },
+    {
+      "name": "110051 afterGeo pair-topology groups",
+      "path": "topology_analysis_v3/export_recovery/afterGeo/topology_report.pdf",
+      "source": "Actual Calypso; complete 20000 source events; decay z/opening/ST1 SiHit-centroid separation"
+    },
+    {
+      "name": "Independent spatial interface gun: basis",
+      "path": "refit_display_v2/basis_gun_analysis_v2/basis/basis_refit_report.pdf",
+      "source": "Actual full Calypso G4/digitization; independent mu+/- 2k each; seeds 50781/50782; same RDO and fixed native candidate/p; complete-hit changes reported",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Independent spatial interface gun: plane",
+      "path": "refit_display_v2/basis_gun_analysis_v2/plane/plane_refit_report.pdf",
+      "source": "Actual full Calypso G4/digitization; independent mu+/- 2k each; seeds 50781/50782; same RDO and fixed native candidate/p; complete-hit changes reported",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Independent spatial interface gun: basis_plane",
+      "path": "refit_display_v2/basis_gun_analysis_v2/basis_plane/basis_plane_refit_report.pdf",
+      "source": "Actual full Calypso G4/digitization; independent mu+/- 2k each; seeds 50781/50782; same RDO and fixed native candidate/p; complete-hit changes reported",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Forward update chart: updater",
+      "path": "refit_display_v2/update_refit_analysis_v2/updater/updater_refit_report.pdf",
+      "source": "Actual beforeGeo Calypso; fixed native candidate/p; 10k source events, validation entries >=250000; complete hits checked",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Forward update chart: update_canonical",
+      "path": "refit_display_v2/update_refit_analysis_v2/update_canonical/update_canonical_refit_report.pdf",
+      "source": "Actual beforeGeo Calypso; fixed native candidate/p; 10k source events, validation entries >=250000; complete hits checked",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Independent forward update gun: canonical",
+      "path": "refit_display_v2/update_gun_analysis_v1/canonical/canonical_refit_report.pdf",
+      "source": "Independent full Calypso G4/digitization mu+/- 2k each; seeds 50881/50882; same RDO per charge and fixed native candidate/p",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Independent forward update gun: updater",
+      "path": "refit_display_v2/update_gun_analysis_v1/updater/updater_refit_report.pdf",
+      "source": "Independent full Calypso G4/digitization mu+/- 2k each; seeds 50881/50882; same RDO per charge and fixed native candidate/p",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Independent forward update gun: update_canonical",
+      "path": "refit_display_v2/update_gun_analysis_v1/update_canonical/update_canonical_refit_report.pdf",
+      "source": "Independent full Calypso G4/digitization mu+/- 2k each; seeds 50881/50882; same RDO per charge and fixed native candidate/p",
+      "display": "Final panel-count export: mrad axes; original numerical metrics exactly reproduced; zoom/residual counts and flows included"
+    },
+    {
+      "name": "Regular direction chart: production RDO",
+      "path": "chart_refit_analysis_v1/rdo/regular_chart_refit_report.pdf",
+      "source": "Actual beforeGeo Calypso; 10k production source events; fixed candidate/hits/native p; native forward fit exactly unchanged"
+    },
+    {
+      "name": "Independent near-pole regular-chart gun",
+      "path": "chart_gun_analysis_v2/regular_chart/regular_chart_refit_report.pdf",
+      "source": "Full Calypso G4/digitization mu+/- 4k each; seeds50981/50982; exact st1 generated truth; per-mode actual geometry/tracking maps verified"
+    },
+    {
+      "name": "Regular direction chart RDO: regular_update",
+      "path": "chart_update_analysis_v1/regular_update/regular_update_refit_report.pdf",
+      "source": "Actual beforeGeo Calypso; 10k production source events, validation entries250000-254999; native candidates/p fixed; complete-hit changes and outcomes reported"
+    },
+    {
+      "name": "Independent near-pole gun: regular_update",
+      "path": "chart_gun_analysis_v2/regular_update/regular_update_refit_report.pdf",
+      "source": "Full Calypso G4/digitization mu+/- 4k each; seeds50981/50982; exact generated st1 truth; native candidate/p fixed, complete hits checked"
+    },
+    {
+      "name": "Regular direction chart RDO: regular_both",
+      "path": "chart_update_analysis_v1/regular_both/regular_both_refit_report.pdf",
+      "source": "Actual beforeGeo Calypso; 10k production source events, validation entries250000-254999; native candidates/p fixed; complete-hit changes and outcomes reported"
+    },
+    {
+      "name": "Independent near-pole gun: regular_both",
+      "path": "chart_gun_analysis_v2/regular_both/regular_both_refit_report.pdf",
+      "source": "Full Calypso G4/digitization mu+/- 4k each; seeds50981/50982; exact generated st1 truth; native candidate/p fixed, complete hits checked"
+    },
+    {
+      "name": "Regular chart quality: rdo regular_chart",
+      "path": "chart_diagnostics_display_v1/rdo/regular_chart/chart_diagnostics_report.pdf",
+      "source": "10k production RDO; fixed native candidate/p and same-hit subgroups",
+      "display": "Frozen counts only; residual log scale, full +-3mrad and explicit flows; no repeated bootstrap/transport"
+    },
+    {
+      "name": "Regular chart quality: rdo regular_update",
+      "path": "chart_diagnostics_display_v1/rdo/regular_update/chart_diagnostics_report.pdf",
+      "source": "10k production RDO; fixed native candidate/p and same-hit subgroups",
+      "display": "Frozen counts only; residual log scale, full +-3mrad and explicit flows; no repeated bootstrap/transport"
+    },
+    {
+      "name": "Regular chart quality: rdo regular_both",
+      "path": "chart_diagnostics_display_v1/rdo/regular_both/chart_diagnostics_report.pdf",
+      "source": "10k production RDO; fixed native candidate/p and same-hit subgroups",
+      "display": "Frozen counts only; residual log scale, full +-3mrad and explicit flows; no repeated bootstrap/transport"
+    },
+    {
+      "name": "Regular chart quality: gun regular_chart",
+      "path": "chart_diagnostics_display_v1/gun/regular_chart/chart_diagnostics_report.pdf",
+      "source": "Independent full G4 mu+/- 4k each; exact generated st1 truth; corrected afterGeo own-cohort reference",
+      "display": "Frozen counts only; residual log scale, full +-3mrad and explicit flows; no repeated bootstrap/transport"
+    },
+    {
+      "name": "Regular chart quality: gun regular_update",
+      "path": "chart_diagnostics_display_v1/gun/regular_update/chart_diagnostics_report.pdf",
+      "source": "Independent full G4 mu+/- 4k each; exact generated st1 truth; corrected afterGeo own-cohort reference",
+      "display": "Frozen counts only; residual log scale, full +-3mrad and explicit flows; no repeated bootstrap/transport"
+    },
+    {
+      "name": "Regular chart quality: gun regular_both",
+      "path": "chart_diagnostics_display_v1/gun/regular_both/chart_diagnostics_report.pdf",
+      "source": "Independent full G4 mu+/- 4k each; exact generated st1 truth; corrected afterGeo own-cohort reference",
+      "display": "Frozen counts only; residual log scale, full +-3mrad and explicit flows; no repeated bootstrap/transport"
     }
   ],
   "evidence": [
@@ -152,6 +308,65 @@
     "periodic_refit_analysis_v1/rdo/summary.json",
     "periodic_gun_analysis_v1/results/summary.json",
     "canonical_refit_analysis_v1/rdo/summary.json",
-    "canonical_gun_analysis_v1/results/summary.json"
+    "canonical_gun_analysis_v1/results/summary.json",
+    "response_flow_validation_v1/beforeGeo/validation.json",
+    "response_flow_validation_v1/afterGeo/validation.json",
+    "basis_refit_analysis_v1/basis/summary.json",
+    "basis_refit_analysis_v1/plane/summary.json",
+    "basis_refit_analysis_v1/basis_plane/summary.json",
+    "topology_analysis_v2/110033/beforeGeo/summary.json",
+    "topology_analysis_v2/110033/afterGeo/summary.json",
+    "topology_analysis_v3/110051/beforeGeo/summary.json",
+    "topology_analysis_v3/110051/afterGeo/summary.json",
+    "canonical_refit_v1/smoke_validation.json",
+    "canonical_refit_v1/artifact_validation.json",
+    "basis_refit_v1/smoke_validation.json",
+    "basis_refit_analysis_v1/artifact_validation.json",
+    "topology_analysis_v2/artifact_validation.json",
+    "topology_analysis_v3/artifact_validation.json",
+    "topology_analysis_v3/export_recovery/recovery.json",
+    "basis_gun_analysis_v2/artifact_validation.json",
+    "basis_gun_v1/smoke_validation.json",
+    "update_refit_v1/smoke_validation.json",
+    "update_gun_v1/smoke_validation.json",
+    "update_refit_analysis_v2/artifact_validation.json",
+    "update_gun_analysis_v1/artifact_validation.json",
+    "update_gun_v1/muplus_validation.json",
+    "update_gun_v1/muminus_validation.json",
+    "chart_math_validation_v3/validation.json",
+    "refit_display_v1/validation.json",
+    "refit_display_v2/validation.json",
+    "chart_refit_v2/smoke_validation.json",
+    "chart_refit_analysis_v1/rdo/summary.json",
+    "chart_refit_analysis_v1/artifact_validation.json",
+    "loader_audit_v1/validation.json",
+    "software_after_complete_v1/software.json",
+    "patch_validation_v2/validation.json",
+    "chart_update_refit_v1/smoke_validation.json",
+    "chart_update_refit_v1/software/software.json",
+    "chart_update_analysis_v1/artifact_validation.json",
+    "chart_gun_v2/muplus_validation.json",
+    "chart_gun_v2/muminus_validation.json",
+    "chart_gun_v2/muplus_previous_reproduction.json",
+    "chart_gun_v2/muminus_previous_reproduction.json",
+    "chart_gun_analysis_v2/artifact_validation.json",
+    "chart_diagnostics_display_v1/validation.json",
+    "chart_update_analysis_v1/regular_update/summary.json",
+    "chart_update_analysis_v1/regular_both/summary.json",
+    "chart_gun_analysis_v2/regular_chart/summary.json",
+    "chart_diagnostics_v3/rdo/regular_chart/summary.json",
+    "chart_diagnostics_v3/rdo/regular_chart/validation.json",
+    "chart_diagnostics_v3/gun/regular_chart/summary.json",
+    "chart_diagnostics_v3/gun/regular_chart/validation.json",
+    "chart_gun_analysis_v2/regular_update/summary.json",
+    "chart_diagnostics_v3/rdo/regular_update/summary.json",
+    "chart_diagnostics_v3/rdo/regular_update/validation.json",
+    "chart_diagnostics_v3/gun/regular_update/summary.json",
+    "chart_diagnostics_v3/gun/regular_update/validation.json",
+    "chart_gun_analysis_v2/regular_both/summary.json",
+    "chart_diagnostics_v3/rdo/regular_both/summary.json",
+    "chart_diagnostics_v3/rdo/regular_both/validation.json",
+    "chart_diagnostics_v3/gun/regular_both/summary.json",
+    "chart_diagnostics_v3/gun/regular_both/validation.json"
   ]
 }

@@ -115,6 +115,19 @@ def main():
                 data.pop(branch)
         np.savez_compressed(name+'.npz', **data)
         shutil.copy2(name+'.npz',output/(name+'.npz'))
+    if '--refit-outcomes' in task.get('options', []):
+        outcomes = np.atleast_1d(np.genfromtxt('refit_outcomes.csv', delimiter=',', names=True, dtype=np.int64))
+        fields = {key: outcomes[key] for key in outcomes.dtype.names}
+        fields['source_entry'] = fields['local_event_index'] + task['skip']
+        for key in ['source_entry', 'run', 'event', 'ordinal']:
+            np.testing.assert_array_equal(fields[key], arrays['tracks'][key], err_msg='refit outcome identity: '+key)
+        assert np.isin(fields['refit_success'], [0, 1]).all()
+        np.savez_compressed('refit_outcomes.npz', **fields)
+        shutil.copy2('refit_outcomes.npz', output/'refit_outcomes.npz')
+        summary['refit_outcomes'] = dict(selected=len(outcomes),
+            succeeded=int(fields['refit_success'].sum()),
+            fallback=int((fields['refit_success'] == 0).sum()),
+            identity='Checked against observer source entry, run, event and final ordinal')
     if '--stage-audit' in task.get('options', []):
         from slope_stage_extract import extract
         summary['audit_state_rows'] = extract('stages.jsonl', output, task)

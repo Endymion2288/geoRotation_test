@@ -38,6 +38,10 @@ def main():
     submit=Path('/afs/cern.ch/user/x/xcheng/condor/geoRotation_test')/args.name
     submit.mkdir(exist_ok=False,parents=True);(root/"condor_logs").mkdir(exist_ok=True)
     tasks=json.loads(args.tasks.read_text())
+    # Create shared parents once; simultaneous worker mkdirs can race through EOS.
+    # Each worker still creates its own fresh output directory.
+    for task in tasks:
+        Path(task['output']).parent.mkdir(parents=True, exist_ok=True)
     if any(task.get('kind') in ['analysis', 'full_sample', 'reference'] for task in tasks):
         shutil.copytree(repo/'analysis',code/'analysis',ignore=shutil.ignore_patterns('__pycache__'))
     (submit/"jobs.sub").write_text(f'''universe = vanilla

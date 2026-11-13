@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the periodic-phi control in the actual native Calypso refit."""
+"""Measure angular-chart and interface controls in the actual Calypso refit."""
 import argparse
 import json
 from pathlib import Path
@@ -17,6 +17,20 @@ from slope_statistics import event_ratio_interval
 from slope_tables import histogram, join_truth, slope, write_json
 
 
+CONTROLS = {
+    'periodic': ('Periodic phi difference', 'periodic phi difference'),
+    'canonical': ('Canonical phi/theta chart', 'periodic phi difference and canonical phi/theta, including covariance theta sign transform on pole reflection'),
+    'basis': ('Covariance basis control', 'surface/curvilinear/refit-plane local covariance Jacobians; original reference displacement retained'),
+    'plane': ('Input reference plane', 'refit starts at its actual input point; native covariance basis retained'),
+    'basis_plane': ('Covariance basis and input plane', 'local covariance Jacobians and refit reference at the actual input point'),
+    'updater': ('Canonical update angles', 'canonicalize the actual native refit update mean and theta covariance before subsequent transport'),
+    'update_canonical': ('Canonical update and smoothing', 'canonical update mean/covariance plus periodic phi and canonical smoothing angles'),
+    'regular_chart': ('Beam-regular smoothing chart', 'actual ACTS smoother in rotated longitude/latitude, with full covariance and transport Jacobian transformations; native forward fit unchanged'),
+    'regular_update': ('Regular direction update', 'actual ACTS measurement update in rotated longitude/latitude, converting filtered mean/covariance back before native transport; native smoother retained'),
+    'regular_both': ('Regular direction update and smoothing', 'actual ACTS measurement update and smoother in rotated longitude/latitude, with full covariance and transport Jacobian transformations'),
+}
+
+
 def exact_tables(left, right, names):
     checks = {}
     for name in names:
@@ -29,18 +43,38 @@ def exact_tables(left, right, names):
     return checks
 
 
-def native_closure(left_paths, right_paths):
+def native_closure(left_paths, right_paths, forward_invariant=True):
     checks = []
     for left, right in zip(left_paths, right_paths):
         a, b = (archive(p/'native_states.npz') for p in [left, right])
-        for key in ['entry', 'track_index', 'stage', 'station', 'layer']:
-            assert np.array_equal(a[key], b[key]), (left, key)
-        for stages, label in [([1, 3, 4, 5], 'seed_CKF'), ([8, 9], 'refit_forward')]:
-            mask = np.isin(a['stage'], stages)
+        if forward_invariant:
+            for key in ['entry', 'track_index', 'stage', 'station', 'layer']:
+                assert np.array_equal(a[key], b[key]), (left, key)
+        components = [([1, 3, 4, 5], 'seed_CKF')]
+        if forward_invariant:
+            components.append(([8, 9], 'refit_forward'))
+        for stages, label in components:
+            mask, other = (np.isin(data['stage'], stages) for data in [a, b])
             for key in a:
-                assert np.array_equal(a[key][mask], b[key][mask], equal_nan=True), (left, label, key)
+                assert np.array_equal(a[key][mask], b[key][other], equal_nan=True), (left, label, key)
             checks.append(dict(shard=left.name, component=label, exact_rows=int(mask.sum())))
     return checks
+
+
+def refit_outcomes(paths, tracks, cohorts, count):
+    lookup = {(int(e), int(o)): i for i, (e, o) in enumerate(zip(tracks['source_entry'], tracks['ordinal']))}
+    success = np.full(len(lookup), -1, dtype=np.int8)
+    for path in paths:
+        data = archive(path/'refit_outcomes.npz')
+        for e, o, value in zip(data['source_entry'], data['ordinal'], data['refit_success']):
+            index = lookup[(int(e), int(o))]
+            assert success[index] == -1
+            success[index] = value
+    assert np.isin(success, [0, 1]).all()
+    return {name: dict(selected=int(selected.sum()),
+                       succeeded=int((selected & (success == 1)).sum()),
+                       fallback=event_ratio_interval(tracks['sample_entry'], selected & (success == 0), selected, (0, count)))
+            for name, selected in cohorts.items()}
 
 
 def angle_flags(paths, tracks):
@@ -61,18 +95,18 @@ def angle_flags(paths, tracks):
 
 
 def analyse_pair(native_paths, periodic_paths, output, report, label, validation_entry=None, baseline_paths=None,
-                 control='periodic'):
-    control_label = 'Periodic phi difference' if control == 'periodic' else 'Canonical phi/theta chart'
+                 control='periodic', generated_st1_truth=False):
+    control_label, control_definition = CONTROLS[control]
     native, count = collect(native_paths)
     periodic, other_count = collect(periodic_paths)
     assert count == other_count
     result = dict(source_events=count, label=label,
                   unchanged_source_fields=exact_tables(native, periodic, ['events', 'truth', 'segments']),
                   control=control,
-                  definition=('Actual Calypso; periodic phi difference' if control == 'periodic' else
-                              'Actual Calypso; periodic phi difference and canonical phi/theta, including covariance theta sign transform on pole reflection') +
-                             '; fixed native candidates, majority truth, hit identities and momentum selection.',
-                  validation_source_entry_min=validation_entry)
+                  definition=('Actual Calypso; ' + control_definition) +
+                             '; fixed native candidate identity and momentum selection. Majority and complete final-hit sets checked; same-hit subsets reported separately.',
+                  validation_source_entry_min=validation_entry,
+                  figure_histograms={}, plane_truth_definitions={})
     if baseline_paths is not None:
         baseline, n = collect(baseline_paths)
         assert n == count
@@ -81,7 +115,8 @@ def analyse_pair(native_paths, periodic_paths, output, report, label, validation
             x, y = (archive(p/'native_states.npz') for p in [a, b])
             for key in x:
                 assert np.array_equal(x[key], y[key], equal_nan=True), (a, key)
-        result['native_stage_closure'] = native_closure(native_paths, periodic_paths)
+        result['native_stage_closure'] = native_closure(native_paths, periodic_paths,
+            forward_invariant=control in ['periodic', 'canonical', 'regular_chart'])
     rb, ra, truth = native['tracks'], periodic['tracks'], native['truth']
     for key in ['source_entry', 'ordinal']:
         assert np.array_equal(rb[key], ra[key]), key
@@ -93,6 +128,14 @@ def analyse_pair(native_paths, periodic_paths, output, report, label, validation
     same_hits = rb['hit_signatures'] == ra['hit_signatures']
     result.update(native_candidates=len(pure), same_complete_hit_sets=int(same_hits.sum()),
                   majority_changes=int(np.count_nonzero(rb['barcode'] != ra['barcode'])), configurations={}, planes={})
+    if control in ['basis', 'plane', 'basis_plane', 'updater', 'update_canonical', 'regular_chart', 'regular_update', 'regular_both']:
+        fixed = pure & validation & (50 < momentum) & (momentum < 250)
+        result['refit_outcomes'] = {}
+        for mode, paths, r in [('native', native_paths, rb), (control, periodic_paths, ra)]:
+            near = (r['projection_valid'][:, 0] == 1) & (np.abs(slope(r['projection'][:, 0, 3:6])) < .0001)
+            result['refit_outcomes'][mode] = refit_outcomes(paths, r,
+                dict(all_candidates=np.ones(len(r['ordinal']), bool), fixed_native_p=fixed,
+                     fixed_native_p_near_zero=fixed & near), count)
     for mode, table in [('native', native), (control, periodic)]:
         r = table['tracks']
         ti, linked = join_truth(table)
@@ -121,6 +164,12 @@ def analyse_pair(native_paths, periodic_paths, output, report, label, validation
         before = np.where(rb['projection_valid'][:, i] == 1, slope(rb['projection'][:, i, 3:6]), np.nan)
         after = np.where(ra['projection_valid'][:, i] == 1, slope(ra['projection'][:, i, 3:6]), np.nan)
         reference = slope(truth['truth_model_momentum_F_GeV'][index, i]) if i < 2 else slope(truth['truth_sensor_direction_F'][index])
+        reference_label = 'Same-plane truth model' if i < 2 else 'Same-sensor SiHit direction'
+        if generated_st1_truth and i == 0:
+            assert np.max(np.abs(truth['production_position_F_mm'][:, 2])) < 1.e-9
+            reference = slope(truth['production_momentum_F_GeV'][index])
+            reference_label = 'Exact generated direction at st1'
+        result['plane_truth_definitions'][plane] = reference_label
         item = {}
         for selection, window in [('all', np.ones(len(pure), bool)), ('native_reco_p', (50 < momentum) & (momentum < 250)),
                                   ('truth_p', (50 < truth_p) & (truth_p < 250))]:
@@ -136,19 +185,44 @@ def analyse_pair(native_paths, periodic_paths, output, report, label, validation
                     paired_near_zero_change=paired_fraction_change(rb['sample_entry'], np.abs(before) < .0001, np.abs(after) < .0001, finite, count),
                     native=histogram(before[finite], np.linspace(-.005, .005, 251)),
                     **{control: histogram(after[finite], np.linspace(-.005, .005, 251))})
+                if control.startswith('regular_'):
+                    common_truth = finite & np.isfinite(reference)
+                    truth_near = np.abs(reference) < .0001
+                    item[key]['truth_comparison'] = dict(
+                        reference=reference_label, common_finite=int(common_truth.sum()),
+                        missing_reference=int((finite & ~np.isfinite(reference)).sum()),
+                        truth_near_zero=int((common_truth & truth_near).sum()),
+                        native_near_zero=int((common_truth & (np.abs(before) < .0001)).sum()),
+                        control_near_zero=int((common_truth & (np.abs(after) < .0001)).sum()),
+                        native_minus_truth=paired_fraction_change(rb['sample_entry'], truth_near,
+                            np.abs(before) < .0001, common_truth, count),
+                        control_minus_truth=paired_fraction_change(rb['sample_entry'], truth_near,
+                            np.abs(after) < .0001, common_truth, count))
         result['planes'][plane] = item
         selected = pure & validation & (50 < momentum) & (momentum < 250)
         finite = selected & np.isfinite(before) & np.isfinite(after)
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        panels = {}
         for ax, edges, residual in [(axes[0, 0], np.linspace(-.005, .005, 251), False),
                                    (axes[0, 1], np.linspace(-.0005, .0005, 101), False),
                                    (axes[1, 0], np.linspace(-.001, .001, 201), True)]:
-            for values, name in [(before, 'Native refit'), (after, control_label)]:
+            view = 'residual' if residual else ('full' if ax is axes[0, 0] else 'zoom')
+            panels[view] = {}
+            series = [(before, 'Native refit', 'native'), (after, control_label, control)]
+            if control.startswith('regular_') and not residual:
+                series.append((reference, reference_label, 'reference'))
+            for values, name, mode in series:
                 h = histogram((values-reference if residual else values)[finite], edges)
-                ax.stairs(h['counts'], edges, label=name)
-            ax.set(xlabel='Reco sy - same-plane truth-model sy' if residual else 'Physical sy', ylabel='Fixed native candidates / bin')
+                ax.stairs(h['counts'], edges*1000, label=name, linestyle='--' if mode == 'reference' else '-')
+                panels[view][mode] = (dict(reference_path=f'planes/{plane}/native_reco_p/{mode}')
+                                     if view == 'full' and mode != 'reference' else h)
+            ax.set(xlabel='Reco sy - reference sy [mrad]' if residual else 'Physical sy [mrad]', ylabel='Fixed native candidates / bin')
             ax.grid(alpha=.2)
             ax.legend(fontsize=8)
+        result['figure_histograms'][plane] = dict(
+            units='Dimensionless sy and delta sy; figure axes display mrad',
+            reference=reference_label, panels=panels,
+            fraction_panel_reference=f'planes/{plane}/{{all,native_reco_p,truth_p}}')
         keys = ['all', 'native_reco_p', 'truth_p']
         for offset, (name, field) in enumerate([('Native refit', 'near_zero_native'), (control_label, 'near_zero_'+control)]):
             values = [item[k][field] for k in keys]
@@ -170,13 +244,14 @@ def main():
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--baseline', type=Path)
     parser.add_argument('--native-root', type=Path, help='Original off production root when the control is in a different frozen run')
-    parser.add_argument('--control', choices=['periodic', 'canonical'], default='periodic')
+    parser.add_argument('--control', choices=list(CONTROLS), default='periodic')
+    parser.add_argument('--native-mode', default='native', help='Production subdirectory containing the native comparator')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with PdfPages(args.output/(args.control+'_refit_report.pdf')) as report:
         if args.mode == 'rdo':
-            native = sorted(((args.native_root or args.root)/'production/native/shards/beforeGeo').glob('s*'))
+            native = sorted(((args.native_root or args.root)/('production/'+args.native_mode+'/shards/beforeGeo')).glob('s*'))
             periodic = sorted((args.root/('production/'+args.control+'/shards/beforeGeo')).glob('s*'))
             baseline = sorted((args.baseline/'shards/beforeGeo').glob('s*'))
             assert len(native) == len(periodic) == len(baseline) == 2
@@ -188,7 +263,8 @@ def main():
                 p = Path(source)
                 task = json.loads((p/'source_task.json').read_text())
                 label = 'muplus' if task['pdg'] == -13 else 'muminus'
-                cases[str(task['pdg'])] = analyse_pair([p/'beforeGeo_native'], [p/('beforeGeo_'+args.control)], args.output, report, label, control=args.control)
+                cases[str(task['pdg'])] = analyse_pair([p/'beforeGeo_native'], [p/('beforeGeo_'+args.control)], args.output, report, label, control=args.control,
+                    generated_st1_truth=args.control.startswith('regular_') and task.get('gun_z_F_mm') == 0.)
     write_json(args.output/'summary.json', dict(mode=args.mode, control=args.control, cases=cases))
     print(args.output/'summary.json')
 

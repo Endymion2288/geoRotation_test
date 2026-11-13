@@ -1,0 +1,83 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
+index 97eae40a..bb135223 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
+@@ -123,5 +123,15 @@ CreateTrkTrackTool::ConvertActsTrackParameterToATLAS(const Acts::BoundTrackParam
+   double p = std::abs(1. / tqOverP);
+   Amg::Vector3D tmom(p * std::cos(tphi) * std::sin(ttheta), p * std::sin(tphi) * std::sin(ttheta), p * std::cos(ttheta));
+   double charge = tqOverP > 0. ? 1. : -1.;
++  if (m_correctCovarianceBasis && cov) {
++    Trk::CurvilinearParameters frame(pos, tmom, charge);
++    const Eigen::Matrix<double, 3, 2> outputBasis =
++        frame.associatedSurface().transform().rotation().leftCols<2>();
++    const Eigen::Matrix<double, 3, 2> inputBasis =
++        actsParameter.referenceSurface().transform(gctx).rotation().leftCols<2>();
++    AmgMatrix(5,5) jacobian = AmgMatrix(5,5)::Identity();
++    jacobian.topLeftCorner<2,2>() = outputBasis.transpose() * inputBasis;
++    cov = (jacobian * (*cov) * jacobian.transpose()).eval();
++  }
+   return std::make_unique<Trk::CurvilinearParameters>(pos,tmom,charge, cov);
+ }
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
+index 2bbc72b6..8edef7ba 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
+@@ -29,6 +29,7 @@ public:
+   std::unique_ptr<Trk::Track> createTrack(const Acts::GeometryContext &gctx, const TrackContainer::TrackProxy &track, const std::optional<Acts::BoundTrackParameters>& fittedParams = std::nullopt, bool backwardPropagation=false) const;
+   std::unique_ptr<Trk::TrackParameters> ConvertActsTrackParameterToATLAS(const Acts::BoundTrackParameters &actsParameter, const Acts::GeometryContext& gctx) const;
+ private:
++  Gaudi::Property<bool> m_correctCovarianceBasis {this, "CorrectCovarianceBasis", false, "Transform the ACTS surface covariance into the output curvilinear local basis"};
+   const FaserSCT_ID* m_idHelper {nullptr};
+ };
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+index 26ad71a9..7c9be5c0 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+@@ -358,6 +358,9 @@ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx
+ 
+   // set the start position 10 mm in front of the first track measurement
+   double origin = inputTrack->trackParameters()->front()->position().z() - 10;
++  if (m_useInputReferencePlane) {
++    origin = inputTrack->trackParameters()->front()->position().z();
++  }
+ 
+   auto pSurface = Acts::Surface::makeShared<Acts::PlaneSurface>(
+       Acts::Vector3 {0, 0, origin}, Acts::Vector3{0, 0, -1});
+@@ -592,6 +595,23 @@ KalmanFitterTool::getParametersFromTrack(const Trk::TrackParameters *inputParame
+   for(int i=0; i < cov.cols(); i++){
+     cov(4, i) = cov(4, i)/1_MeV;
+   }
++  if (m_correctCovarianceBasis) {
++    // Re-express position uncertainty at the nominal input point. The separate
++    // UseInputReferencePlane control determines whether the native 10 mm mean
++    // displacement remains; this basis change does not propagate that shift.
++    const Acts::RotationMatrix3 planeBasis =
++        pSurface->transform(Acts::GeometryContext{}).rotation();
++    const Acts::Vector3 normal = planeBasis.col(2);
++    const Acts::Vector3 direction = inputParameters->momentum().normalized();
++    const Eigen::Matrix<double, 3, 2> inputBasis =
++        inputParameters->associatedSurface().transform().rotation().leftCols<2>();
++    const Acts::SquareMatrix3 projection = Acts::SquareMatrix3::Identity()
++        - direction * normal.transpose() / normal.dot(direction);
++    Acts::BoundSquareMatrix jacobian = Acts::BoundSquareMatrix::Identity();
++    jacobian.topLeftCorner<2,2>() =
++        planeBasis.leftCols<2>().transpose() * projection * inputBasis;
++    cov = (jacobian * cov * jacobian.transpose()).eval();
++  }
+   for (int i = 0; i < 6; ++i) {
+     cov(i,i) = m_seedCovarianceScale * cov(i,i);
+   }
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+index 36a1afa0..3f8d0581 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+@@ -82,6 +82,8 @@ private:
+   Gaudi::Property<std::string> m_actsLogging {this, "ActsLogging", "VERBOSE"};
+   Gaudi::Property<std::size_t> m_minMeasurements {this, "MinMeasurements", 12, "minimum number of measurements of the input track"};
+   Gaudi::Property<double> m_seedCovarianceScale {this, "SeedCovarianceScale", 100, "scale covariance from initial track"};
++  Gaudi::Property<bool> m_correctCovarianceBasis {this, "CorrectCovarianceBasis", false, "Transform the input curvilinear covariance to the refit plane basis at the nominal input point"};
++  Gaudi::Property<bool> m_useInputReferencePlane {this, "UseInputReferencePlane", false, "Keep the refit reference plane at the input position instead of shifting its mean upstream by 10 mm"};
+   Gaudi::Property<bool> m_isMC {this, "isMC", false};
+   Gaudi::Property<bool> m_summaryWriter {this, "SummaryWriter", false};
+   Gaudi::Property<bool> m_statesWriter {this, "StatesWriter", false};

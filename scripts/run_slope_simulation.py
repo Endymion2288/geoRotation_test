@@ -10,6 +10,24 @@ import subprocess
 import sys
 
 
+def reconstruction_environment(library, libraries, inherited=None):
+    """Keep a previous reconstruction's overlay out of dependency fallback."""
+    original = dict(os.environ if inherited is None else inherited)
+    overlays = list(libraries.values())
+    if original.get('GEOROTATION_LIBRARY_DIR'):
+        overlays.append(original['GEOROTATION_LIBRARY_DIR'])
+    excluded_libraries = {str(Path(path).resolve()) for path in overlays}
+    excluded_python = {str(Path(path).parent.joinpath('python').resolve()) for path in overlays}
+    env = dict(original, GEOROTATION_LIBRARY_DIR=str(library))
+    for variable, first, excluded in [
+            ('LD_LIBRARY_PATH', library, excluded_libraries),
+            ('PYTHONPATH', library.parent/'python', excluded_python)]:
+        remaining = [entry for entry in original.get(variable, '').split(':')
+                     if entry and str(Path(entry).resolve()) not in excluded]
+        env[variable] = ':'.join([str(first), *remaining])
+    return env
+
+
 def run(command,folder,output,env=None):
     folder.mkdir()
     output.mkdir(parents=True,exist_ok=True)
@@ -58,9 +76,7 @@ def main():
         sourcefile=scratch/(label+'_source.json')
         sourcefile.write_text(json.dumps(source,indent=2)+'\n')
         library=Path(task['libraries'][variant])
-        env=dict(os.environ,GEOROTATION_LIBRARY_DIR=str(library),
-                 LD_LIBRARY_PATH=str(library)+':'+os.environ.get('LD_LIBRARY_PATH',''),
-                 PYTHONPATH=str(library.parent/'python')+':'+os.environ.get('PYTHONPATH',''))
+        env=reconstruction_environment(library,task['libraries'])
         run([sys.executable,str(code/'scripts/run_slope_task.py'),'--task',str(sourcefile)],scratch/label,output/(label+'_wrapper'),env)
     for mode in ['simulate','digitize']:
         shutil.copy2(scratch/mode/(mode+'_run.json'),output/(mode+'_run.json'))
