@@ -25,6 +25,12 @@ def hit_category(barcodes, primary):
     return 'primary_only' if len(barcodes) == 1 else 'primary_and_other'
 
 
+def classify_seed_hits(hits, hit_truth, primary):
+    """Missing measurement-audit coverage is distinct from a known empty SDO."""
+    return dict(Counter(hit_category(hit_truth[int(hit)], primary) if int(hit) in hit_truth
+                        else 'not_in_candidate_measurement_audit' for hit in hits))
+
+
 def operation(step, barcodes, primary, charge):
     p, f, c = [np.asarray(step[k], dtype=float) for k in
                ['predicted', 'filtered', 'predicted_cov']]
@@ -101,8 +107,7 @@ def inspect_target(task, target, original):
     bad = [r for r in updates if r['correct_to_wrong']]
     first_update = bad[0] if bad else None
     last_update = bad[-1] if bad else None
-    seed_categories = Counter(hit_category(hit_truth.get(int(hit), []), primary)
-                              for hit in seed_row['hits'])
+    seed_categories = classify_seed_hits(seed_row['hits'], hit_truth, primary)
     circles = [r for r in audit if r['stage'] == 'seed_circle' and r['seed'] == seed]
     return dict(dsid=task['dsid'], sample_entry=task['sample_entry'], source_entry=task['skip'],
         file_index=task['file_index'], candidate=candidate, seed=seed, primary_barcode=primary,

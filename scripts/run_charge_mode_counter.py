@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -17,7 +18,11 @@ def main():
     subprocess.run([sys.executable, str(Path(__file__).with_name('run_slope_task.py')),
                     '--task', str(args.task)], check=True)
     output = Path(task['output'])
-    fields = compare_tables(output, Path(task['original_output']))
+    baseline = Path('counter_baseline')
+    baseline.mkdir()
+    for name in ['events', 'truth', 'tracks', 'segments']:
+        shutil.copyfile(Path(task['original_output'])/(name+'.npz'), baseline/(name+'.npz'))
+    fields = compare_tables(Path.cwd(), baseline)
     (output/'counter_validation.json').write_text(json.dumps(dict(
         all_58_fields_exact=len(fields) == 58, fields=len(fields), original=task['original_output'],
         only_final_refit_counters_retained=True), indent=2)+'\n')

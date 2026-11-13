@@ -232,11 +232,14 @@ def main():
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     begin = time.monotonic()
     status = acc.run(maxEvents=args.events)
-    loaded = sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines()
+    mappings = Path('/proc/self/maps').read_text().splitlines()
+    loaded = sorted({line.split()[-1] for line in mappings
                      if any(name in line for name in ['libFaserActsGeometry',
                          'libFaserActsKalmanFilter', 'libCalypsoSlopeDiagnostics'])})
     manifest.update(success=status.isSuccess(), wall_s=time.monotonic()-begin,
-                    loaded_acts_libraries=loaded)
+                    loaded_acts_libraries=loaded,
+                    loaded_cluster_libraries=sorted({line.split()[-1] for line in mappings
+                        if 'libFaserSiClusterizationTool' in line and '.so' in line}))
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     return 0 if status.isSuccess() else 1
 

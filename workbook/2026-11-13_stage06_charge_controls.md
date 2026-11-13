@@ -4,7 +4,7 @@
 
 ## 阶段目标
 
-在[S06全量基线](2026-11-13_stage06_charge_baseline.md)上推进roadmap Q3–Q5：区分production输入谱与入口条件，测量真实forward/backward/IFT/merge，逐hit闭合符号穿零，并检验物理seed covariance。本文记录已测量的控制；完整纯旋转、q/B、对称gun和最小机制控制继续按文末验收。
+在[S06全量基线](2026-11-13_stage06_charge_baseline.md)上推进roadmap Q3–Q5：区分production输入谱与入口条件，测量真实forward/backward/IFT/merge，逐hit闭合符号穿零，并检验物理seed covariance。hit/qB和100k refit控制已完成；[独立full-G4与模式fallback报告](2026-11-13_stage06_independent_charge_controls.md)补充相同生成条件的μ±及精确回退率。完整纯旋转与剩余纯轨迹机制继续按文末验收。
 
 结果根目录 `C=/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1`。全部重建、拟合、传播均为真实Calypso；两版均开启candidate-isolated smoothing。主样本、charge无关SDO matching和r95质量定义与基线相同。
 
@@ -80,7 +80,7 @@ production-only全部文件加权conditional率为before μ+0.219378%、μ−0.2
 
 4forward的低misID伴随明显效率损失：after正确效率约73.3–73.6%，3forward约84.2–84.3%；零错误保留上限，不能单独以错误数最少选最佳模式。3merge提高效率到约88.1%，同时保留各模式的配对7×7迁移和truth-p分箱。
 
-每条merge输出的完整hits、q/p及upstream参数都精确对应独立forward/backward输出，全部native输出及selected/wrong来源分别统计；没有近似hash匹配。selected主要来自backward，例如after μ+三站merge为44367 backward、7393 forward。不同模式的100k生产未开启refit计数，MessageSvc又抑制重复warning，故本批fallback精确计数**未测量**，不能写成0。另行以显式计数复核。
+每条merge输出的完整hits、q/p及upstream参数都精确对应独立forward/backward输出，全部native输出及selected/wrong来源分别统计；没有近似hash匹配。selected主要来自backward，例如after μ+三站merge为44367 backward、7393 forward。初版100k生产未开启refit计数，MessageSvc抑制重复warning；后续400份只读计数重放的58字段均精确复现。归约1577336成功：所有三站selected fallback为0；四站selected为3–22条，详细全输出/selected分母及恢复记录见[模式计数报告](2026-11-13_stage06_independent_charge_controls.md)。
 
 [模式summary与迁移](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/mode_analysis_v1/summary.json) · [charge_modes.py](../analysis/charge_modes.py)。
 
@@ -131,19 +131,61 @@ production-only全部文件加权conditional率为before μ+0.219378%、μ−0.2
 
 [prior验证](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/prior_validation_v1/summary.json) · [全量prior结果与迁移](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/prior_analysis_v1/summary.json) · [patch0024](../patches/0024_matched_seed_prior_after.patch)。
 
+## 详细数据：primary hit 与 q/B 单因素控制
+
+238个实际重放全部成功，修正后的归约1576722成功。source-link过滤保持所有119个事件的seed mean与完整covariance不变，继续使用native组合CKF；它只移除没有指定primary SDO支持的source links。所有保留的selected measurement均有primary支持。该控制允许branches和winners改变，不能称为固定完整hit路径。
+
+| 原cohort | 源事件 | 恢复/保持correct | 仍wrong | quality failed |
+| --- | ---: | ---: | ---: | ---: |
+| μ+，原wrong | 27 | 8 | 2 | 17 |
+| μ−，原wrong | 32 | 9 | 4 | 19 |
+| μ+，原normal | 30 | 30 | 0 | 0 |
+| μ−，原normal | 30 | 29 | 0 | 1 |
+
+59个wrong中17个恢复correct，6个仍wrong，36个quality failed；本次没有unreconstructed/unmatched、low-purity或invalid-curvature outcome。后36个不能计作符号恢复。这是刻意选择的全部错误与冻结正常控制，不能将17/59外推成对全500k样本的无损改善率。
+
+剩余6个正好是原final purity=1的事件，最终q/p逐值不变。它们的sample_entry为μ+51839、224394，μ−227965、390966、439421、458033。`q_truth κ/σ_κ`分别为−0.8122、−6.0746、−1.0876、−1.6768、−1.4242、−1.3515。一个事件有较大的formal wrong-sign significance，不能把全部六例直接解释为统计上不可分辨的曲率；当前covariance是否校准与逐事件物理原因仍需检验。
+
+q与B同时反号的119事件中，全部6902项数组比较通过；126个seed及6122个路径states的P/F/S mean与完整6×6 covariance按q/p行列反号闭合。整数身份/命中计数精确相同；浮点表使用rtol/atol=10⁻¹⁰，state covariance使用10⁻⁹，见实际[validator](../scripts/validate_charge_hitcontrol.py)。该控制支持seed/field/refit/conversion的qB符号协变性，不代表真实μ+、μ−随机G4过程或apparatus具有精确对称性。
+
+[238事件summary](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/hitcontrol_analysis_v2/summary.json) · [逐事件表](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/hitcontrol_analysis_v2/events.json)。分析入口[charge_hitcontrol_analysis.py](../analysis/charge_hitcontrol_analysis.py)。
+
+## 详细数据：beforeGeo refit chart 的实际电荷控制
+
+每charge100k、native/smoother/updater/both四组；native复用原同输入shards。120个新增重建全部成功，归约1576420成功。两电荷的6173405/6190328条非final CKF记录在三种控制下均与native逐项相同；变化仅发生于refit及其后输出。
+
+| charge / 控制 | wrong / selected | misID / % [95%] | correct / fiducial / % | selected refit correct→wrong |
+| --- | ---: | --- | ---: | ---: |
+| μ+ native | 82 / 50335 | 0.162909 [0.129586,0.202173] | 85.577807 | 49 |
+| μ+ smoother | 81 / 50342 | 0.160899 [0.127797,0.199944] | 85.591431 | 48 |
+| μ+ updater | 5 / 50289 | 0.009943 [0.003228,0.023201] | 85.630598 | 1 |
+| μ+ both | 5 / 50318 | 0.009937 [0.003227,0.023188] | 85.679984 | 1 |
+| μ− native | 176 / 52030 | 0.338266 [0.290203,0.391994] | 85.370431 | 123 |
+| μ− smoother | 175 / 52031 | 0.336338 [0.288417,0.389924] | 85.373724 | 122 |
+| μ− updater | 14 / 51928 | 0.026960 [0.014740,0.045231] | 85.469213 | 4 |
+| μ− both | 14 / 51999 | 0.026924 [0.014720,0.045169] | 85.586105 | 4 |
+
+both−native conditional误判率的配对差：μ+−0.152972个百分点，95%[−0.187115,−0.118829]；μ−−0.311343个百分点，95%[−0.360386,−0.262299]。变化显著，且correct/fiducial效率略升，没有通过大幅丢弃正常轨迹制造此改善。只改smoother的误判率变化区间包含0。
+
+预留文件3/4同样成立：μ+ native35/20084→both2/20076，μ−68/20756→4/20747。这里的每文件范围仍为原20k，held-out合计40k/charge；不称为完整500k修复验证。
+
+所有主selected refit均成功、fallback=0。全native-final输出的fallback则为μ+14224/90890、μ−13492/90771，四控制相同。两个分母分开保存；未用质量选择后的0替代全输出回退率。完整7×7迁移、动量响应、held-out、成功/回退与新生/恢复wrong见[refit summary](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/refit_analysis_v1/summary.json)。
+
+事实：beforeGeo额外错号的主要来源被单因素定位到near-pole方向参数化下的refit measurement update。该结论由固定CKF、实际native updater与regular-chart updater比较支持；smoother-only不足以移除主要错号。它与S05角度结论使用同一真实refit组件，但不把方向分布变好单独当作电荷归因，也不将该100k结果扩称为所有版本差的纯旋转效应。
+
 ## 执行、图表与验证
 
 所有批量任务先检查schedd负载，选择兼容且running+idle最少的bigbird20，排除bigbird21；各submission.json保留UTC查询、负载、请求资源及cluster。主重建和归约冻结源码与软件后运行。production-only1574283、mode归约1574591、replay归约1574592、prior验证1574590、prior全量1574895与归约1575201均exit0。
 
 新增9页控制图cluster1575504成功，输出[C/figures_v3/controls_v2](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/figures_v3/controls_v2/figure_index.md)；修正seed小柱标注的7页诊断在[C/figures_v3/diagnostics](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/figures_v3/diagnostics/figure_index.md)。新增3页prior图cluster1576113成功。全部36张图的三张contact sheets及主要新图已目视检查；PNG完整性、合并PDF逐页vector内容及page boxes一致性通过。完整[36页更新图集](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/report_v3/charge_stage06_report.pdf)及[逐页索引](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/report_v3/figure_index.md)包含12主图、7诊断、5历史、9控制及3prior。原主图及历史Alma图保持原定义；新控制图全部英文，并保存PNG、逐图PDF、counts/sumw2/flows和index。
 
-本轮修正的q/B observer只影响新增控制：首版TruthChargeScale同时乘了已反号的reco charge，导致projection不同；原生seed/P/F/S及完整C均闭合。默认58字段与基线精确一致。失败输出和日志保留在`C/hitcontrol_smoke_v1`，v2只在原始production-truth传播处翻号，不对reco charge重复操作。修正的observer build1575808成功；新9组smoke1575809的默认58字段及全部seed/P/F/S/完整C和投影均闭合，验证在`C/hitcontrol_smoke_v2/validation.json`。238个全119事件hit过滤/qB重放1576115已全部exit0，机制结果以随后归约为准。
+本轮修正的q/B observer只影响新增控制：首版TruthChargeScale同时乘了已反号的reco charge，导致projection不同；原生seed/P/F/S及完整C均闭合。默认58字段与基线精确一致。失败输出和日志保留在`C/hitcontrol_smoke_v1`，v2只在原始production-truth传播处翻号，不对reco charge重复操作。修正的observer build1575808成功；新9组smoke1575809的默认58字段及全部seed/P/F/S/完整C和投影均闭合，验证在`C/hitcontrol_smoke_v2/validation.json`。238个全119事件hit过滤/qB重放1576115全部exit0，机制归约1576722成功，实际数据见上述hit/qB表。
 
-before refit机制控制用master+0022实际库，并复制S05已验证的5个refit chart文件；不替换CKF finding。增量[patch0027](../patches/0027_charge_refit_chart_before.patch)，source/provenance在`C/refit_control_provenance.json`；build1575807成功，8个native/smoother/updater/both小样本1575810全部exit0，默认58字段精确复现，CKF所有非final行不变。100k/charge三控制共120jobs1576116全部exit0，归约1576420运行中，率和机制结论尚未测得。
+before refit机制控制用master+0022实际库，并复制S05已验证的5个refit chart文件；不替换CKF finding。增量[patch0027](../patches/0027_charge_refit_chart_before.patch)，source/provenance在`C/refit_control_provenance.json`；build1575807成功，8个native/smoother/updater/both小样本1575810全部exit0，默认58字段精确复现，CKF所有非final行不变。100k/charge三控制共120jobs1576116全部exit0，归约1576420成功，实际结果见上表。
 
-hit/qB首轮归约1576276因raw worker表缺少`sample_entry`而exit1，失败输出保存在`C/hitcontrol_analysis_v1_job`。已用冻结task的skip、sample_entry、file_index补齐分析索引，不更改重建数组或238份实际Calypso重放。修正版冻结于`C/hitcontrol_analysis_v2_code`，归约1576722已提交。
+hit/qB首轮归约1576276因raw worker表缺少`sample_entry`而exit1，失败输出保存在`C/hitcontrol_analysis_v1_job`。已用冻结task的skip、sample_entry、file_index补齐分析索引，不更改重建数组或238份实际Calypso重放。修正版冻结于`C/hitcontrol_analysis_v2_code`，归约1576722成功。
 
-独立full-G4 μ± ON的2×20-event smoke1576117全部步骤exit0；[实际验证](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/symmetric_gun_smoke_v1/validation.json)确认两电荷实际production position/momentum精确相同，三种重建truth相同，四份实际加载库与各自配置一致。100/1000 GeV各20k/charge、32jobs的full-G4控制1576723已提交；使用真实apparatus，不假定空间反射对称。最终统计尚未测量。
+独立full-G4 μ± ON的2×20-event smoke1576117全部步骤exit0；[实际验证](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/symmetric_gun_smoke_v1/validation.json)确认两电荷实际production position/momentum精确相同，三种重建truth相同，四份实际加载库与各自配置一致。100/1000 GeV各20k/charge、32jobs的full-G4控制1576723全部exit0，归约v1/v2也均成功，原有率、迁移、直方图在细化角分箱后完全不变；[独立控制报告](2026-11-13_stage06_independent_charge_controls.md)记录全部12组实际数据。使用真实apparatus，不假定空间反射对称。
 
 实际执行`python3 -m unittest discover -s tests -v`，48项全部通过（2.152s），日志`C/verification_v4/unit_tests.log`。`compileall`覆盖analysis/scripts/configs/tests成功，91个本地文档链接全部有效，记录在`C/verification_v4/compile_and_links.json`；本轮`git diff --check`通过。图集实际合并入口为`analysis/charge_report.py --figures ... --output C/report_v3 --pdf-tools <stage05_geometry_comparison/software_tools>`，逐页内容与box校验保存在`C/report_v3/validation.json`。
 
@@ -151,11 +193,13 @@ hit/qB首轮归约1576276因raw worker表缺少`sample_entry`而exit1，失败�
 
 事实：production谱平衡后，before/after两版的正负差异都与0相容；真实模式变化带来可量化效率/误判权衡。after剩余符号翻转的actual update恒等式已闭合，31无SDO与25仅primary支持说明需要hit和seed的独立控制。matched prior显示原生covariance是版本比较中的实际混杂因素。
 
-假设与待判别：无SDO hits可能含噪声或缺关联；primary-only错误可能来自错误seed/分支、方向或covariance响应。before834个refit新生错误是否由S05 near-pole chart机制解释，需同μ±样本开关控制，stage标签本身不足以归因。
+事实：100k/charge的实际refit控制把before额外错号主要定位到near-pole chart的measurement update；primary source-link控制恢复17个wrong，但另有36个quality failed，6个纯轨迹错误完全不变。q/B全119事件路径与完整C闭合。
+
+假设与待判别：无SDO hits可能含噪声或缺关联；6个primary-only错误的具体seed/分支、测量及covariance响应仍需单因素检验。全500k的834个refit新生错误不按100k比例直接外推。
 
 ## 下一步计划
 
-1. q/B v2全部58字段、每state P/F/S及完整C闭合后，重放全部59wrong+60normal；同时保留native组合CKF、seed mean/C不变，仅过滤无primary SDO支持source links。输出correct/wrong/lost/quality_failed，区分恢复和失去轨迹。
-2. before refit默认行为闭合后，100k/charge运行smoother/updater/both；要求CKF不变，报告refit正确→错误、成功/回退及效率、动量/角度/CPU。
-3. 补独立对称full-Geant4 μ± gun的ON测量；在真实field/material/geometry下检验相同生成条件，不假定apparatus有精确镜像对称。
-4. 完成纯坐标控制的非线性prior及剩余parameterization路径，补模式fallback计数、留出μ±与A′回归。Q5尚未完成；本阶段不宣称纯旋转或完整生产修复通过。
+1. 对剩余6个纯轨迹错号检验实际measurement centroid、seed与covariance；保留正常控制及完整质量迁移，区分统计分辨率、实际偏差与程序问题。
+2. 补before refit控制的角度/CPU联合回归及新机制图；在新样本和共同候选中报告效果，保留全输出与selected的两套fallback分母。
+3. 完成独立full-Geant4 μ± gun图组验证和主报告汇编；保留100 GeV效率损失及1 TeV残余，量化空间分组与区间。
+4. 完成纯坐标控制的非线性prior及剩余parameterization路径、留出μ±与A′回归。模式fallback精确计数已完成。Q5尚未完成；本阶段不宣称纯旋转或完整生产修复通过。

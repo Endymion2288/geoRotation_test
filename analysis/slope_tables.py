@@ -71,7 +71,8 @@ def merge_tables(root, variant):
     resources = []
     for task in tasks:
         output = Path(task['output'])
-        if (output/'exit_code.txt').read_text().strip() != '0':
+        status_file = Path(task.get('exit_code_file', output/'exit_code.txt'))
+        if status_file.read_text().strip() != '0':
             raise RuntimeError(f'Unsuccessful task: {output}')
         source = json.loads((output/'source_task.json').read_text())
         summary = json.loads((output/'summary.json').read_text())

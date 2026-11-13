@@ -28,7 +28,7 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 ## 阅读与执行入口
 
-本次isolated smoothing ON的[S05全量复核](../workbook/2026-11-13_stage05_isolated_validation.md)确认两版各500k的最终量及选样成员与OFF一致，57页ON参考图已交付。[S06全量基线](../workbook/2026-11-13_stage06_charge_baseline.md)使用μ±各500k/版，误判率为μ+0.163695%→0.010923%、μ−0.314528%→0.012519%；after正负差95%为[−0.004386,+0.007578]个百分点。[谱、模式与逐运算控制](../workbook/2026-11-13_stage06_charge_controls.md)已完成production-only平衡、100k模式、119事件r/S/K/C及500k一阶matched prior；56次CKF翻转中31无SDO、25仅primary支持，3例从seed保留。hit/qB/refit与独立gun继续验证，Q5尚未完成。
+本次isolated smoothing ON的[S05全量复核](../workbook/2026-11-13_stage05_isolated_validation.md)确认两版各500k的最终量及选样成员与OFF一致，57页ON参考图已交付。[S06全量基线](../workbook/2026-11-13_stage06_charge_baseline.md)使用μ±各500k/版，误判率为μ+0.163695%→0.010923%、μ−0.314528%→0.012519%；after正负差95%为[−0.004386,+0.007578]个百分点。[谱、模式与逐运算控制](../workbook/2026-11-13_stage06_charge_controls.md)已完成production-only平衡、100k模式、119事件r/S/K/C及500k一阶matched prior；56次CKF翻转中31无SDO、25仅primary支持，3例从seed保留。hit过滤恢复17例、6例仍错、36例质量失败；q/B全119路径闭合。100k before refit update为额外错号主因，[独立full-G4与模式计数](../workbook/2026-11-13_stage06_independent_charge_controls.md)提供新样本及全分母证据。Q5的完整纯旋转、剩余纯轨迹机制与后续回归尚未完成。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -44,7 +44,7 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 0. **以已完成的原宏对照为入口，分离局部bias与production-relative能损。** `t_eQOP`与相同majority barcode的production p实测一致；历史图继续保留`t_eQOP`，逐层算法检验使用同面G4 p。beforeGeo/afterGeo的原生covariance不同，后续固定物理先验及共同seed/hits，才能判断旋转、covariance和选择各自的贡献。AFS/strict有小的产额差异，其navigation/candidate来源尚未定位；file0的三个mask控制27图相同。
    原生共享smoothed slots与候选隔离重算分开呈现，truth purity分组保留共同母样本；两者对旧图形状的作用已定量，按鼓包复核报告使用各自适用的states。
 1. **S05成因定位与生产修复分别验收。** 整体beforeGeo/afterGeo的统一物理面、near-pole联合chart、独立μ± full-G4、after肩峰strip/response余量及A′拓扑均已测量。后续S07在新保留输入上检查chart补丁的全量效率与pull校准；固定输入的成因改善不代替生产验收。同面truth model与实际G4真值继续分别标注。
-2. **S06分开处理入口条件与production输入。** 两种overlap均在held-out通过五项|SMD|<0.05、KS<0.05；production-only已使before原始正负差区间包含0。119事件精确重放及100k模式已归约；matched prior的500k率为μ+19/254297、μ−26/262987，仅证明一阶seed C控制。继续hit/qB/refit、独立gun与模式fallback；原生版本差不冒称纯旋转净效应。
+2. **S06分开处理入口条件与production输入。** 两种overlap均在held-out通过五项|SMD|<0.05、KS<0.05；production-only已使before原始正负差区间包含0。119事件精确重放及100k模式已归约；matched prior的500k率为μ+19/254297、μ−26/262987，仅证明一阶seed C控制。hit/qB/refit、独立gun和模式fallback已测量，继续6个纯错号的centroid/seed控制与完整共同先验；原生版本差不冒称纯旋转净效应。
 3. **S07逐项处理seed和辐射模型。** 110051 strict有3020条最终祖先seed tail，其中2346条含other-majority segment。固定真hits的电子仍有23条guaranteed local tail，11条在update、12条在smoothing出现同sensor可证实的穿越，并有显著沿程能损。使用纯segment组合/同点方向与field integral、G4 bremsstrahlung控制及piecewise q/p/GSF分别检验。
 4. **保留接口、pruning与IFT实验。** S04全量100k观察配对的final p/charge/Good95均一致，少量rmax改变；转换mean闭合不代表covariance已修复。4-station finding会使用IFT，但既有refit将IFT判outlier；完整四站refit须显式控制该策略。候选pruning损失也有独立计数。
 5. **验证使用新的保留输入。** S04的独立50k已用于材料验收，后续修复使用新的文件/ranges或随机种子；分别报告效率、fakes、failure、angle和charge。历史truth界待定的类别继续保留发生率和输入定位。

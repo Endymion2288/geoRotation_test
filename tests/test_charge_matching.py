@@ -8,9 +8,17 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'analysis'))
 from charge_tables import rank_candidates, weighted_rate
 from charge_analysis import paired_difference
 from charge_lineage_analysis import classify_path
+from charge_replay_analysis import classify_seed_hits
 
 
 class ChargeMatchingTest(unittest.TestCase):
+    def test_missing_seed_audit_is_not_classified_as_empty_sdo(self):
+        categories = classify_seed_hits([1, 2, 3, 4, 5],
+            {1: [], 2: [42], 3: [42, 77], 4: [77]}, primary=42)
+        self.assertEqual(categories, dict(no_SDO=1, primary_only=1,
+            primary_and_other=1, no_primary_support=1,
+            not_in_candidate_measurement_audit=1))
+
     def test_candidate_choice_does_not_favour_correct_charge_or_momentum(self):
         tracks=dict(purity=np.array([1.,1.,1.]),n_hits=np.array([18,17,18]),
             chi2=np.array([5.,1.,6.]),ordinal=np.array([0,1,2]),
