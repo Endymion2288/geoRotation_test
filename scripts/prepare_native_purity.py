@@ -41,6 +41,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--reference', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--seed-unbiased', action='store_true',
+        help='Add problem.pdf p3 seed cuts; requires seed-lineage writer libraries')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     root, reference = args.output.resolve(), args.reference.resolve()
@@ -57,10 +59,11 @@ def main():
         shutil.copy2(repo/relative, target)
     shutil.copytree(reference/'reference', root/'reference')
     macro = root/'reference/adapted/ckf_residual_perLayer.C'
-    baseline = macro.read_text()
+    baseline = macro.read_text().replace('&&final_purity>0.7', '').replace('&&seed_good', '')
     assert baseline.count('NDF<20&&rMax_smt<90&&NDF>9"') == 1
+    gate = '&&final_purity>0.7'+('&&seed_good' if args.seed_unbiased else '')
     modified = baseline.replace('NDF<20&&rMax_smt<90&&NDF>9"',
-        'NDF<20&&rMax_smt<90&&NDF>9&&final_purity>0.7"')
+        'NDF<20&&rMax_smt<90&&NDF>9'+gate+'"')
     macro.write_text(modified)
     (root/'reference/purity_gate.diff').write_text(''.join(difflib.unified_diff(
         baseline.splitlines(True), modified.splitlines(True),
@@ -73,7 +76,7 @@ def main():
         tasks = []
         for old in json.loads((reference/(case+'_tasks.json')).read_text()):
             assert old['skip'] == 0 and old['events'] == 1000
-            task = dict(old, native_final_purity=True,
+            task = dict(old, native_final_purity=True, seed_unbiased=args.seed_unbiased,
                 runner=str(root/'code/configs/reference_tracking.py'), macro=str(macro),
                 output=str(root/'shards'/case/f"f{old['file_index']:02d}_e0000"))
             tasks.append(task)
@@ -90,6 +93,10 @@ def main():
         final_purity_cut='>0.7', isolate_smoothing=True,
         scope='110051 full 20 files; 1000 entries per job; no added truth uniqueness or fiducial cuts',
         directory_and_file_sizes_rechecked=True)
+    if args.seed_unbiased:
+        inputs['seed_condition'] = 'problem.pdf p3: abs(seed p residual)<0.1, same Q sign, abs(seed theta-truth theta)<1e-4 rad'
+    else:
+        inputs.pop('seed_condition', None)
     (root/'inputs.json').write_text(json.dumps(inputs, indent=2)+'\n')
     print(root)
 

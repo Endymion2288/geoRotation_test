@@ -44,3 +44,6 @@ SD patch 对应 `FaserGeant4` target 和 `build/Simulation/FaserGeant4/cmake_ins
 最终 `0001 → 0002 → 0003 → 0004 → 0005` 顺序应用后，全部15个文件与实际Calypso源码逐字节一致，见 `stage04_momentum/patch_validation_final/validation.json`。controls_v5冻结生成库与sensor event metadata；使用同随机种子的2400事件、81153个step验证物理数值未变。
 
 `scripts/freeze_software.py` 将小型 worker 配置、精确 tracking patch、编译库和 provenance 复制到独立 results 目录。Condor 读取冻结副本并优先加载其库，运行期间不依赖正在编辑的仓库代码。原组件库另存于 `stage02_closure/original_lib/`；未使用新属性的原版对照通过 `LD_LIBRARY_PATH` 加载它。
+
+- `0018_writer_seed_lineage.patch`：只读诊断，为 `RootTrajectoryStatesWriterTool` 增加 `seed_nr` 分支，从实际 CKF `trackGroup` 读取 seed 编号；不含该列的 refit writer 输出 `UINT32_MAX`。同一补丁适用于 before/after 原生基底，不更改状态、选择或拟合。与 seed writer 的 `seedIndex` 按 input file + source entry 联结，避免重复 event number 或同 barcode 多 seed 造成错误归属。
+- `0019_native_ckf_seed_index.patch`：修正两个原生基底 CKF 的来源标签 `nSeed-1`（`nSeed` 恒为0）为真实 `iseed`。该标签在本次禁用 alignment writer 的配置中不参与 tracking；与 0018 配合导出精确 seed 归属。主诊断源码树的 audit patch 已使用 `iseed`，不重复应用 0019。

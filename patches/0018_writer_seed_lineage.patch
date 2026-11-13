@@ -1,0 +1,42 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.cxx
+index c91417a4..b5f6aece 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.cxx
+@@ -8,6 +8,7 @@
+ 
+ #include "TrackerPrepRawData/FaserSCT_Cluster.h"
+ #include "Acts/EventData/MultiTrajectory.hpp"
++#include "Acts/EventData/ProxyAccessor.hpp"
+ #include "Acts/EventData/MultiTrajectoryHelpers.hpp"
+ #include "Acts/EventData/detail/TransformationBoundToFree.hpp"
+ #include "Acts/Utilities/Helpers.hpp"
+@@ -57,6 +58,7 @@ StatusCode RootTrajectoryStatesWriterTool::initialize() {
+ 
+     m_outputTree->Branch("event_nr", &m_eventNr);
+     m_outputTree->Branch("track_nr", &m_trackNr);
++    m_outputTree->Branch("seed_nr", &m_seedNr);
+ 
+     m_outputTree->Branch("t_x", &m_t_x);
+     m_outputTree->Branch("t_y", &m_t_y);
+@@ -327,6 +329,9 @@ StatusCode RootTrajectoryStatesWriterTool::write(const Acts::GeometryContext& gc
+   std::vector<ParticleHitCount> particleHitCounts = {};
+   for (const auto& track : tracks) {
+     m_trackNr = track.index();
++    m_seedNr = tracks.hasColumn("trackGroup")
++        ? Acts::ConstProxyAccessor<unsigned int>("trackGroup")(track)
++        : std::numeric_limits<uint32_t>::max();
+ 
+     // Collect the track summary info
+     m_nMeasurements = track.nMeasurements();
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.h
+index b087d48c..81800e87 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/RootTrajectoryStatesWriterTool.h
+@@ -54,6 +54,7 @@ private:
+   enum ParameterType { ePredicted, eFiltered, eSmoothed, eUnbiased, eSize };
+ 
+   mutable uint32_t m_eventNr{0};         ///< the event number
++  mutable uint32_t m_seedNr{0};  ///< CKF trackGroup, or UINT_MAX for refit writers
+   mutable uint32_t m_trackNr{0};  ///< The track number in event
+ 
+   mutable std::vector<float> m_t_x;  ///< Global truth hit position x

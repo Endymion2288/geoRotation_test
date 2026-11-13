@@ -23,6 +23,8 @@ truth来源检查在同一份native writer ROOT上运行原`t_eQOP`与相同majo
 
 用户指定开启候选独立 smoothing 后的全量主图见[全110051 smoothing/covariance 对照](../workbook/2026-11-12_stage04_smoothing_covariance.md)：beforeGeo、afterGeo，以及 afterGeo 恢复原 inflation 三组各20文件、20,000事件；保留其余原生设置和原宏 cuts。16页图集同时给出 P/F/S 九层、几何/variance 叠图和 smoothed 左尾 log 图。相同数值 inflation 与经过 Jacobian 匹配的相同物理 covariance 分别表述。
 
+后续动量图基准固定为 **candidate-isolated smoothing 开启 + strict final purity > 0.7 + native `t_eQOP`**，继续保留 GitHub 的三项 cuts、公式与分箱。基准结果见[native purity 全量报告](../workbook/2026-11-12_stage04_native_purity_comparison.md)。good-seed 是在基准上新增的诊断 cohort，采用 `problem.pdf` p3 的 `abs(p_seed/p_truth-1)<0.1`、同电荷符号与 `abs(theta_seed-theta_truth)<1e-4 rad`；按实际 CKF `trackGroup/seed_nr` 关联，不能用 event 中任意同 barcode 的好 seed 替代当前轨迹的 seed。 110051全20文件的good-seed对比、十页图集、左右尾率及归属标签修正见[good-seed全量报告](../workbook/2026-11-13_stage04_good_seed_comparison.md)。
+
 小样本发现图与全输入图明确区分；全输入版本逐文件检查CollectionTree entries及无重叠、无遗漏的entry ranges，图上列出源事件数。predicted/filtered/smoothed诊断另保留同state的tail迁移计数、末端filtered=smoothed检查及covariance变化，区分前向信息不足、更新新生tail与后向修复。批量state在worker scratch归约，只保存histogram和紧凑诊断统计。
 
 ## 每张比较图的约定

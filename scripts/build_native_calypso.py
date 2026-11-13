@@ -22,6 +22,8 @@ def main():
     parser.add_argument('--jobs', type=int, default=4)
     parser.add_argument('--source-patch', type=Path,
         help='Permit exactly this recorded tracked source diff')
+    parser.add_argument('--reuse-geometry', type=Path,
+        help='Reuse unchanged native geometry libraries from this matching software snapshot')
     args = parser.parse_args()
     base = Path('/eos/home-x/xcheng/FASER/geoRotation_calypso')
     original_build = base/'build'
@@ -40,6 +42,15 @@ def main():
     scratch.mkdir(exist_ok=False)
     local_lib = scratch/'lib'
     local_lib.mkdir()
+    if args.reuse_geometry:
+        previous = json.loads((args.reuse_geometry/'software.json').read_text())
+        assert previous['commit'] == commit
+        assert not any(line.startswith(('diff --git a/Tracking/Acts/FaserActsGeometry/',
+            'diff --git a/Tracking/Acts/FaserActsGeometryInterfaces/')) for line in diff.splitlines())
+        for target in TARGETS[:2]:
+            name = 'lib'+target+'.so'
+            shutil.copy2(args.reuse_geometry/'lib'/name, local_lib/name)
+            shutil.copy2(args.reuse_geometry/'lib'/name, lib/name)
     commands = json.loads((original_build/'compile_commands.json').read_text())
     replacements = {str(base/'Tracking/Acts'/p): str(source/'Tracking/Acts'/p)
                     for p in (*PACKAGES, 'FaserActsGeometryInterfaces')}
@@ -51,6 +62,8 @@ def main():
 
     jobs = []
     for record in commands:
+        if args.reuse_geometry and Path(record['directory']).name == 'FaserActsGeometry':
+            continue
         if Path(record['directory']).name not in PACKAGES:
             continue
         relative = Path(record['directory']).relative_to(original_build)
@@ -65,11 +78,11 @@ def main():
         # Debug information has no reconstruction effect and needlessly enlarges EOS products.
         command = command.replace(' -g ', ' ')
         jobs.append(dict(command=command, directory=str(directory), source=relocate(record['file'])))
-    assert len(jobs) > 30
+    assert len(jobs) > (20 if args.reuse_geometry else 30)
     (output/'compile_recipes.json').write_text(json.dumps(jobs, indent=2)+'\n')
 
     link_recipes = []
-    for target in TARGETS:
+    for target in (TARGETS[2:] if args.reuse_geometry else TARGETS):
         package = 'FaserActsGeometry' if target.startswith('FaserActsGeometry') else 'FaserActsKalmanFilter'
         relative = Path('Tracking/Acts')/package
         recipe = original_build/relative/'CMakeFiles'/(target+'.dir')/'link.txt'
@@ -113,6 +126,7 @@ def main():
     manifest = dict(source=str(source), commit=commit, native_packages=list(PACKAGES), targets=list(TARGETS),
         source_clean=not diff, source_patch=diff,
         compiler_recipe_base=str(original_build/'compile_commands.json'),
+        reused_geometry=str(args.reuse_geometry) if args.reuse_geometry else None,
         compiled_translation_units=len(jobs), shared_unchanged_dependencies=str(base/'run'),
         athena='24.0.41', debug_symbols=False, jobs=args.jobs,
         completed_utc=datetime.datetime.now(datetime.timezone.utc).isoformat())

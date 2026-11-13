@@ -22,6 +22,8 @@ def main():
     parser.add_argument('--isolate-smoothing', action='store_true')
     parser.add_argument('--native-final-purity', action='store_true',
         help='Observe final-track SDO purity without reading alternative truth references')
+    parser.add_argument('--seed-unbiased', action='store_true',
+        help='Write seed diagnostics for the problem.pdf p3 offline seed selection')
     parser.add_argument('--audit-states', action='store_true',
         help='Diagnostic only: record pre/post-isolation states with an audit-enabled library')
     parser.add_argument('--initial-variance-inflation', type=float, nargs=5,
@@ -69,6 +71,8 @@ def main():
         BackwardPropagation=False, noDiagnostics=False, seedWriter=False,
         StatesWriter=True, SummaryWriter=False)
     ckf = cfg.getEventAlgo('CKF_Reference')
+    if args.seed_unbiased:
+        ckf.seedWriter = True
     if args.isolate_smoothing:
         ckf.IsolateCandidateSmoothing = True
     if args.audit_states:

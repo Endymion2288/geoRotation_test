@@ -21,13 +21,15 @@ STAGES = ['prt', 'flt', 'smt']
 
 
 def validate_smoke(root):
-    import ROOT
     reference = Path(json.loads((root/'inputs.json').read_text())['reference'])
     checks = {}
     for case in CASES:
-        source = root/'smoke'/case
+        lineage = (root/(case+'_lineage_smoke_tasks.json')).exists()
+        task, = json.loads((root/(case+('_lineage_smoke_tasks.json' if lineage else '_smoke_tasks.json'))).read_text())
+        source = Path(task['output'])
         assert (source/'exit_code.txt').read_text().strip() == '0'
-        old = read_histograms(reference/'smoke'/case/'native_3station_counts.root', 'old_'+case)
+        old_path = reference/'smoke'/case
+        old = read_histograms(old_path/'native_3station_counts.root', 'old_'+case)
         baseline = read_histograms(source/'baseline_3station_counts.root', 'base_'+case)
         selected = read_histograms(source/'native_3station_counts.root', 'new_'+case)
         for key, hist in baseline.items():
@@ -36,10 +38,13 @@ def validate_smoke(root):
                 assert hist.GetBinContent(i) == old[key].GetBinContent(i), (case, key, i)
                 assert selected[key].GetBinContent(i) <= hist.GetBinContent(i)
         summary = json.loads((source/'native_purity.json').read_text())
-        assert summary['counts']['source_events'] == 20
-        assert summary['counts']['selected_tracks'] < summary['counts']['github_selected_tracks']
+        assert summary['counts']['source_events'] == task['events']
+        if lineage:
+            assert 0 <= summary['counts']['selected_tracks'] < summary['counts']['baseline_selected_tracks']
+        else:
+            assert summary['counts']['selected_tracks'] < summary['counts']['github_selected_tracks']
         checks[case] = dict(unchanged_baseline_histograms=27, bins_and_flow_checked=2754,
-            raw_entries_equal=True, purity_counts=summary['purity_counts'], counts=summary['counts'])
+            raw_entries_equal=True, seed_counts=summary.get('seed_counts', {}), counts=summary['counts'])
     (root/'smoke_validation.json').write_text(json.dumps(checks, indent=2)+'\n')
     print(json.dumps(checks, indent=2))
 
@@ -53,9 +58,10 @@ def merge(root):
     coverage, summaries, event_data, bins, purity_effects = {}, {}, {}, {}, {}
     for case in CASES:
         tasks = json.loads((root/(case+'_tasks.json')).read_text())
-        histograms, counts, purity_counts = {}, Counter(), Counter()
+        histograms, counts, purity_counts, seed_counts = {}, Counter(), Counter(), Counter()
         layers = {f'{s}_{l}': Counter() for s, l in LAYERS}
-        events, tracks, keys, resources = [], [], [], []
+        seed_histograms = {}
+        events, tracks, keys, resources, symmetries = [], [], [], [], []
         for task in tasks:
             source = Path(task['output'])
             assert (source/'exit_code.txt').read_text().strip() == '0', source
@@ -64,6 +70,8 @@ def merge(root):
             assert metadata == dict(input=task['input'], collection_tree_entries=1000, skip=0, events=1000)
             run = json.loads((source/'run.json').read_text())
             assert run['success'] and run['isolate_smoothing'] and run['args']['native_final_purity']
+            if controls.get('seed_condition'):
+                assert run['args']['seed_unbiased'] and task['seed_unbiased']
             assert not run['audit'] and not run['reset_event_maps']
             software = Path(controls['cases'][case]['software'])
             assert run['loaded_acts_libraries'] == sorted(str(software/'lib'/name) for name in
@@ -75,6 +83,10 @@ def merge(root):
             assert observed['counts']['source_events'] == 1000
             counts.update(observed['counts'])
             purity_counts.update(observed['purity_counts'])
+            seed_counts.update(observed.get('seed_counts', {}))
+            for name, values in observed.get('seed_histograms', {}).items():
+                seed_histograms.setdefault(name, np.zeros(102, dtype=np.int64))
+                seed_histograms[name] += np.asarray(values, dtype=np.int64)
             for key, value in observed['per_layer'].items():
                 layers[key].update(value)
             with np.load(source/'event_counts.npz') as data:
@@ -82,6 +94,8 @@ def merge(root):
                 keys.extend((task['input'], int(e)) for e in data['source_entry'])
                 events.append(data['counts'])
                 tracks.append(data['tracks'])
+                if 'symmetry' in data:
+                    symmetries.append(data['symmetry'])
             current = read_histograms(source/'native_3station_counts.root', case+str(task['file_index']))
             for key, hist in current.items():
                 if key in histograms:
@@ -96,9 +110,14 @@ def merge(root):
         assert event_data[case][1].sum(axis=0).tolist() == [counts[k] for k in
             ['writer_tracks', 'github_selected_tracks', 'selected_tracks']]
         reference = Path(controls['reference'])
-        old_summary = json.loads((reference/'reductions'/(case+'_truth_summary.json')).read_text())
+        if (reference/'reductions/summary.json').exists():
+            old_summary = json.loads((reference/'reductions/summary.json').read_text())['cases'][case]
+        else:
+            old_summary = json.loads((reference/'reductions'/(case+'_truth_summary.json')).read_text())
         for field in ['writer_tracks', 'github_selected_tracks']:
             assert counts[field] == old_summary['counts'][field]
+        if controls.get('seed_condition'):
+            assert counts['baseline_selected_tracks'] == old_summary['counts']['selected_tracks']
         old_events, old_keys = [], []
         for task in json.loads((reference/(case+'_tasks.json')).read_text()):
             with np.load(Path(task['output'])/'event_counts.npz') as old:
@@ -148,8 +167,21 @@ def merge(root):
             shutil.copy2(Path(scratch)/name, destination/name)
         coverage[case] = dict(files=20, source_events=20000, entries_per_file=1000,
             source_ranges='each frozen file: [0,1000)', unique_file_entry_keys=20000)
-        summaries[case] = dict(counts=dict(counts), layers=metrics, per_layer=layers,
-            purity_counts=dict(purity_counts), resources=resources, histogram_flow_checks=flow_checks)
+        if seed_histograms:
+            seed_counts['invalid_seed_momentum_reference'] = seed_counts['seeds']-int(seed_histograms['momentum_all'].sum())
+            seed_counts['invalid_seed_theta_reference'] = seed_counts['seeds']-int(seed_histograms['theta_all'].sum())
+        symmetry_metrics = {}
+        if symmetries:
+            symmetric_events = np.concatenate(symmetries)
+            for li, (station, layer) in enumerate(LAYERS):
+                cell = symmetric_events[:, li]
+                assert int(cell[:, 0].sum()) == layers[f'{station}_{layer}']['smt_native_finite']
+                symmetry_metrics[f'S{station}L{layer}'] = {str(threshold): paired_rate(
+                    cell[:, [0, 2+2*ti]], cell[:, [0, 1+2*ti]], 1)
+                    for ti, threshold in enumerate([.1, .2, .5])}
+        summaries[case] = dict(symmetry=symmetry_metrics, counts=dict(counts), layers=metrics, per_layer=layers,
+            purity_counts=dict(purity_counts), seed_counts=dict(seed_counts),
+            seed_histograms={name: values.tolist() for name, values in seed_histograms.items()}, resources=resources, histogram_flow_checks=flow_checks)
     assert event_data['beforeGeo'][2] == event_data['afterGeo'][2]
     comparisons = {}
     for si, stage in enumerate(STAGES):
@@ -159,7 +191,13 @@ def merge(root):
                 for label, field in [('tail_half', 1), ('tail_point8', 2)]}
     summary = dict(cases=summaries, comparisons=comparisons, selection=controls['final_purity_cut'],
         truth=controls['truth'], isolate_smoothing=True, coverage=coverage,
-        purity_effects_vs_isolation_only=purity_effects)
+        seed_condition=controls.get('seed_condition'),
+        seed_histogram_schema=dict(bins=100, flow_indices=[0, 101],
+            momentum_range=[-1.2, 1.2], theta_range_rad=[-.003, .003],
+            weights='unit; counts=sumw=sumw2; non-finite not filled, all seeds retained in denominator'),
+        symmetry_definition='first_rate=right residual>threshold, second_rate=left residual<-threshold; delta_pp=left-right; finite states denominator')
+    summary['seed_effects_vs_purity_baseline' if controls.get('seed_condition')
+        else 'purity_effects_vs_isolation_only'] = purity_effects
     (destination/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
     (destination/'bin_counts.json').write_text(json.dumps(bins, indent=2)+'\n')
     (destination/'histogram_schema.json').write_text(json.dumps(dict(
@@ -198,7 +236,8 @@ def plot(root):
     scope = (f"110051 | {first_scope['files']} files, entries [0,{entries_per_file}) each"
              f" | {first_scope['source_events']:,} source events"
              ' | native SiHit-linked HepMC truth')
-    cuts = 'Isolated smoothing | final purity>0.7 | #chi^{2}/NDF<20, NDF>9, r_{max}<90 mm'
+    seeded = bool(summary.get('seed_condition'))
+    cuts = 'Isolated smoothing | final purity>0.7'+(' | good seed' if seeded else '')+' | #chi^{2}/NDF<20, NDF>9, r_{max}<90 mm'
     frames = 'CKF sensor states | FASER / rotated ACTS frames'
     index = []
     for case in CASES:
@@ -230,14 +269,87 @@ def plot(root):
                 ax.set_ylim(1e-5, 1)
             else:
                 ax.set_ylim(bottom=0)
-        fig.suptitle(scope+'\nIsolated smoothing; final purity > 0.7; chi2/NDF < 20; NDF > 9; rmax < 90 mm\n'
-            'Selected CKF smoothed sensor states; native FASER / rotated ACTS frames; normalization includes flow / NaN entries')
+        fig.suptitle(scope+'\nIsolated smoothing; final purity > 0.7; chi2/NDF < 20; NDF > 9; rmax < 90 mm\n'+
+            ('Seed: |p/truth p - 1| < 0.1; same Q sign; |theta - truth theta| < 1e-4 rad' if seeded else frames))
         fig.tight_layout()
         prefix = figures/('110051_smoothed_left_tail'+('_log' if log else ''))
         fig.savefig(str(prefix)+'.png', dpi=150)
         fig.savefig(str(prefix)+'.pdf')
         plt.close(fig)
         index.append(dict(name=prefix.name, description='Smoothed native residual, common bins, raw-Entries normalization'))
+    if seeded:
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+        for ax, variable, low, high, xlabel in [
+                (axes[0], 'momentum', -1.2, 1.2, '(seed p - seed truth p) / seed truth p'),
+                (axes[1], 'theta', -.003, .003, 'seed theta - seed truth theta [rad]')]:
+            for case, color in zip(CASES, ['#222222', '#d62728']):
+                h = summary['cases'][case]['seed_histograms'][variable+'_all']
+                n = summary['cases'][case]['seed_counts']['seeds']
+                ax.stairs(np.array(h[1:101])/n, np.linspace(low, high, 101), color=color,
+                    label=f'{case} (seeds={n:,})')
+            threshold = .1 if variable == 'momentum' else 1e-4
+            for boundary in [-threshold, threshold]:
+                ax.axvline(boundary, color='#1f77b4', linestyle=':', linewidth=1)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel('Entries / all seeds')
+            ax.legend(frameon=False)
+            ax.set_ylim(bottom=0)
+        fig.suptitle(scope+'\nActual Calypso seeds; seed-writer truth at seed surface; dotted lines show good-seed windows')
+        fig.tight_layout()
+        prefix = figures/'110051_seed_residuals'
+        fig.savefig(str(prefix)+'.png', dpi=150)
+        fig.savefig(str(prefix)+'.pdf')
+        plt.close(fig)
+        index.append(dict(name=prefix.name, description='Initial seed momentum/theta residuals; all seed denominator, flow/invalid retained in denominator'))
+        reference = Path(json.loads((root/'inputs.json').read_text())['reference'])
+        for case in CASES:
+            baseline = read_histograms(reference/'reductions'/(case+'_native_3station.root'), 'base_'+case)
+            fig, axes = plt.subplots(3, 3, figsize=(15, 10), sharex=True)
+            for ax, (station, layer) in zip(axes.flat, LAYERS):
+                for histograms, label, color in [(baseline, 'Purity baseline', '#777777'),
+                        (data[case], '+ good seed', '#d62728')]:
+                    h = histograms[(0, station, layer)]
+                    values = np.array([h.GetBinContent(i) for i in range(1, 101)])/h.GetEntries()
+                    edges = [h.GetBinLowEdge(i) for i in range(1, 102)]
+                    ax.stairs(values, edges, color=color, label=f'{label} (N={int(h.GetEntries()):,})')
+                ax.set_title(f'Station {station}, layer {layer}')
+                ax.set_xlim(-1.2, 1.2)
+                ax.set_ylim(bottom=0)
+                ax.set_xlabel('(reco p - truth p) / truth p')
+                ax.set_ylabel('Entries / raw Entries')
+                ax.legend(fontsize=8, frameon=False)
+            fig.suptitle(scope+' | '+case+'\nSmoothed states: isolated smoothing + purity > 0.7; baseline vs added seed condition\n'
+                'Seed: |p/truth p - 1| < 0.1; same Q sign; |theta - truth theta| < 1e-4 rad; normalization includes flow / NaN')
+            fig.tight_layout()
+            prefix = figures/('110051_'+case+'_seed_effect')
+            fig.savefig(str(prefix)+'.png', dpi=150)
+            fig.savefig(str(prefix)+'.pdf')
+            plt.close(fig)
+            index.append(dict(name=prefix.name, description='Smoothed shape: purity baseline vs additional good-seed cut; raw-Entries normalization'))
+    if seeded:
+        for case in CASES:
+            fig, axes = plt.subplots(3, 3, figsize=(15, 10), sharex=True)
+            for ax, (station, layer) in zip(axes.flat, LAYERS):
+                h = data[case][(0, station, layer)]
+                values = np.array([h.GetBinContent(i) for i in range(1, 101)])/h.GetEntries()
+                edges = np.linspace(0., 1.2, 51)
+                ax.stairs(values[:50][::-1], edges, color='#1f77b4', label='Left (negative residual)')
+                ax.stairs(values[50:], edges, color='#ff7f0e', label='Right (positive residual)')
+                ax.set_title(f'Station {station}, layer {layer} (N={int(h.GetEntries()):,})')
+                ax.set_xlim(0., 1.2)
+                ax.set_yscale('log')
+                ax.set_ylim(1e-5, 1)
+                ax.set_xlabel('|(reco p - truth p) / truth p|')
+                ax.set_ylabel('Entries / raw Entries')
+                ax.legend(fontsize=8, frameon=False)
+            fig.suptitle(scope+' | '+case+'\nSmoothed states; isolated smoothing + purity > 0.7 + good seed; mirrored residual tails\n'
+                'Seed: |p/truth p - 1| < 0.1; same Q sign; |theta - truth theta| < 1e-4 rad; normalization includes flow / NaN')
+            fig.tight_layout()
+            prefix = figures/('110051_'+case+'_smoothed_mirrored_tails')
+            fig.savefig(str(prefix)+'.png', dpi=150)
+            fig.savefig(str(prefix)+'.pdf')
+            plt.close(fig)
+            index.append(dict(name=prefix.name, description='Smoothed negative vs positive residual at equal magnitude; common raw-Entries denominator'))
     sys.path.insert(0, str(root/'software_tools'))
     from pypdf import PdfReader, PdfWriter
     entries_checks = {}
@@ -266,7 +378,7 @@ def plot(root):
     (figures/'figure_validation.json').write_text(json.dumps(dict(pages=len(index),
         contents_and_page_boxes_preserved=True, raw_entries_labels=entries_checks), indent=2)+'\n')
     (figures/'figure_index.json').write_text(json.dumps(index, indent=2)+'\n')
-    (figures/'figure_index.md').write_text('# Native truth, isolated smoothing, final purity > 0.7\n\n'+
+    (figures/'figure_index.md').write_text('# Native truth, isolated smoothing, final purity > 0.7'+(', good seed' if seeded else '')+'\n\n'+
         '\n'.join(f"- [{x['name']}]({x['name']}.png): {x['description']}" for x in index)+'\n')
 
 

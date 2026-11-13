@@ -1,0 +1,22 @@
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -209,7 +209,6 @@
+   m_numberOfTrackSeeds += initialParameters->size();
+   ATH_MSG_DEBUG("Invoke track finding with " << initialParameters->size() << " seeds.");
+ 
+-  unsigned int nSeed = 0;
+ 
+   for (std::size_t iseed = 0; iseed < (*initialParameters).size(); ++iseed) {
+     ATH_MSG_DEBUG("  position: " << (*initialParameters)[iseed].position(gctx).transpose());
+@@ -229,9 +228,8 @@
+     m_numberOfFittedTracks += tracksForSeed.size();
+     ATH_MSG_DEBUG("Find " << tracksForSeed.size() << " tracks for this seed");
+     for (auto& track : tracksForSeed) {
+-      // Set the seed number, this number decrease by 1 since the seed number
+-      // has already been updated
+-      seedNumber(track) = nSeed - 1;
++      // Preserve the actual seed index for diagnostic writer association.
++      seedNumber(track) = iseed;
+       auto destProxy = tracks.getTrack(tracks.addTrack());
+       destProxy.copyFrom(track, true);  // make sure we copy track states!
+     }

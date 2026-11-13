@@ -32,6 +32,8 @@ def run(task, destination):
         command.append('--isolate-smoothing')
     if task.get('native_final_purity'):
         command.append('--native-final-purity')
+    if task.get('seed_unbiased'):
+        command.append('--seed-unbiased')
     if task.get('writer_smoothing_check'):
         command.append('--audit-states')
     if task.get('initial_variance_inflation') is not None:
@@ -53,7 +55,13 @@ def run(task, destination):
         check_writer(Path.cwd(), destination, task.get('sensor_geometry'))
     if task.get('native_final_purity'):
         from native_purity import attach_final_purity
-        result = attach_final_purity(Path.cwd())
+        seed_summary = None
+        if task.get('seed_unbiased'):
+            seed_summary = Path('reference_3station_forward_seed_summary_circleFitTrackSeedTool.root')
+            assert seed_summary.exists(), seed_summary
+        if task.get('retain_seed_diagnostics'):
+            shutil.copy2(seed_summary, destination/seed_summary.name)
+        result = attach_final_purity(Path.cwd(), seed_summary)
         summary_name = 'native_purity.json'
     else:
         from reference_truth import attach_production
