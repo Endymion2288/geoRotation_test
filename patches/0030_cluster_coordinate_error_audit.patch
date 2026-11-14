@@ -1,0 +1,193 @@
+diff --git a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
+--- a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
++++ b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
+@@ -31,6 +31,8 @@
+ #include "GaudiKernel/ToolHandle.h"
+ 
+ #include <atomic>
++#include <fstream>
++#include <mutex>
+ #include <vector>
+ 
+ #include "TrackerReadoutGeometry/SiDetectorElement.h"
+@@ -91,6 +93,12 @@
+   private:
+     Gaudi::Property<bool> m_truthPosition{this, "UseTruthClusterPosition", false,
+       "Diagnostic only: replace measured local strip coordinate with majority SiHit centroid"};
++    Gaudi::Property<std::string> m_coordinateAuditFile{this, "CoordinateAuditFile", "",
++      "Read-only cluster, strip geometry and same-wafer SiHit coordinate audit"};
++    Gaudi::Property<double> m_measurementVarianceScale{this, "MeasurementVarianceScale", 1.,
++      "Diagnostic local-X measurement variance factor; position and local-Y variance unchanged"};
++    mutable std::ofstream m_coordinateAudit;
++    mutable std::mutex m_coordinateAuditMutex;
+     SG::ReadHandleKey<FaserSiHitCollection> m_truthHits{this, "TruthHits", "SCT_Hits"};
+     SG::ReadHandleKey<TrackerSimDataCollection> m_truthSDO{this, "TruthSDO", "SCT_SDO_Map"};
+     const FaserSCT_ID* m_truthIds=nullptr;
+diff --git a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
+--- a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
++++ b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
+@@ -21,7 +21,12 @@
+ #include "EventPrimitives/EventPrimitives.h"
+ #include "StoreGate/ReadHandle.h"
+ #include "TrackerIdentifier/FaserSCT_ID.h"
++#include "TrackerReadoutGeometry/SiCellId.h"
++#include "GaudiKernel/ThreadLocalContext.h"
++#include <cmath>
++#include <iomanip>
+ #include <map>
++#include <sstream>
+ 
+ using CLHEP::micrometer;
+ 
+@@ -59,13 +64,23 @@
+ 
+ //   ATH_CHECK(m_clusterErrorKey.initialize(SG::AllowEmpty));
+ 
+-   ATH_CHECK(m_truthHits.initialize(m_truthPosition));
+-   ATH_CHECK(m_truthSDO.initialize(m_truthPosition));
+-   if (m_truthPosition) ATH_CHECK(detStore()->retrieve(m_truthIds, "FaserSCT_ID"));
++   const bool needTruth = m_truthPosition || !m_coordinateAuditFile.value().empty();
++   ATH_CHECK(m_truthHits.initialize(needTruth));
++   ATH_CHECK(m_truthSDO.initialize(needTruth));
++   if (needTruth) ATH_CHECK(detStore()->retrieve(m_truthIds, "FaserSCT_ID"));
++   if (!std::isfinite(m_measurementVarianceScale) || m_measurementVarianceScale <= 0.) {
++     ATH_MSG_ERROR("MeasurementVarianceScale must be finite and positive");
++     return StatusCode::FAILURE;
++   }
++   if (!m_coordinateAuditFile.value().empty()) {
++     m_coordinateAudit.open(m_coordinateAuditFile);
++     if (!m_coordinateAudit) return StatusCode::FAILURE;
++   }
+    return StatusCode::SUCCESS;
+ }
+ 
+ StatusCode TrackerClusterMakerTool::finalize() {
++  if (m_coordinateAudit.is_open()) m_coordinateAudit.close();
+   ATH_MSG_INFO("Truth cluster position: enabled=" << m_truthPosition
+     << " replaced=" << m_truthReplaced << " fallback=" << m_truthFallback);
+   return StatusCode::SUCCESS;
+@@ -99,7 +114,9 @@
+ //                        InDetDD::SiLocalPosition(localPos[Trk::locY),
+ //                                        localPos[Trk::locX)+shift,0);
+         Amg::Vector2D locpos(localPos[Trk::locX]+shift, localPos[Trk::locY]);
+-        if (m_truthPosition) {
++        std::ostringstream audit;
++        audit << std::setprecision(17);
++        if (m_truthPosition || m_coordinateAudit.is_open()) {
+           SG::ReadHandle<FaserSiHitCollection> hits(m_truthHits);
+           SG::ReadHandle<TrackerSimDataCollection> sdo(m_truthSDO);
+           std::map<int,double> charge;
+@@ -110,7 +127,7 @@
+           }
+           int barcode=0;double largest=0.;
+           for (const auto& [b,q]:charge) if(q>largest) {barcode=b;largest=q;}
+-          double sum=0.,coordinate=0.;
++          double sum=0.,coordinate=0.,etaCoordinate=0.;
+           for (const auto& hit:*hits) {
+             if (!barcode || hit.trackNumber()!=barcode) continue;
+             const auto wafer=m_truthIds->wafer_id(hit.getStation(),hit.getPlane(),hit.getRow(),hit.getModule(),hit.getSensor());
+@@ -119,10 +136,84 @@
+             const Amg::Vector3D midpoint(.5*(a.x()+b.x()),.5*(a.y()+b.y()),.5*(a.z()+b.z()));
+             const Amg::Vector3D local=element->transform().inverse()*(element->transformHit()*midpoint);
+             const double weight=hit.energyLoss()>0. ? hit.energyLoss() : 1.;
+-            coordinate+=weight*local.x();sum+=weight;
+-          }
+-          if (sum>0.) {locpos[Trk::locX]=coordinate/sum;++m_truthReplaced;}
+-          else ++m_truthFallback;
++            coordinate+=weight*local.x();etaCoordinate+=weight*local.y();sum+=weight;
++          }
++          if (m_truthPosition) {
++            if (sum>0.) {locpos[Trk::locX]=coordinate/sum;++m_truthReplaced;}
++            else ++m_truthFallback;
++          }
++          if (m_coordinateAudit.is_open()) {
++            const auto& context=Gaudi::Hive::currentContext();
++            audit << "{\"local_event\":" << context.evt()
++              << ",\"cluster_id\":" << clusterID.get_compact()
++              << ",\"wafer_id\":" << element->identify().get_compact()
++              << ",\"station\":" << m_truthIds->station(element->identify())
++              << ",\"layer\":" << m_truthIds->layer(element->identify())
++              << ",\"side\":" << m_truthIds->side(element->identify())
++              << ",\"native_local_mm\":[" << localPos.x() << ',' << localPos.y() << ']'
++              << ",\"lorentz_shift_mm\":" << shift
++              << ",\"phi_pitch_mm\":" << element->phiPitch()
++              << ",\"width_mm\":[" << width.phiR() << ',' << width.z() << ']'
++              << ",\"width_cells\":[" << width.colRow().x() << ',' << width.colRow().y() << ']'
++              << ",\"error_strategy\":" << errorStrategy
++              << ",\"majority_barcode\":" << barcode
++              << ",\"majority_centroid_local_mm\":";
++            if (sum>0.) audit << '[' << coordinate/sum << ',' << etaCoordinate/sum << ']';
++            else audit << "null";
++            audit << ",\"centroid_cell\":";
++            if (sum>0.) {
++              const auto cell=element->cellIdOfPosition(Amg::Vector2D(coordinate/sum,etaCoordinate/sum));
++              if (cell.isValid()) {
++                const auto centre=element->rawLocalPositionOfCell(cell);
++                audit << "{\"strip\":" << cell.phiIndex() << ",\"centre_local_mm\":["
++                  << centre.x() << ',' << centre.y() << "]}";
++              } else audit << "null";
++            } else audit << "null";
++            audit << ",\"cluster_charge_by_barcode\":[";
++            bool first=true;
++            for (const auto& [b,q]:charge) {
++              if (!first) audit << ',';
++              first=false;
++              audit << '[' << b << ',' << q << ']';
++            }
++            audit << "],\"channels\":[";
++            first=true;
++            for (const auto& id:rdoList) {
++              if (!first) audit << ',';
++              first=false;
++              const auto centre=element->rawLocalPositionOfCell(id);
++              audit << "{\"id\":" << id.get_compact() << ",\"strip\":" << m_truthIds->strip(id)
++                << ",\"centre_local_mm\":[" << centre.x() << ',' << centre.y() << ']'
++                << ",\"deposits\":[";
++              const auto deposit=sdo->find(id);
++              bool firstDeposit=true;
++              if (deposit!=sdo->end()) for (const auto& d:deposit->second.getdeposits()) {
++                if (!firstDeposit) audit << ',';
++                firstDeposit=false;
++                audit << '[' << d.first.barcode() << ',' << d.second << ']';
++              }
++              audit << "]}";
++            }
++            audit << "],\"same_wafer_hits\":[";
++            first=true;
++            unsigned int hitIndex=0;
++            const Amg::Transform3D hitToLocal=element->transform().inverse()*element->transformHit();
++            for (const auto& hit:*hits) {
++              const auto index=hitIndex++;
++              const auto wafer=m_truthIds->wafer_id(hit.getStation(),hit.getPlane(),hit.getRow(),hit.getModule(),hit.getSensor());
++              if (wafer!=element->identify()) continue;
++              if (!first) audit << ',';
++              first=false;
++              const auto a=hit.localStartPosition(),b=hit.localEndPosition();
++              const Amg::Vector3D start=hitToLocal*Amg::Vector3D(a.x(),a.y(),a.z());
++              const Amg::Vector3D end=hitToLocal*Amg::Vector3D(b.x(),b.y(),b.z());
++              audit << "{\"hit_index\":" << index << ",\"barcode\":" << hit.trackNumber()
++                << ",\"energy_loss_MeV\":" << hit.energyLoss() << ",\"time_ns\":" << hit.meanTime()
++                << ",\"start_local_mm\":[" << start.x() << ',' << start.y() << ',' << start.z() << ']'
++                << ",\"end_local_mm\":[" << end.x() << ',' << end.y() << ',' << end.z() << "]}";
++            }
++            audit << ']';
++          }
+         }
+ 
+ 	// error matrix
+@@ -172,6 +263,15 @@
+ 	  break;
+ 	}
+ 
++        if (m_measurementVarianceScale != 1.) errorMatrix(0,0) *= m_measurementVarianceScale;
++        if (m_coordinateAudit.is_open()) {
++          audit << ",\"used_local_mm\":[" << locpos.x() << ',' << locpos.y() << ']'
++            << ",\"variance_scale\":" << m_measurementVarianceScale
++            << ",\"used_covariance_mm2\":[" << errorMatrix(0,0) << ',' << errorMatrix(0,1)
++            << ',' << errorMatrix(1,0) << ',' << errorMatrix(1,1) << "]}\n";
++          std::lock_guard<std::mutex> lock(m_coordinateAuditMutex);
++          m_coordinateAudit << audit.str();
++        }
+ 	//        delete localPos;
+ 	//	localPos=0;
+ 	Tracker::FaserSCT_Cluster* newCluster = new Tracker::FaserSCT_Cluster(clusterID, locpos, rdoList , width, element, errorMatrix);

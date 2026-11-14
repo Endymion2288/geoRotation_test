@@ -17,6 +17,8 @@ S06 isolated-smoothing批次的增量与基底：
 - `0029-transport-endpoint-charge-observer.patch`：基于S05冻结`software_transport_probe_common/CalypsoSlopeDiagnosticsAlg.cxx`，在原生`propagate()`后读取实际endpoint charge/qop，不从输入charge反推输出。编译副本为S06 `software_transport_sign_v2`。
 - `0030-native-transport-material-trace.patch`：0029后observer的增量，另用实际extrapolator `propagationSteps()`记录geometry ID、interaction位置、path correction和slab。原endpoint仍由原生`propagate()`取得；编译副本为`software_material_trace_v3`。
 - `0031-native-material-bin-query-observer.patch`：0030后observer的增量，在真实`BinnedSurfaceMaterial`上读取已解码matrix、native local coordinates、`binTriple()`及`materialSlab()`原始材料。实际worktree为`geoRotation_calypso_material_bins_v4`，编译副本`software_material_bins_v4`；六组原18字段逐值复现v3。0029–0031均在各自正确基底上apply并逐字节复现编译源码，见[材料decoder报告](../workbook/2026-11-14_stage06_physical_prior_material_decoder.md)。它们是transport observer增量，不直接改变CKF或其smoothing。
+- `0030_cluster_coordinate_error_audit.patch`：在0009之后应用的cluster只读坐标审计与默认1的cluster variance factor；保存实际strip centres/SDO、same-wafer SiHit端点、native centroid cell和宽度/error。与上述带连字符的transport patch是不同package和基底。
+- `0031_ckf_measurement_variance_control.patch`：在冻结`software_hitcontrol`基底之后应用，仅改真实CircleFitTrackSeedTool的CKF measurement V。原生固定σ=0.0231 mm；默认关闭的cluster V与默认1的variance factor独立于cluster error和seed C。330次实际Calypso重建、完整seed/58字段/5722次measurement门槛及三页图见[测量坐标与误差报告](../workbook/2026-11-14_stage06_measurement_coordinates_and_errors.md)。
 
 S06全量主测量及历史Alma配对的cuts、分母、软件快照与未完成实验同见该报告；不将探索控制视为正式生产修复。
 

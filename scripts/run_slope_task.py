@@ -80,6 +80,9 @@ def main():
     with Path('tracking.log').open('rb') as source, gzip.open(output/'tracking.log.gz', 'wb') as target:
         shutil.copyfileobj(source, target)
     (output/'source_task.json').write_text(json.dumps(task, indent=2)+'\n')
+    if '--cluster-coordinate-audit' in task.get('options', []) and Path('cluster_coordinates.jsonl').exists():
+        with Path('cluster_coordinates.jsonl').open('rb') as source, gzip.open(output/'cluster_coordinates.jsonl.gz', 'wb') as target:
+            shutil.copyfileobj(source, target)
     if status:
         raise RuntimeError(f'Calypso reconstruction failed: exit {status}; see {output}/tracking.log.gz')
     reference = read_ntuple(output) if '--ntuple-check' in task.get('options', []) else None

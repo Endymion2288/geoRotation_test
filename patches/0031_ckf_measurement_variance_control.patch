@@ -1,0 +1,26 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+@@ -133,6 +133,10 @@
+   SG::ReadHandleKey<FaserSCT_SpacePointContainer> m_spacePointContainerKey { this, "SpacePoints", "SCT_SpacePointContainer"};
+ 
+   Gaudi::Property<double> m_std_cluster {this, "std_cluster", 0.04};
++  Gaudi::Property<double> m_measurementVarianceScale{this, "MeasurementVarianceScale", 1.,
++    "Diagnostic factor for actual CKF measurement variance; seed covariance unchanged"};
++  Gaudi::Property<bool> m_useClusterMeasurementVariance{this, "UseClusterMeasurementVariance", false,
++    "Use the actual cluster local-X variance instead of the native fixed 0.0231 mm resolution"};
+   // covariance of the initial parameters
+   Gaudi::Property<double> m_covLoc0 {this, "covLoc0", 1};
+   Gaudi::Property<double> m_covLoc1 {this, "covLoc1", 1};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+@@ -100,6 +100,8 @@
+ 	auto cova = cluster->localCovariance();
+         Eigen::Matrix<double, 1, 1> pos {par.x(),};
+         Eigen::Matrix<double, 1, 1> cov {0.0231 * 0.0231,};
++        if (m_useClusterMeasurementVariance) cov(0,0)=cova(0,0);
++        if (m_measurementVarianceScale != 1.) cov(0,0)*=m_measurementVarianceScale;
+         Acts::SourceLink sl{sourceLink}; 
+         ThisMeasurement meas(std::move(sl), Indices, pos, cov);
+         sourceLinks.push_back(sourceLink);

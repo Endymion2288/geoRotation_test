@@ -34,6 +34,8 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [原生材料decoder与有限物理先验](../workbook/2026-11-14_stage06_physical_prior_material_decoder.md)已定位旧map的rotation数组转置错误：原脚本按列编码而ACTS按行读取，AFS共同12项也有相同编码。修正后176次native查询的bin/raw材料全部一致，7,680点确定性transport最大位置差4.69×10⁻¹³ mm、方向差2.21×10⁻¹⁶ rad、相对p差6.66×10⁻¹⁶，sign差异为0。此为transport闭合，不是完整CKF posterior等价。原历史文件和测量保留；isolated smoothing ON的三个20-event legacy replay分别58/58/56字段精确。[150万事件材料编码重建控制](../workbook/2026-11-14_stage06_material_encoding_reconstruction.md)已完成：μ±仍为同一27/32个wrong，100044为292→291并有双向迁移，truth model精确不变，冻结角峰窗口及角核心变化较小；12页图已验收。该编码修正不能解释本批剩余μ±错号，详细audit继续检验机制。
 
+[测量坐标与实际CKF误差控制](../workbook/2026-11-14_stage06_measurement_coordinates_and_errors.md)完成六条pure wrong与60条normal的330次真实重建。CKF原生measurement固定σ=0.0231 mm；仅放大V至4倍或使用cluster V，均恢复4条pure selected正确且全部更换selected hits，60条normal均通过。固定完整seed的SiHit centroid恢复5条selected正确，另1条符号正确但rmax失败；51839保留同一路径，仅坐标控制恢复。六条native的85个measurement中7个cluster含29条无SDO strips，全部同primary SiHit端点跨度≤0.0005503 mm，不能以track purity=1排除cluster中心偏移。下一项保留strip量化的SDO支持中心控制将区分无SDO读出与量化的作用；完整非线性CKF共同先验仍未完成。
+
 | 文档 | 内容 |
 | --- | --- |
 | [00 材料与源码](00_materials_and_source.md) | PDF 页码、历史数值、输入样本、源码检查点及尚缺信息 |

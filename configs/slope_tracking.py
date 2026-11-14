@@ -55,6 +55,14 @@ def main():
     smoothing.add_argument('--shared-smoothing', action='store_true', help='Explicit historical shared-state control')
     parser.add_argument('--physical-ntuple-angles', action='store_true', help='Opt-in physical VetoNu angles in the actual rotated NtupleDumper')
     parser.add_argument('--truth-cluster-position', action='store_true', help='Calypso diagnostic: replace only local measured strip coordinates by majority SiHit centroids')
+    parser.add_argument('--cluster-coordinate-audit', action='store_true',
+                        help='Read-only native cluster channels, actual strip geometry and same-wafer SiHit endpoints')
+    parser.add_argument('--measurement-variance-scale', type=float,
+                        help='Calypso diagnostic: scale only cluster local-X variance; requires the recorded cluster control library')
+    parser.add_argument('--ckf-measurement-variance-scale', type=float,
+                        help='Calypso diagnostic: scale actual CKF measurement variance, retaining cluster errors and seed covariance')
+    parser.add_argument('--ckf-cluster-measurement-variance', action='store_true',
+                        help='Calypso diagnostic: use cluster local-X variance in CKF instead of the native fixed resolution')
     parser.add_argument('--nominal-alignment', action='store_true', help='Use default GeoModel sensor transforms with a real nominal SCT conditions store')
     parser.add_argument('--alignment-audit', action='store_true', help='Write actual and default sensor transforms; requires the recorded conditions control library')
     parser.add_argument('--refit-covariance-scale', type=float, help='Controlled change to native KalmanFitterTool1.SeedCovarianceScale; CKF remains native')
@@ -126,6 +134,10 @@ def main():
     cluster=FaserSCT_ClusterizationCfg(flags, DataObjectName='SCT_RDOs', checkBadChannels=True)
     if args.truth_cluster_position:
         cluster.getEventAlgo('Tracker::FaserSCT_Clusterization').SCT_ClusteringTool.globalPosAlg.UseTruthClusterPosition=True
+    if args.cluster_coordinate_audit:
+        cluster.getEventAlgo('Tracker::FaserSCT_Clusterization').SCT_ClusteringTool.globalPosAlg.CoordinateAuditFile='cluster_coordinates.jsonl'
+    if args.measurement_variance_scale is not None:
+        cluster.getEventAlgo('Tracker::FaserSCT_Clusterization').SCT_ClusteringTool.globalPosAlg.MeasurementVarianceScale=args.measurement_variance_scale
     acc.merge(cluster)
     acc.merge(TrackerSpacePointFinderCfg(flags))
     acc.merge(SegmentFitAlgCfg(flags, ReducedChi2Cut=25., SharedHitFraction=.61,
@@ -143,6 +155,10 @@ def main():
         BackwardPropagation=args.backward, noDiagnostics=False, seedWriter=not args.no_seed_writer,
         StatesWriter=args.native_states, SummaryWriter=False)
     ckf = cfg.getEventAlgo('CKF_Slope')
+    if args.ckf_measurement_variance_scale is not None:
+        ckf.TrackSeed.MeasurementVarianceScale=args.ckf_measurement_variance_scale
+    if args.ckf_cluster_measurement_variance:
+        ckf.TrackSeed.UseClusterMeasurementVariance=True
     if args.seed_override_file:
         ckf.SeedOverrideFile = args.seed_override_file
         ckf.SeedOverrideMode = args.seed_override_mode
