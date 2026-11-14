@@ -73,6 +73,8 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 4. **保留接口、pruning与IFT实验。** S04全量100k观察配对的final p/charge/Good95均一致，少量rmax改变；转换mean闭合不代表covariance已修复。4-station finding会使用IFT，但既有refit将IFT判outlier；完整四站refit须显式控制该策略。候选pruning损失也有独立计数。
 5. **验证使用新的保留输入。** S04的独立50k已用于材料验收，后续修复使用新的文件/ranges或随机种子；分别报告效率、fakes、failure、angle和charge。历史truth界待定的类别继续保留发生率和输入定位。
 
+[共同观测的有限混合likelihood](../workbook/2026-11-14_stage06_fixed_observation_posterior.md)完成12个native作业和默认六组58,160条audit、26,464条smoother、348字段精确重放。每版1,760输入分量全部保留，1,297条完整观测路径；16/55个有先验事件的posterior已计算，最大q/p均值版本差8.748×10⁻¹² GeV⁻¹。39个事件仍有463个缺失分量，ESS约1–1.46，未验收全覆盖或采样收敛；继续原生fixed-hit fitter控制及width/分量数扫描。
+
 ## 阶段、依赖与验收
 
 各阶段规模为预算起点，按有效 truth 粒子数、误判数和测量精度调整。凡达到批量规模的 reconstruction/simulation/扫描均走 HTCondor；交互节点只做少量事件与配置调试。

@@ -118,9 +118,17 @@ def main():
                         help='Disable only the native CKF material energy-loss term; refit and observer retain their native settings')
     parser.add_argument('--ckf-max-step-mm', type=float,
                         help='Explicit step limit inside the actual CKF propagator, in mm; refit and observer unchanged')
+    parser.add_argument('--ckf-chi2-max', type=float,
+                        help='Explicit native CKF measurement-selector chi2 cutoff for fixed-observation diagnostics')
+    parser.add_argument('--ckf-nmax', type=int,
+                        help='Explicit native CKF measurement-selector maximum per surface')
     args = parser.parse_args()
     if args.ckf_max_step_mm is not None and args.ckf_max_step_mm <= 0.:
         parser.error('--ckf-max-step-mm must be positive')
+    if args.ckf_chi2_max is not None and args.ckf_chi2_max <= 0.:
+        parser.error('--ckf-chi2-max must be positive')
+    if args.ckf_nmax is not None and args.ckf_nmax <= 0:
+        parser.error('--ckf-nmax must be positive')
     if args.charge_audit and not args.stage_audit:
         parser.error('--charge-audit requires --stage-audit')
     if args.prior_component_audit and args.stage_audit:
@@ -206,6 +214,10 @@ def main():
     ckf = cfg.getEventAlgo('CKF_Slope')
     if args.ckf_max_step_mm is not None:
         ckf.MaxStepSize = args.ckf_max_step_mm
+    if args.ckf_chi2_max is not None:
+        ckf.chi2Max = args.ckf_chi2_max
+    if args.ckf_nmax is not None:
+        ckf.nMax = args.ckf_nmax
     if args.ckf_measurement_variance_scale is not None:
         ckf.TrackSeed.MeasurementVarianceScale=args.ckf_measurement_variance_scale
     if args.ckf_cluster_measurement_variance:
@@ -282,6 +294,10 @@ def main():
         backward_ckf = backward_cfg.getEventAlgo('CKF_Slope_Backward')
         if args.ckf_max_step_mm is not None:
             backward_ckf.MaxStepSize = args.ckf_max_step_mm
+        if args.ckf_chi2_max is not None:
+            backward_ckf.chi2Max = args.ckf_chi2_max
+        if args.ckf_nmax is not None:
+            backward_ckf.nMax = args.ckf_nmax
         if args.regular_ckf_update_chart:
             backward_ckf.RegularCkfUpdateChart = True
         if args.regular_ckf_smoothing_chart:
@@ -353,6 +369,10 @@ def main():
         ckf_material_energy_loss=getattr(ckf, 'MaterialEnergyLoss', True),
         ckf_max_step_mm=args.ckf_max_step_mm,
         actual_ckf_max_step_mm=float(getattr(ckf, 'MaxStepSize', 0.)),
+        ckf_chi2_max=args.ckf_chi2_max,
+        actual_ckf_chi2_max=float(ckf.chi2Max),
+        ckf_nmax=args.ckf_nmax,
+        actual_ckf_nmax=int(ckf.nMax),
         backward=args.backward, masked_layers=mask, merge_directions=args.merge_directions,
         output_collection=observer_collection,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False,
