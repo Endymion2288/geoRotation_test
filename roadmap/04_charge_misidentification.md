@@ -83,6 +83,8 @@ truth -> segment/seed sign -> CKF predicted -> filtered -> smoothed
 
 [原生 smoother 逐步审计](../workbook/2026-11-14_stage06_smoothing_operations.md)已在60个源事件、n32 C/256解析seed输入下完成默认及observer各六组完整输出重放。全部13,232对后向运算均未触发PSD修正，差异在raw C与其输入中已经存在；9个terminal-only分量保留在925个selected分母中。S1极端例的next-S已经带入大差异，部分更早filtered C也已不同。继续在真实Calypso中固定完整mean/C/surface，测量前向transport J、过程噪声与逐surface物理C，分离继承输入、chart和数值计算；完整分布/posterior等价仍待验收。
 
+[完整前向状态审计](../workbook/2026-11-14_stage06_forward_covariance.md)补齐全部14,157对states及被动面；raw material slab无差异。μ−极端例已定位到约134→1194 mm前向段的mean/J变化。下一项为相同完整输入的实际Calypso bound-to-bound transport、材料及步长控制；保留scaled与绝对C差，不能由比例指标增长直接宣称数值误差等倍放大。
+
 1. **纯坐标旋转**：G0/G1 相同物理输入/先验，仅重新表达坐标；验证 sign 不变。出现差异时定位 parameterization、geometry/field 或 covariance 数值路径。
 2. **q 与 B 同时反号**：在理想 transport/已知 hit 的条件下，Lorentz 项 qB 保持不变，同一轨迹的期望 κ sign 反号、绝对曲率与拟合质量相同。field provider、seed sign convention 与粒子假设一起一致变更；只改 q 或只改 B 会改变实际弯曲，不能称作同轨迹对照。
 3. **空间对称性**：在 geometry 与 field 有相应对称性的位置比较镜像轨迹。若用反射 S，B 是轴矢量，应按 `B'=det(S) S B` 变换并一起处理 surfaces/material；不对真实非对称 apparatus 假定精确镜像相等。
