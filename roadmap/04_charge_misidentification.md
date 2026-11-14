@@ -89,6 +89,8 @@ truth -> segment/seed sign -> CKF predicted -> filtered -> smoothed
 
 [内部CKF步长实验](../workbook/2026-11-14_stage06_ckf_step_control.md)随后完成18个实际重建。10 mm上限压低μ−极端方向mean/C差，但final q/p最大差仍约9.117×10⁻⁶ GeV⁻¹；全部首选存在性、hits、完整拓扑、sign及refit成败在本批保持一致。后续验收必须计算完整有限先验及likelihood加权posterior，保留未选中、失败、不同measurement序列、terminal-only和fallback；不以第一候选或same-hit幸存组的条件归一化代替完整分布。原生材料方差记录作为独立诊断继续执行。
 
+[材料方差原生记录](../workbook/2026-11-14_stage06_material_noise.md)证实约10⁻⁸的方向Q差与float θ平方、double φ平方的精度差相符；同精度算术诊断在固定输入中闭合至8×10⁻¹⁶。其作用域为真实`propagationSteps`记录，不是内部CKF所有Q/J或修正后的完整track。后续完整posterior应固定共同observation集合并实测innovation likelihood，未完成分量与分支不从分母删除。
+
 1. **纯坐标旋转**：G0/G1 相同物理输入/先验，仅重新表达坐标；验证 sign 不变。出现差异时定位 parameterization、geometry/field 或 covariance 数值路径。
 2. **q 与 B 同时反号**：在理想 transport/已知 hit 的条件下，Lorentz 项 qB 保持不变，同一轨迹的期望 κ sign 反号、绝对曲率与拟合质量相同。field provider、seed sign convention 与粒子假设一起一致变更；只改 q 或只改 B 会改变实际弯曲，不能称作同轨迹对照。
 3. **空间对称性**：在 geometry 与 field 有相应对称性的位置比较镜像轨迹。若用反射 S，B 是轴矢量，应按 `B'=det(S) S B` 变换并一起处理 surfaces/material；不对真实非对称 apparatus 假定精确镜像相等。
