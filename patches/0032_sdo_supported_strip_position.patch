@@ -1,0 +1,102 @@
+diff --git a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
+--- a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
++++ b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.h
+@@ -93,6 +93,8 @@
+   private:
+     Gaudi::Property<bool> m_truthPosition{this, "UseTruthClusterPosition", false,
+       "Diagnostic only: replace measured local strip coordinate with majority SiHit centroid"};
++    Gaudi::Property<bool> m_sdoSupportedPosition{this, "UseSDOSupportedStripPosition", false,
++      "Diagnostic only: average actual strip centres with positive majority SDO deposits, retaining strip quantization"};
+     Gaudi::Property<std::string> m_coordinateAuditFile{this, "CoordinateAuditFile", "",
+       "Read-only cluster, strip geometry and same-wafer SiHit coordinate audit"};
+     Gaudi::Property<double> m_measurementVarianceScale{this, "MeasurementVarianceScale", 1.,
+@@ -103,6 +105,7 @@
+     SG::ReadHandleKey<TrackerSimDataCollection> m_truthSDO{this, "TruthSDO", "SCT_SDO_Map"};
+     const FaserSCT_ID* m_truthIds=nullptr;
+     mutable std::atomic<unsigned long> m_truthReplaced{0},m_truthFallback{0};
++    mutable std::atomic<unsigned long> m_supportedReplaced{0},m_supportedFallback{0};
+   //  ToolHandle<FaserSiLorentzAngleTool> m_sctLorentzAngleTool
+   //  {this, "FaserSCTLorentzAngleTool", "FaserSiLorentzAngleTool/FaserSiLorentzAngleTool", "Tool to retreive Lorentz angle of SCT"};
+     ToolHandle<ISiLorentzAngleTool> m_sctLorentzAngleTool
+diff --git a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
+--- a/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
++++ b/Tracker/TrackerRecTools/FaserSiClusterizationTool/src/TrackerClusterMakerTool.cxx
+@@ -64,7 +64,11 @@
+ 
+ //   ATH_CHECK(m_clusterErrorKey.initialize(SG::AllowEmpty));
+ 
+-   const bool needTruth = m_truthPosition || !m_coordinateAuditFile.value().empty();
++   if (m_truthPosition && m_sdoSupportedPosition) {
++     ATH_MSG_ERROR("Truth centroid and SDO-supported strip position are separate controls");
++     return StatusCode::FAILURE;
++   }
++   const bool needTruth = m_truthPosition || m_sdoSupportedPosition || !m_coordinateAuditFile.value().empty();
+    ATH_CHECK(m_truthHits.initialize(needTruth));
+    ATH_CHECK(m_truthSDO.initialize(needTruth));
+    if (needTruth) ATH_CHECK(detStore()->retrieve(m_truthIds, "FaserSCT_ID"));
+@@ -83,6 +87,8 @@
+   if (m_coordinateAudit.is_open()) m_coordinateAudit.close();
+   ATH_MSG_INFO("Truth cluster position: enabled=" << m_truthPosition
+     << " replaced=" << m_truthReplaced << " fallback=" << m_truthFallback);
++  ATH_MSG_INFO("SDO-supported strip position: enabled=" << m_sdoSupportedPosition
++    << " replaced=" << m_supportedReplaced << " fallback=" << m_supportedFallback);
+   return StatusCode::SUCCESS;
+ }
+ 
+@@ -116,7 +122,7 @@
+         Amg::Vector2D locpos(localPos[Trk::locX]+shift, localPos[Trk::locY]);
+         std::ostringstream audit;
+         audit << std::setprecision(17);
+-        if (m_truthPosition || m_coordinateAudit.is_open()) {
++        if (m_truthPosition || m_sdoSupportedPosition || m_coordinateAudit.is_open()) {
+           SG::ReadHandle<FaserSiHitCollection> hits(m_truthHits);
+           SG::ReadHandle<TrackerSimDataCollection> sdo(m_truthSDO);
+           std::map<int,double> charge;
+@@ -127,6 +133,25 @@
+           }
+           int barcode=0;double largest=0.;
+           for (const auto& [b,q]:charge) if(q>largest) {barcode=b;largest=q;}
++          double supportedCoordinate=0.;
++          unsigned int supportedChannels=0;
++          for (const auto& id:rdoList) {
++            const auto deposit=sdo->find(id);
++            if (!barcode || deposit==sdo->end()) continue;
++            bool supported=false;
++            for (const auto& d:deposit->second.getdeposits())
++              supported |= d.first.barcode()==barcode && d.second>0.;
++            if (supported) {
++              supportedCoordinate+=element->rawLocalPositionOfCell(id).x();
++              ++supportedChannels;
++            }
++          }
++          if (m_sdoSupportedPosition) {
++            if (supportedChannels) {
++              locpos[Trk::locX]=supportedCoordinate/supportedChannels+shift;
++              ++m_supportedReplaced;
++            } else ++m_supportedFallback;
++          }
+           double sum=0.,coordinate=0.,etaCoordinate=0.;
+           for (const auto& hit:*hits) {
+             if (!barcode || hit.trackNumber()!=barcode) continue;
+@@ -157,6 +182,12 @@
+               << ",\"width_cells\":[" << width.colRow().x() << ',' << width.colRow().y() << ']'
+               << ",\"error_strategy\":" << errorStrategy
+               << ",\"majority_barcode\":" << barcode
++              << ",\"sdo_supported_position_enabled\":" << (m_sdoSupportedPosition ? "true" : "false")
++              << ",\"sdo_supported_channels\":" << supportedChannels
++              << ",\"sdo_supported_local_x_mm\":";
++            if (supportedChannels) audit << supportedCoordinate/supportedChannels+shift;
++            else audit << "null";
++            audit
+               << ",\"majority_centroid_local_mm\":";
+             if (sum>0.) audit << '[' << coordinate/sum << ',' << etaCoordinate/sum << ']';
+             else audit << "null";
+@@ -266,7 +297,7 @@
+         if (m_measurementVarianceScale != 1.) errorMatrix(0,0) *= m_measurementVarianceScale;
+         if (m_coordinateAudit.is_open()) {
+           audit << ",\"used_local_mm\":[" << locpos.x() << ',' << locpos.y() << ']'
+-            << ",\"variance_scale\":" << m_measurementVarianceScale
++            << ",\"variance_scale\":" << m_measurementVarianceScale.value()
+             << ",\"used_covariance_mm2\":[" << errorMatrix(0,0) << ',' << errorMatrix(0,1)
+             << ',' << errorMatrix(1,0) << ',' << errorMatrix(1,1) << "]}\n";
+           std::lock_guard<std::mutex> lock(m_coordinateAuditMutex);

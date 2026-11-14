@@ -54,7 +54,10 @@ def main():
     smoothing.add_argument('--isolate-smoothing', action='store_true', help='Recompute each selected candidate on its private state path')
     smoothing.add_argument('--shared-smoothing', action='store_true', help='Explicit historical shared-state control')
     parser.add_argument('--physical-ntuple-angles', action='store_true', help='Opt-in physical VetoNu angles in the actual rotated NtupleDumper')
-    parser.add_argument('--truth-cluster-position', action='store_true', help='Calypso diagnostic: replace only local measured strip coordinates by majority SiHit centroids')
+    position = parser.add_mutually_exclusive_group()
+    position.add_argument('--truth-cluster-position', action='store_true', help='Calypso diagnostic: replace only local measured strip coordinates by majority SiHit centroids')
+    position.add_argument('--sdo-supported-strip-position', action='store_true',
+                          help='Calypso diagnostic: average native strip centres supported by majority SDO deposits; retain strip quantization, width and error')
     parser.add_argument('--cluster-coordinate-audit', action='store_true',
                         help='Read-only native cluster channels, actual strip geometry and same-wafer SiHit endpoints')
     parser.add_argument('--measurement-variance-scale', type=float,
@@ -134,6 +137,8 @@ def main():
     cluster=FaserSCT_ClusterizationCfg(flags, DataObjectName='SCT_RDOs', checkBadChannels=True)
     if args.truth_cluster_position:
         cluster.getEventAlgo('Tracker::FaserSCT_Clusterization').SCT_ClusteringTool.globalPosAlg.UseTruthClusterPosition=True
+    if args.sdo_supported_strip_position:
+        cluster.getEventAlgo('Tracker::FaserSCT_Clusterization').SCT_ClusteringTool.globalPosAlg.UseSDOSupportedStripPosition=True
     if args.cluster_coordinate_audit:
         cluster.getEventAlgo('Tracker::FaserSCT_Clusterization').SCT_ClusteringTool.globalPosAlg.CoordinateAuditFile='cluster_coordinates.jsonl'
     if args.measurement_variance_scale is not None:

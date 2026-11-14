@@ -19,6 +19,7 @@ S06 isolated-smoothing批次的增量与基底：
 - `0031-native-material-bin-query-observer.patch`：0030后observer的增量，在真实`BinnedSurfaceMaterial`上读取已解码matrix、native local coordinates、`binTriple()`及`materialSlab()`原始材料。实际worktree为`geoRotation_calypso_material_bins_v4`，编译副本`software_material_bins_v4`；六组原18字段逐值复现v3。0029–0031均在各自正确基底上apply并逐字节复现编译源码，见[材料decoder报告](../workbook/2026-11-14_stage06_physical_prior_material_decoder.md)。它们是transport observer增量，不直接改变CKF或其smoothing。
 - `0030_cluster_coordinate_error_audit.patch`：在0009之后应用的cluster只读坐标审计与默认1的cluster variance factor；保存实际strip centres/SDO、same-wafer SiHit端点、native centroid cell和宽度/error。与上述带连字符的transport patch是不同package和基底。
 - `0031_ckf_measurement_variance_control.patch`：在冻结`software_hitcontrol`基底之后应用，仅改真实CircleFitTrackSeedTool的CKF measurement V。原生固定σ=0.0231 mm；默认关闭的cluster V与默认1的variance factor独立于cluster error和seed C。330次实际Calypso重建、完整seed/58字段/5722次measurement门槛及三页图见[测量坐标与误差报告](../workbook/2026-11-14_stage06_measurement_coordinates_and_errors.md)。
+- `0032_sdo_supported_strip_position.patch`：在0009+0030 cluster audit之后应用。默认关闭的`UseSDOSupportedStripPosition`将cluster X替换为有majority正SDO贡献的原生strip中心均值，保留strip量化、IDs、width/error、localY及原Lorentz shift；与SiHit centroid互斥，无支持时native fallback。实际worktree为`geoRotation_calypso_charge_sdo_position`，库冻结于S06 `sdo_strip_coordinate_v1/software`。66事件保留完整seed，1159次measurement门槛通过，六条pure恢复5条selected正确、60条normal全通过；真实barcode0沉积及逐strip几何证据见[SDO与量化报告](../workbook/2026-11-14_stage06_sdo_strip_quantization.md)。此为truth辅助机制控制。
 
 S06全量主测量及历史Alma配对的cuts、分母、软件快照与未完成实验同见该报告；不将探索控制视为正式生产修复。
 
