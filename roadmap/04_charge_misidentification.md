@@ -93,6 +93,8 @@ truth -> segment/seed sign -> CKF predicted -> filtered -> smoothed
 
 [共同观测likelihood实验](../workbook/2026-11-14_stage06_fixed_observation_posterior.md)已完成12次native重建及六组默认完整重放。chi2Max=10³⁰、nMax=1的固定source-link控制中，每版1,297/1,760分量完成整套共同观测；16/55个有先验事件的完整有限混合可归一化，最大q/p均值差8.748×10⁻¹² GeV⁻¹。其余39个事件的463个缺失分量继续保留，未设零或条件归一化。ESS约1–1.46，尚未验证width/分量数收敛。下一步调用真实Calypso既有fixed-source-link fitter，测量缺失是否来自finder/selector或导航，并补齐全部观测likelihood。
 
+[原生fixed-hit fitter验收](../workbook/2026-11-14_stage06_native_fixed_fitter.md)随后实测每版1,311条完整路径、449个缺项，完整posterior仍16/55；失败为27个native step-limit，另422条成功返回短路径。全部实际输入hit集合、默认OFF精确重放与八个定向component日志重放通过。接下来只对固定measurement surface IDs统一native pre/post boundary语义，保留普通Navigator及原生Stepper/material/field，先验收OFF再测全量覆盖与likelihood。该控制尚未测量恢复率；width/分量数扫描和完整posterior验收继续开放。
+
 1. **纯坐标旋转**：G0/G1 相同物理输入/先验，仅重新表达坐标；验证 sign 不变。出现差异时定位 parameterization、geometry/field 或 covariance 数值路径。
 2. **q 与 B 同时反号**：在理想 transport/已知 hit 的条件下，Lorentz 项 qB 保持不变，同一轨迹的期望 κ sign 反号、绝对曲率与拟合质量相同。field provider、seed sign convention 与粒子假设一起一致变更；只改 q 或只改 B 会改变实际弯曲，不能称作同轨迹对照。
 3. **空间对称性**：在 geometry 与 field 有相应对称性的位置比较镜像轨迹。若用反射 S，B 是轴矢量，应按 `B'=det(S) S B` 变换并一起处理 surfaces/material；不对真实非对称 apparatus 假定精确镜像相等。

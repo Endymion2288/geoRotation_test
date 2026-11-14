@@ -105,9 +105,9 @@ def main():
         prepare_validation(args.root.resolve(), args.analysis_version, args.figure_version, args.validation_version)
 
 
-def prepare_analysis(root, version):
+def prepare_analysis(root, version, study_name='common_prior_posterior_v1'):
     repo = Path(__file__).resolve().parents[1]
-    output = root/'common_prior_posterior_v1'
+    output = root/study_name
     code = output/('analysis_code_'+version)
     code.mkdir(exist_ok=False)
     files = {
@@ -129,9 +129,10 @@ def prepare_analysis(root, version):
             output=str(output/('jobs/'+phase+'_'+version)))])
 
 
-def prepare_figures(root, version, figure_version):
+def prepare_figures(root, version, figure_version, study_name='common_prior_posterior_v1',
+                    report_name='report_v21', previous_report='report_v20'):
     repo = Path(__file__).resolve().parents[1]
-    output = root/'common_prior_posterior_v1'
+    output = root/study_name
     code = output/('figure_code_'+figure_version)
     shutil.copytree(output/('analysis_code_'+version), code,
         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
@@ -148,18 +149,22 @@ def prepare_figures(root, version, figure_version):
         str(code/'analysis/charge_posterior_artifacts.py'), '--input', str(output),
         '--analysis', str(output/('analysis_'+version)), '--output', str(output/('auxiliary_'+figure_version))],
         output=str(output/('jobs/artifacts_'+figure_version)))])
-    old = json.loads((root/'common_prior_ckf_chart_v1/material_noise_v1/report_tasks_v1.json').read_text())[0]
+    report_task = (root/'common_prior_posterior_v1/report_tasks_v3.json'
+        if study_name.startswith('common_prior_fixed_fitter_') else
+        root/'common_prior_ckf_chart_v1/material_noise_v1/report_tasks_v1.json')
+    old = json.loads(report_task.read_text())[0]
     command = old['command'].copy()
     command.insert(command.index('--output'), str(output/('figures_'+figure_version+'/results')))
-    command[command.index('--output')+1] = str(root/'report_v21')
-    command[command.index('--previous-report')+1] = str(root/'report_v20')
+    command[command.index('--output')+1] = str(root/report_name)
+    command[command.index('--previous-report')+1] = str(root/previous_report)
     dump(output/('report_tasks_'+figure_version+'.json'), [dict(kind='analysis', command=command,
-        output=str(output/'jobs/report_v21'))])
+        output=str(output/('jobs/'+report_name)))])
 
 
-def prepare_validation(root, analysis_version, figure_version, validation_version):
+def prepare_validation(root, analysis_version, figure_version, validation_version,
+                       study_name='common_prior_posterior_v1'):
     repo = Path(__file__).resolve().parents[1]
-    output = root/'common_prior_posterior_v1'
+    output = root/study_name
     code = output/('validation_code_'+validation_version)
     shutil.copytree(output/('figure_code_'+figure_version), code,
         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))

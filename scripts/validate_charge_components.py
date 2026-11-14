@@ -43,6 +43,15 @@ def validate(folder):
     assert {name.name for name in loaded} == expected_libraries
     assert all(name.parent.resolve() == Path(run['library']).resolve() for name in loaded)
     options = task.get('options', [])
+    fixed_fitter = '--component-fixed-hit-fitter' in options
+    assert run.get('component_fixed_hit_fitter', False) == fixed_fitter
+    assert run.get('actual_component_fixed_hit_fitter', False) == fixed_fitter
+    observations = {}
+    if fixed_fitter:
+        for line in Path(run['source_link_selection_file']).read_text().splitlines():
+            entry, count, *hits = map(int, line.split())
+            assert count == len(hits) == len(set(hits))
+            observations[entry] = set(hits)
     assert run['refit_update_chart_regular'] == ('--regular-refit-update-chart' in options)
     assert run['refit_smoothing_chart_regular'] == ('--regular-refit-smoothing-chart' in options)
     assert run.get('ckf_update_chart_regular', False) == ('--regular-ckf-update-chart' in options)
@@ -50,6 +59,7 @@ def validate(folder):
     expected = input_rows(Path(task['component_file']))
     seeds, terminals, stages = set(), set(), Counter()
     found, selected, converted, finals = Counter(), Counter(), Counter(), Counter()
+    fitter_inputs = set()
     events, empty, zero_native = [], [], []
     current = None
     updates, maximum_error = 0, 0.
@@ -96,11 +106,18 @@ def validate(folder):
                 converted[key] += 1
             elif stage == 'final':
                 finals[key] += 1
+            elif stage == 'component_fixed_observations':
+                assert fixed_fitter and key not in fitter_inputs
+                assert row['count'] == len(row['hit_ids']) == len(set(row['hit_ids']))
+                assert set(row['hit_ids']) == observations[current], key
+                fitter_inputs.add(key)
             elif stage in ['component_end', 'component_finder_error']:
                 assert key not in terminals
                 terminals.add(key)
                 if stage == 'component_end':
                     assert row['found'] == found[key] and row['selected'] == selected[key]
+                elif fixed_fitter:
+                    assert row['error_category'] and row['error_message']
             elif stage == 'selected_state' and row['measurement_flag']:
                 predicted = np.asarray(row['predicted'])
                 covariance = np.asarray(row['predicted_cov'])
@@ -117,6 +134,7 @@ def validate(folder):
                 updates += 1
     assert events == list(range(task['events']))
     assert seeds == terminals == set(expected)
+    assert fitter_inputs == (set(expected) if fixed_fitter else set())
     assert empty == [e for e in events if not any(k[0] == e for k in expected)]
     if run.get('component_refit', False):
         assert converted == finals == selected
@@ -131,6 +149,8 @@ def validate(folder):
                 native_finder_errors=stages['component_finder_error'],
                 actual_loaded_acts_and_observer_libraries_checked=True,
                 configured_component_input_refit_and_chart_checked=True,
+                actual_native_solver='fixed_source_link_KalmanFitter' if fixed_fitter else 'CKF_finder',
+                actual_fitter_observation_sets_checked=len(fitter_inputs),
                 measurement_updates_checked=updates, maximum_gain_identity_error_GeVinv=maximum_error,
                 stages=dict(stages), run=str(folder/'run.json'))
 

@@ -145,8 +145,9 @@ def event_posterior(rows, truth_charge):
 
 
 def gate(root, output):
+    manifest = json.loads((root/'manifest.json').read_text())
     checks = []
-    for point in json.loads((root/'manifest.json').read_text())['points']:
+    for point in manifest['points']:
         if point['mode'] != 'default':
             continue
         old, new = Path(point['reference']), Path(point['output'])
@@ -167,9 +168,19 @@ def gate(root, output):
                     np.testing.assert_array_equal(a[field], b[field])
                     arrays += 1
         run = json.loads((new/'run.json').read_text())
-        assert run['ckf_chi2_max'] is None and run['ckf_nmax'] is None
-        # CKF2Config overrides the C++ property's 15 with 25 in these runs.
-        assert run['actual_ckf_chi2_max'] == 25. and run['actual_ckf_nmax'] == 10
+        reference_run = json.loads((old/'run.json').read_text())
+        for name in ('ckf_chi2_max', 'ckf_nmax', 'actual_ckf_chi2_max', 'actual_ckf_nmax',
+                     'actual_ckf_max_step_mm', 'seed_component_input_file', 'component_refit',
+                     'isolate_smoothing', 'ckf_update_chart_regular', 'ckf_smoothing_chart_regular',
+                     'actual_refit_controls_by_direction'):
+            assert run[name] == reference_run[name], (point['dsid'], point['variant'], name)
+        assert not run.get('actual_component_fixed_hit_fitter', False)
+        assert not run.get('component_fixed_hit_fitter', False)
+        if reference_run.get('source_link_selection_file'):
+            assert Path(run['source_link_selection_file']).read_bytes() == Path(
+                reference_run['source_link_selection_file']).read_bytes()
+        expected_library = manifest['before_library' if point['variant'] == 'beforeGeo' else 'after_library']
+        assert Path(run['library']).resolve() == Path(expected_library).resolve()
         counts.update(array_fields_exact=arrays)
         checks.append(dict(dsid=point['dsid'], variant=point['variant'], **counts, runtime=validate(new)))
     output.mkdir(exist_ok=False)
@@ -178,8 +189,11 @@ def gate(root, output):
 
 
 def analyze(root, output, gate_validation):
+    assert not (root/'RESULTS_INVALID_FOR_FIXED_OBSERVATION.md').exists()
     assert json.loads(gate_validation.read_text())['default_replay_exact']
     manifest = json.loads((root/'manifest.json').read_text())
+    solver = manifest.get('component_solver', 'native_CKF')
+    assert solver in ('native_CKF', 'native_fixed_source_link_fitter')
     observations = json.loads((root/'observations.json').read_text())
     points = {(p['dsid'], p['variant'], p['mode']): p for p in manifest['points']}
     groups, rows_out, event_rows, runtime, comparison_rows = {}, [], [], [], []
@@ -194,6 +208,11 @@ def analyze(root, output, gate_validation):
             assert run['actual_ckf_chi2_max'] == 1e30 and run['actual_ckf_nmax'] == 1
             assert run['actual_ckf_max_step_mm'] == 10.
             assert run['source_link_selection_file'] == str(root/'observations'/(dsid+'_hits.txt'))
+            expected_fixed_fitter = solver == 'native_fixed_source_link_fitter'
+            assert run.get('actual_component_fixed_hit_fitter', False) == expected_fixed_fitter
+            assert run.get('component_fixed_hit_fitter', False) == expected_fixed_fitter
+            expected_library = manifest['before_library' if variant == 'beforeGeo' else 'after_library']
+            assert Path(run['library']).resolve() == Path(expected_library).resolve()
             records = components(folder)
             task = json.loads((folder/'source_task.json').read_text())
             assert records.keys() == input_rows(Path(task['component_file'])).keys()
@@ -271,8 +290,8 @@ def analyze(root, output, gate_validation):
             for row in rows:
                 stream.write(json.dumps(row, separators=(',', ':'), allow_nan=False)+'\n')
     write_json(output/'summary.json', dict(groups=groups, runtime=runtime,
-        source_events=60, finite_series=manifest['component_series'],
-        scope='Actual native CKF Gaussian innovation likelihood for a common frozen observation sequence. '
+        source_events=60, finite_series=manifest['component_series'], component_solver=solver,
+        scope='Actual '+solver+' Gaussian innovation likelihood for a common frozen observation sequence. '
               'All finite prior components retained, equal prior component masses. Full posterior only when '
               'every component completes the observations. Gaussian moment C includes within/between terms '
               'at the same first sensor in a common regular chart. Missing mass is not normalized away. '

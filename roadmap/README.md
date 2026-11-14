@@ -75,6 +75,8 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [共同观测的有限混合likelihood](../workbook/2026-11-14_stage06_fixed_observation_posterior.md)完成12个native作业和默认六组58,160条audit、26,464条smoother、348字段精确重放。每版1,760输入分量全部保留，1,297条完整观测路径；16/55个有先验事件的posterior已计算，最大q/p均值版本差8.748×10⁻¹² GeV⁻¹。39个事件仍有463个缺失分量，ESS约1–1.46，未验收全覆盖或采样收敛；继续原生fixed-hit fitter控制及width/分量数扫描。
 
+[实际native fixed-hit fitter控制](../workbook/2026-11-14_stage06_native_fixed_fitter.md)已完成两版构建、12次重建与3,520个实际输入hit集合验收。默认OFF的187,160条audit、76,166条smoother记录、348字段精确重放；完整路径每版仅增14至1,311/1,760，完整posterior仍16/55。27个原生错误均为5,000 steps上限，另422条成功返回路径缺少观测；八个定向日志重放共160条component记录精确不变。external measurement surfaces的pre/post-step boundary语义不一致与部分漏测日志相符，下一项在真实Calypso中只改这一语义并验收全分量覆盖，不以个例或16个幸存事件宣布Q5完成。新增五页图与151页完整报告已核对。
+
 ## 阶段、依赖与验收
 
 各阶段规模为预算起点，按有效 truth 粒子数、误判数和测量精度调整。凡达到批量规模的 reconstruction/simulation/扫描均走 HTCondor；交互节点只做少量事件与配置调试。

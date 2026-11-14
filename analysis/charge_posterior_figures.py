@@ -57,7 +57,10 @@ def values(source):
             examples[dsid] = dict(entry=entry, x=x.tolist(), density=density,
                 event_results={v:next(r for r in events if r['dsid'] == dsid and r['entry'] == entry
                                      and r['variant'] == v) for v in VARIANTS})
-    return dict(groups=groups, paired_components=pairs, event_comparisons=comparisons,
+    coverage_path = source/'solver_coverage.json'
+    return dict(component_solver=summary.get('component_solver', 'native_CKF'),
+        solver_coverage=json.loads(coverage_path.read_text()) if coverage_path.exists() else None,
+        groups=groups, paired_components=pairs, event_comparisons=comparisons,
         events=events, examples=examples)
 
 
@@ -67,12 +70,14 @@ def plot(source, output):
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
     data = values(source)
+    fixed_fitter = data['component_solver'] == 'native_fixed_source_link_fitter'
+    solver_label = 'KalmanFitter' if fixed_fitter else 'CKF'
     output.mkdir(parents=True, exist_ok=False)
     index = []
 
     def save(fig, name, title, pdf):
         fig.suptitle(title, fontsize=15, y=.985)
-        fig.text(.5, .04, 'Actual Calypso | Isolated smoothing ON | CKF step limit 10 mm | One frozen observation sequence per event',
+        fig.text(.5, .04, 'Actual Calypso '+solver_label+' | Isolated smoothing ON | Step limit 10 mm | One frozen observation sequence per event',
             ha='center', fontsize=9)
         fig.text(.5, .018, '60 source events including 5 without a native seed | n32, within-C / 256 | Diagnostic likelihood; not a production misID rate',
             ha='center', fontsize=9)
@@ -104,12 +109,37 @@ def plot(source, output):
                 cell.set_facecolor('#dce6ef')
         ax.text(.5, .86, 'Every prior component is retained. A missing observation path has an unmeasured likelihood.',
             ha='center', fontsize=11, transform=ax.transAxes)
-        ax.text(.5, .14, 'The native CKF selector uses chi2Max = 1e30 and nMax = 1 only for this observation control.\n'
+        selection_note = ('Existing native fixed-source-link KalmanFitter; geometry navigation and material remain active.\n'
+            if fixed_fitter else 'The native CKF selector uses chi2Max = 1e30 and nMax = 1 only for this observation control.\n')
+        ax.text(.5, .14, selection_note+
             'A full finite-prior posterior is normalized only when every component has the complete same observations.\n'
             'Refit fallback is retained; the refit reuses measurements and is not multiplied in as an independent likelihood.',
             ha='center', fontsize=10, linespacing=1.8, transform=ax.transAxes)
         fig.tight_layout(rect=[0, .085, 1, .94])
-        save(fig, 'posterior_coverage', 'Fixed-observation native CKF: complete input and likelihood coverage', pdf)
+        save(fig, 'posterior_coverage', 'Fixed-observation native '+solver_label+': complete input and likelihood coverage', pdf)
+
+        if data['solver_coverage'] is not None:
+            fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+            groups = data['solver_coverage']['groups']
+            keys = [dsid+'|'+variant for dsid in SAMPLES for variant in VARIANTS]
+            x = np.arange(len(keys))
+            for ax, suffix, ylabel in [(axes[0], 'complete_components', 'Components with all frozen observations'),
+                                      (axes[1], 'complete_observation_events', 'Events with all 32 observation paths')]:
+                for offset, mode, label, color in [(-.18, 'default', 'Native CKF finder', '#777777'),
+                                                   (.18, 'fixed_observation', 'Native KalmanFitter', '#236ca4')]:
+                    counts = [groups[key].get(mode+'_'+suffix, 0) for key in keys]
+                    bars = ax.bar(x+offset, counts, width=.36, label=label, color=color)
+                    ax.bar_label(bars, padding=3, fontsize=9)
+                ax.set_xticks(x, [key.replace('|', '\n') for key in keys], fontsize=9)
+                ax.set_ylabel(ylabel)
+                ax.margins(y=.15)
+                ax.legend(loc='upper center', bbox_to_anchor=(.5, 1.12), ncol=2, fontsize=10)
+                ax.grid(axis='y', alpha=.2)
+            fig.text(.5, .115, 'Identical component inputs and frozen cluster observations; all unsuccessful paths retained.\n'
+                'The existing KalmanFitter inserts measurement surfaces into geometry navigation, ignoring their boundary checks.',
+                ha='center', fontsize=10, linespacing=1.6)
+            fig.tight_layout(rect=[0, .19, 1, .94])
+            save(fig, 'posterior_solver_coverage', 'Native finder versus native fixed-source-link fitter: observation coverage', pdf)
 
         fig, axes = plt.subplots(2, 3, figsize=(16, 9))
         for column, dsid in enumerate(SAMPLES):
@@ -209,7 +239,8 @@ def validate(source, output, pdf_tools):
             str(fonts[match[0]].get_object()['/BaseFont'])), normalized_graphics(page))
     index = json.loads((output/'figure_index.json').read_text())
     pages = PdfReader(output/'posterior_report.pdf').pages
-    assert len(index) == len(pages) == 4
+    expected_pages = 5 if recomputed['solver_coverage'] is not None else 4
+    assert len(index) == len(pages) == expected_pages
     for row, page in zip(index, pages):
         with Image.open(output/row['png']) as png:
             png.load()
@@ -217,7 +248,7 @@ def validate(source, output, pdf_tools):
         assert graphics(original) == graphics(page)
         assert (list(original.mediabox), list(original.cropbox), original.rotation) == (
             list(page.mediabox), list(page.cropbox), page.rotation)
-    write_json(output/'validation.json', dict(pages=4, recorded_plot_inputs_exact=True,
+    write_json(output/'validation.json', dict(pages=expected_pages, recorded_plot_inputs_exact=True,
         analytic_density_rtol=5e-13, analytic_density_atol=1e-300, density_checks=density_checks,
         PNG_decoded=True, normalized_PDF_content_and_boxes_equal=True,
         visual_inspection='Pending original-resolution inspection'))

@@ -108,6 +108,8 @@ def main():
                         help='Actual CKF diagnostic: independent native finder/update/smoother calls for finite prior components')
     parser.add_argument('--component-refit', action='store_true',
                         help='Extend each finite-prior component through the native converter and refit')
+    parser.add_argument('--component-fixed-hit-fitter', action='store_true',
+                        help='Use the existing native fixed-source-link KalmanFitter for each finite-prior component')
     parser.add_argument('--run-only-input-seeds', action='store_true',
                         help='Run the native CKF only for seed indices listed in the full seed input')
     parser.add_argument('--source-link-selection-file',
@@ -122,6 +124,8 @@ def main():
                         help='Explicit native CKF measurement-selector chi2 cutoff for fixed-observation diagnostics')
     parser.add_argument('--ckf-nmax', type=int,
                         help='Explicit native CKF measurement-selector maximum per surface')
+    parser.add_argument('--ckf-acts-logging', choices=['VERBOSE', 'DEBUG', 'INFO', 'WARNING', 'ERROR'],
+                        help='Read-only ACTS logger level inside the actual CKF/fitter and navigator')
     args = parser.parse_args()
     if args.ckf_max_step_mm is not None and args.ckf_max_step_mm <= 0.:
         parser.error('--ckf-max-step-mm must be positive')
@@ -143,6 +147,9 @@ def main():
         parser.error('seed components require prior-component audit and isolated smoothing, without other seed overrides')
     if args.component_refit and not args.seed_component_input_file:
         parser.error('--component-refit requires --seed-component-input-file')
+    if args.component_fixed_hit_fitter and not (
+            args.seed_component_input_file and args.source_link_selection_file):
+        parser.error('--component-fixed-hit-fitter requires seed components and source-link selection')
     if args.smoothing_operation_selection_file and not args.seed_component_input_file:
         parser.error('smoothing operation audit requires seed component mode')
     if (args.regular_ckf_update_chart or args.regular_ckf_smoothing_chart) and args.variant != 'beforeGeo':
@@ -212,6 +219,8 @@ def main():
         BackwardPropagation=args.backward, noDiagnostics=False, seedWriter=not args.no_seed_writer,
         StatesWriter=args.native_states, SummaryWriter=False)
     ckf = cfg.getEventAlgo('CKF_Slope')
+    if args.ckf_acts_logging is not None:
+        ckf.ActsLogging = args.ckf_acts_logging
     if args.ckf_max_step_mm is not None:
         ckf.MaxStepSize = args.ckf_max_step_mm
     if args.ckf_chi2_max is not None:
@@ -232,6 +241,8 @@ def main():
         ckf.SeedComponentInputFile = args.seed_component_input_file
     if args.component_refit:
         ckf.ComponentRefit = True
+    if args.component_fixed_hit_fitter:
+        ckf.ComponentFixedHitFitter = True
     if args.regular_ckf_update_chart:
         ckf.RegularCkfUpdateChart = True
     if args.regular_ckf_smoothing_chart:
@@ -292,6 +303,8 @@ def main():
             BackwardPropagation=True, noDiagnostics=True, seedWriter=False,
             StatesWriter=False, SummaryWriter=False)
         backward_ckf = backward_cfg.getEventAlgo('CKF_Slope_Backward')
+        if args.ckf_acts_logging is not None:
+            backward_ckf.ActsLogging = args.ckf_acts_logging
         if args.ckf_max_step_mm is not None:
             backward_ckf.MaxStepSize = args.ckf_max_step_mm
         if args.ckf_chi2_max is not None:
@@ -363,6 +376,8 @@ def main():
         full_seed_input_file=args.full_seed_input_file, run_only_input_seeds=args.run_only_input_seeds,
         seed_component_input_file=args.seed_component_input_file,
         component_refit=args.component_refit,
+        component_fixed_hit_fitter=args.component_fixed_hit_fitter,
+        actual_component_fixed_hit_fitter=bool(getattr(ckf, 'ComponentFixedHitFitter', False)),
         smoothing_operation_selection_file=args.smoothing_operation_selection_file,
         source_link_selection_file=args.source_link_selection_file,
         ckf_material_scattering=getattr(ckf, 'MaterialScattering', True),
@@ -373,6 +388,8 @@ def main():
         actual_ckf_chi2_max=float(ckf.chi2Max),
         ckf_nmax=args.ckf_nmax,
         actual_ckf_nmax=int(ckf.nMax),
+        ckf_acts_logging=args.ckf_acts_logging,
+        actual_ckf_acts_logging=str(ckf.ActsLogging),
         backward=args.backward, masked_layers=mask, merge_directions=args.merge_directions,
         output_collection=observer_collection,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False,
