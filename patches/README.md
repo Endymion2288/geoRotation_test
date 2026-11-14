@@ -25,6 +25,7 @@ S06 isolated-smoothing批次的增量与基底：
 - `0035_native_ckf_components_beforeGeo.patch` / `0035_native_ckf_components_afterGeo.patch`：分别在0034后的beforeGeo、0033后的afterGeo基底应用。默认关闭，为每个输入Gaussian分量调用本版实际finder、measurement update和候选独立smoother；该诊断模式只观察CKF，不运行conversion/refit，各分量不在跨分量shared-hit排序中竞争。无输入的原生空seed事件正常写空collection。四组width/分量数实际比较及其适用范围见[共同有限先验报告](../workbook/2026-11-14_stage06_common_prior_full_chain.md)。
 - `0036_component_native_refit_beforeGeo.patch` / `0036_component_native_refit_afterGeo.patch`：在各自0035基底后应用，默认关闭的`ComponentRefit`将每个selected component送入本版真实converter与refit。36个全链路作业均exit0，增加调用前后CKF记录精确相同，完整新增头文件和tracked源码diff冻结于`common_prior_component_refit_v1/*_complete_source.patch`。报告单列成功refit/fallback及n32 C/256的4个final sign差异；没有实现likelihood加权的mixture fit。
 - `0037_component_refit_input_beforeGeo.patch`：0036 beforeGeo之后应用，只读记录真实`refit_input`及`refit_state`，保留既有`fit()`ABI，由其委托`fitAudited()`。15个实际重建完成6组观察精确门槛及9组对角inflation单因素门槛；两条same-hit/both-success sign分歧随取消额外对角放大消失，其中一条两版都错。详见[refit输入报告](../workbook/2026-11-14_stage06_refit_input_covariance.md)；observer补丁自身不改变measurement、surface、prior或拟合公式。
+- `0038_native_ckf_direction_chart.patch`：在0037 beforeGeo基底后应用，原样抽取既有refit regular方向adapters为共享header，默认关闭地接入真实finder update/smoothing及候选独立smoother。3个OFF重放的全部原记录精确相同；9个干预中update消除39条有序路径差异，联合smoother消除本批最终sign分歧，但不代表错号减少。完整源码/构建与三页图见[CKF chart报告](../workbook/2026-11-14_stage06_ckf_direction_chart.md)。
 
 S06全量主测量及历史Alma配对的cuts、分母、软件快照与未完成实验同见该报告；不将探索控制视为正式生产修复。
 

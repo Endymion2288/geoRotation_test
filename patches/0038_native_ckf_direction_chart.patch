@@ -1,0 +1,374 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/RegularDirectionKalman.h b/Tracking/Acts/FaserActsKalmanFilter/src/RegularDirectionKalman.h
+new file mode 100644
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/RegularDirectionKalman.h
+@@ -0,0 +1,125 @@
++#ifndef FASER_REGULAR_DIRECTION_KALMAN_H
++#define FASER_REGULAR_DIRECTION_KALMAN_H
++#include "RefitDirectionChart.h"
++#include "Acts/EventData/VectorMultiTrajectory.hpp"
++#include "Acts/TrackFitting/GainMatrixSmoother.hpp"
++#include "Acts/TrackFitting/GainMatrixUpdater.hpp"
++#include "Acts/Utilities/detail/periodic.hpp"
++// Direction-chart control inside the real Calypso fitter. Local surface
++// coordinates, measurements and forward propagation remain in the native
++// geometry. Only the backward algebra uses (phi_A,latitude_A), where
++// (x_A,y_A,z_A)=(z_F,y_F,-x_F), away from the forward-beam polar singularity.
++struct RegularDirectionGainMatrixSmoother {
++  struct Buffer {
++    Acts::BoundVector filtered = Acts::BoundVector::Zero();
++    Acts::BoundVector predicted = Acts::BoundVector::Zero();
++    Acts::BoundVector smoothed = Acts::BoundVector::Zero();
++    Acts::BoundSquareMatrix filteredCovariance = Acts::BoundSquareMatrix::Zero();
++    Acts::BoundSquareMatrix predictedCovariance = Acts::BoundSquareMatrix::Zero();
++    Acts::BoundSquareMatrix smoothedCovariance = Acts::BoundSquareMatrix::Zero();
++    Acts::BoundSquareMatrix jacobian = Acts::BoundSquareMatrix::Zero();
++  };
++
++
++  Acts::Result<void> operator()(const Acts::GeometryContext&,
++      Acts::VectorMultiTrajectory& trajectory, std::size_t entryIndex,
++      const Acts::Logger& logger) const {
++    Acts::GainMatrixSmoother native;
++    Acts::GainMatrixSmoother::GetParameters filtered, smoothed, predicted;
++    Acts::GainMatrixSmoother::GetCovariance filteredCovariance,
++        predictedCovariance, smoothedCovariance, jacobian;
++    filtered.connect([](const void*, void* state) {
++      return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(state)->filtered.data());
++    });
++    predicted.connect([](const void*, void* state) {
++      return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(state)->predicted.data());
++    });
++    smoothed.connect([](const void*, void* state) {
++      return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(state)->smoothed.data());
++    });
++    filteredCovariance.connect([](const void*, void* state) {
++      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->filteredCovariance.data());
++    });
++    predictedCovariance.connect([](const void*, void* state) {
++      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->predictedCovariance.data());
++    });
++    smoothedCovariance.connect([](const void*, void* state) {
++      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->smoothedCovariance.data());
++    });
++    jacobian.connect([](const void*, void* state) {
++      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->jacobian.data());
++    });
++    auto previous = trajectory.getTrackState(entryIndex);
++    previous.smoothed() = previous.filtered();
++    previous.smoothedCovariance() = previous.filteredCovariance();
++    if (!previous.hasPrevious()) return Acts::Result<void>::success();
++    std::error_code error;
++    trajectory.applyBackwards(previous.previous(), [&](auto state) {
++      Buffer current, next;
++      const auto [filteredMean, jf] = refitDirectionChart(state.filtered());
++      const auto [predictedMean, jp] = refitDirectionChart(previous.predicted());
++      const auto [smoothedMean, js] = refitDirectionChart(previous.smoothed());
++      current.filtered = filteredMean;
++      current.filteredCovariance = jf * state.filteredCovariance() * jf.transpose();
++      next.predicted = predictedMean;
++      next.predictedCovariance = jp * previous.predictedCovariance() * jp.transpose();
++      next.smoothed = smoothedMean;
++      next.smoothed[Acts::eBoundPhi] = predictedMean[Acts::eBoundPhi] +
++          Acts::detail::difference_periodic(smoothedMean[Acts::eBoundPhi],
++              predictedMean[Acts::eBoundPhi], 2.*std::acos(-1.));
++      next.smoothedCovariance = js * previous.smoothedCovariance() * js.transpose();
++      // Both ends of the actual stored transport derivative change chart.
++      next.jacobian = jp * previous.jacobian() * jf.inverse();
++      auto status = native.calculate(&current, &next, filtered,
++          filteredCovariance, smoothed, predicted, predictedCovariance,
++          smoothedCovariance, jacobian, logger);
++      if (!status.ok()) {
++        error = status.error();
++        return false;
++      }
++      const auto [nativeMean, back] = refitDirectionChart(current.smoothed, true);
++      state.smoothed() = nativeMean;
++      state.smoothedCovariance() = back * current.smoothedCovariance * back.transpose();
++      previous = state;
++      return true;
++    });
++    return error ? Acts::Result<void>::failure(error)
++                 : Acts::Result<void>::success();
++  }
++};
++
++// Use the same measured local coordinates and native ACTS measurement update,
++// changing the direction chart before its linear Gaussian algebra. Restore
++// the predicted slots so all saved states and transport Jacobians remain in
++// the native chart. Only filtered output is passed to subsequent transport.
++struct RegularDirectionGainMatrixUpdater {
++  Acts::Result<void> operator()(const Acts::GeometryContext& gctx,
++      Acts::VectorMultiTrajectory::TrackStateProxy state,
++      Acts::Direction direction, const Acts::Logger& logger) const {
++    const Acts::BoundVector predicted = state.predicted();
++    const Acts::BoundSquareMatrix covariance = state.predictedCovariance();
++    const auto [regularMean, jacobian] = refitDirectionChart(predicted);
++    state.predicted() = regularMean;
++    state.predictedCovariance() = jacobian * covariance * jacobian.transpose();
++    Acts::GainMatrixUpdater native;
++    auto status = native.operator()<Acts::VectorMultiTrajectory>(
++        gctx, state, direction, logger);
++    state.predicted() = predicted;
++    state.predictedCovariance() = covariance;
++    if (!status.ok()) return status;
++    const auto [nativeMean, inverse] = refitDirectionChart(state.filtered(), true);
++    const Acts::BoundSquareMatrix regularCovariance = state.filteredCovariance();
++    state.filtered() = nativeMean;
++    state.filteredCovariance() = inverse * regularCovariance * inverse.transpose();
++    return status;
++  }
++};
++
++
++inline Acts::Result<void> smoothCkfCandidate(bool regular,
++    const Acts::GeometryContext& gctx, Acts::VectorMultiTrajectory& states,
++    std::size_t tip, const Acts::Logger& logger) {
++  if (regular) return RegularDirectionGainMatrixSmoother()(gctx,states,tip,logger);
++  return Acts::GainMatrixSmoother()(gctx,states,tip,logger);
++}
++#endif
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFitterFunction.cxx
+@@ -4,115 +4,7 @@
+ #include <cmath>
+ #include "RefitDirectionChart.h"
+ 
+-// Direction-chart control inside the real Calypso fitter. Local surface
+-// coordinates, measurements and forward propagation remain in the native
+-// geometry. Only the backward algebra uses (phi_A,latitude_A), where
+-// (x_A,y_A,z_A)=(z_F,y_F,-x_F), away from the forward-beam polar singularity.
+-struct RegularDirectionGainMatrixSmoother {
+-  struct Buffer {
+-    Acts::BoundVector filtered = Acts::BoundVector::Zero();
+-    Acts::BoundVector predicted = Acts::BoundVector::Zero();
+-    Acts::BoundVector smoothed = Acts::BoundVector::Zero();
+-    Acts::BoundSquareMatrix filteredCovariance = Acts::BoundSquareMatrix::Zero();
+-    Acts::BoundSquareMatrix predictedCovariance = Acts::BoundSquareMatrix::Zero();
+-    Acts::BoundSquareMatrix smoothedCovariance = Acts::BoundSquareMatrix::Zero();
+-    Acts::BoundSquareMatrix jacobian = Acts::BoundSquareMatrix::Zero();
+-  };
+-
+-
+-  Acts::Result<void> operator()(const Acts::GeometryContext&,
+-      Acts::VectorMultiTrajectory& trajectory, std::size_t entryIndex,
+-      const Acts::Logger& logger) const {
+-    Acts::GainMatrixSmoother native;
+-    Acts::GainMatrixSmoother::GetParameters filtered, smoothed, predicted;
+-    Acts::GainMatrixSmoother::GetCovariance filteredCovariance,
+-        predictedCovariance, smoothedCovariance, jacobian;
+-    filtered.connect([](const void*, void* state) {
+-      return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(state)->filtered.data());
+-    });
+-    predicted.connect([](const void*, void* state) {
+-      return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(state)->predicted.data());
+-    });
+-    smoothed.connect([](const void*, void* state) {
+-      return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(state)->smoothed.data());
+-    });
+-    filteredCovariance.connect([](const void*, void* state) {
+-      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->filteredCovariance.data());
+-    });
+-    predictedCovariance.connect([](const void*, void* state) {
+-      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->predictedCovariance.data());
+-    });
+-    smoothedCovariance.connect([](const void*, void* state) {
+-      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->smoothedCovariance.data());
+-    });
+-    jacobian.connect([](const void*, void* state) {
+-      return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(state)->jacobian.data());
+-    });
+-    auto previous = trajectory.getTrackState(entryIndex);
+-    previous.smoothed() = previous.filtered();
+-    previous.smoothedCovariance() = previous.filteredCovariance();
+-    if (!previous.hasPrevious()) return Acts::Result<void>::success();
+-    std::error_code error;
+-    trajectory.applyBackwards(previous.previous(), [&](auto state) {
+-      Buffer current, next;
+-      const auto [filteredMean, jf] = refitDirectionChart(state.filtered());
+-      const auto [predictedMean, jp] = refitDirectionChart(previous.predicted());
+-      const auto [smoothedMean, js] = refitDirectionChart(previous.smoothed());
+-      current.filtered = filteredMean;
+-      current.filteredCovariance = jf * state.filteredCovariance() * jf.transpose();
+-      next.predicted = predictedMean;
+-      next.predictedCovariance = jp * previous.predictedCovariance() * jp.transpose();
+-      next.smoothed = smoothedMean;
+-      next.smoothed[Acts::eBoundPhi] = predictedMean[Acts::eBoundPhi] +
+-          Acts::detail::difference_periodic(smoothedMean[Acts::eBoundPhi],
+-              predictedMean[Acts::eBoundPhi], 2.*std::acos(-1.));
+-      next.smoothedCovariance = js * previous.smoothedCovariance() * js.transpose();
+-      // Both ends of the actual stored transport derivative change chart.
+-      next.jacobian = jp * previous.jacobian() * jf.inverse();
+-      auto status = native.calculate(&current, &next, filtered,
+-          filteredCovariance, smoothed, predicted, predictedCovariance,
+-          smoothedCovariance, jacobian, logger);
+-      if (!status.ok()) {
+-        error = status.error();
+-        return false;
+-      }
+-      const auto [nativeMean, back] = refitDirectionChart(current.smoothed, true);
+-      state.smoothed() = nativeMean;
+-      state.smoothedCovariance() = back * current.smoothedCovariance * back.transpose();
+-      previous = state;
+-      return true;
+-    });
+-    return error ? Acts::Result<void>::failure(error)
+-                 : Acts::Result<void>::success();
+-  }
+-};
+-
+-// Use the same measured local coordinates and native ACTS measurement update,
+-// changing the direction chart before its linear Gaussian algebra. Restore
+-// the predicted slots so all saved states and transport Jacobians remain in
+-// the native chart. Only filtered output is passed to subsequent transport.
+-struct RegularDirectionGainMatrixUpdater {
+-  Acts::Result<void> operator()(const Acts::GeometryContext& gctx,
+-      Acts::VectorMultiTrajectory::TrackStateProxy state,
+-      Acts::Direction direction, const Acts::Logger& logger) const {
+-    const Acts::BoundVector predicted = state.predicted();
+-    const Acts::BoundSquareMatrix covariance = state.predictedCovariance();
+-    const auto [regularMean, jacobian] = refitDirectionChart(predicted);
+-    state.predicted() = regularMean;
+-    state.predictedCovariance() = jacobian * covariance * jacobian.transpose();
+-    Acts::GainMatrixUpdater native;
+-    auto status = native.operator()<Acts::VectorMultiTrajectory>(
+-        gctx, state, direction, logger);
+-    state.predicted() = predicted;
+-    state.predictedCovariance() = covariance;
+-    if (!status.ok()) return status;
+-    const auto [nativeMean, inverse] = refitDirectionChart(state.filtered(), true);
+-    const Acts::BoundSquareMatrix regularCovariance = state.filteredCovariance();
+-    state.filtered() = nativeMean;
+-    state.filteredCovariance() = inverse * regularCovariance * inverse.transpose();
+-    return status;
+-  }
+-};
++#include "RegularDirectionKalman.h"
+ 
+ // Keep the native ACTS update and its chi2. Re-express its output mean and
+ // covariance in the canonical angular chart before subsequent transport.
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+@@ -1,10 +1,14 @@
+ #include "TrackFinderFunction.h"
++#include "RegularDirectionKalman.h"
+ 
+ 
+ struct TrackFinderFunctionImpl
+     final : public TrackFinderFunction {
+   Acts::GainMatrixUpdater kfUpdater;
+   Acts::GainMatrixSmoother kfSmoother;
++  RegularDirectionGainMatrixUpdater regularUpdater;
++  RegularDirectionGainMatrixSmoother regularSmoother;
++  bool regularUpdate=false, regularSmoothing=false;
+   
+   CKF trackFinder;
+ 
+@@ -18,12 +22,20 @@
+         extensions;
+     extensions.calibrator.connect<&MeasurementCalibratorAdapter::calibrate>(
+         &calibrator);
++    if (regularUpdate) {
++      extensions.updater.connect<&RegularDirectionGainMatrixUpdater::operator()>(&regularUpdater);
++    } else {
+     extensions.updater.connect<
+         &Acts::GainMatrixUpdater::operator()<Acts::VectorMultiTrajectory>>(
+         &kfUpdater);
++    }
++    if (regularSmoothing) {
++      extensions.smoother.connect<&RegularDirectionGainMatrixSmoother::operator()>(&regularSmoother);
++    } else {
+     extensions.smoother.connect<
+         &Acts::GainMatrixSmoother::operator()<Acts::VectorMultiTrajectory>>(
+         &kfSmoother);
++    }
+     extensions.measurementSelector
+         .connect<&Acts::MeasurementSelector::select<Acts::VectorMultiTrajectory>>(
+             &measSel);
+@@ -60,7 +72,7 @@
+     std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+     std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+     bool resolvePassive, bool resolveMaterial, bool resolveSensitive, 
+-    const Acts::Logger& logger) {
++    const Acts::Logger& logger, bool regularUpdate, bool regularSmoothing) {
+   Stepper stepper(std::move(magneticField));
+   Navigator::Config cfg{std::move(trackingGeometry)};
+   cfg.resolvePassive = resolvePassive; 
+@@ -72,6 +84,9 @@
+   CKF trackFinder(std::move(propagator), logger.cloneWithSuffix("Finder"));
+ 
+   // build the track finder functions. owns the track finder object.
+-  return std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  auto result=std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  result->regularUpdate=regularUpdate;
++  result->regularSmoothing=regularSmoothing;
++  return result;
+ }
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+@@ -60,7 +60,7 @@
+   std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+   std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+   bool resolvePassive, bool resolveMaterial, bool resolveSensitive,
+-  const Acts::Logger& logger);
++  const Acts::Logger& logger, bool regularUpdate=false, bool regularSmoothing=false);
+ 
+ 
+ //}  // namespace
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -99,6 +99,10 @@
+   Gaudi::Property<std::string> m_seedComponentInputFile {this, "SeedComponentInputFile", "",
+       "Diagnostic: independent native CKF calls, local event/native seed/component/mean/C/surface"};
+   std::map<size_t,std::vector<SeedComponentInput>> m_seedComponentInputs;
++  Gaudi::Property<bool> m_regularCkfUpdateChart {this,"RegularCkfUpdateChart",false,
++      "Diagnostic: native CKF update in the existing beam-regular direction chart"};
++  Gaudi::Property<bool> m_regularCkfSmoothingChart {this,"RegularCkfSmoothingChart",false,
++      "Diagnostic: native CKF and private smoothing in the existing beam-regular direction chart"};
+   Gaudi::Property<bool> m_componentRefit {this, "ComponentRefit", false,
+       "Diagnostic: run each finite-prior component through native conversion and refit"};
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -28,6 +28,7 @@
+ #include "Acts/Propagator/Navigator.hpp"
+ #include "Acts/Propagator/Propagator.hpp"
+ #include "Acts/TrackFitting/GainMatrixSmoother.hpp"
++#include "RegularDirectionKalman.h"
+ #include "Acts/TrackFitting/GainMatrixUpdater.hpp"
+ #include "Acts/EventData/Measurement.hpp"
+ #include "Acts/Propagator/PropagatorError.hpp"
+@@ -147,7 +148,8 @@
+                                   true, true, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger);
+  
+   m_finder = makeTrackFinderFunction(trackingGeometry, magneticField,
+-                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger);
++                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger,
++                                  m_regularCkfUpdateChart, m_regularCkfSmoothingChart);
+ 
+   return StatusCode::SUCCESS;
+ }
+@@ -371,7 +373,7 @@
+         candidates.erase(candidates.begin());
+         auto dest=selectedTracks.getTrack(selectedTracks.addTrack());
+         dest.copyFrom(tracksTemp.getTrack(selected.index),true);
+-        const auto status=Acts::GainMatrixSmoother()(
++        const auto status=smoothCkfCandidate(m_regularCkfSmoothingChart,
+             gctx,selectedTracks.trackStateContainer(),dest.tipIndex(),*m_logger);
+         if (!status.ok()) return StatusCode::FAILURE;
+         m_audit->track("selected",gctx,dest,component.seed,selected.index);
+@@ -480,7 +482,7 @@
+     // overwritten by another branch before the finder returned. Deep-copying
+     // alone preserves those values: recompute only after the states are private.
+     if (m_isolateSmoothing) {
+-      const auto status = Acts::GainMatrixSmoother()(
++      const auto status = smoothCkfCandidate(m_regularCkfSmoothingChart,
+           gctx, selectedTracks.trackStateContainer(), destProxy.tipIndex(), *m_logger);
+       if (!status.ok()) {
+         ATH_MSG_ERROR("Isolated candidate smoothing failed for candidate "

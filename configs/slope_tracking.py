@@ -76,6 +76,10 @@ def main():
     parser.add_argument('--canonical-refit-update-angles', action='store_true', help='Calypso diagnostic: normalize the native refit update output and transform theta covariance before transport')
     parser.add_argument('--regular-refit-smoothing-chart', action='store_true', help='Calypso diagnostic: use a beam-regular angular chart for the actual native smoother, transforming all covariance and transport Jacobian blocks')
     parser.add_argument('--regular-refit-update-chart', action='store_true', help='Calypso diagnostic: perform the native measurement update in beam-regular angles and transform filtered mean/covariance back before actual native transport')
+    parser.add_argument('--regular-ckf-update-chart', action='store_true',
+                        help='Calypso diagnostic: apply the existing beam-regular direction adapter to actual CKF updates')
+    parser.add_argument('--regular-ckf-smoothing-chart', action='store_true',
+                        help='Calypso diagnostic: apply the existing beam-regular direction adapter to CKF and isolated smoothing')
     parser.add_argument('--correct-conversion-basis', action='store_true', help='Calypso diagnostic: transform ACTS surface covariance to the actual Trk curvilinear local basis')
     parser.add_argument('--correct-refit-basis', action='store_true', help='Calypso diagnostic: transform input curvilinear covariance to the actual refit plane basis')
     parser.add_argument('--refit-input-reference-plane', action='store_true', help='Calypso diagnostic: keep the refit plane at the input point, independently of covariance changes')
@@ -125,6 +129,8 @@ def main():
         parser.error('seed components require prior-component audit and isolated smoothing, without other seed overrides')
     if args.component_refit and not args.seed_component_input_file:
         parser.error('--component-refit requires --seed-component-input-file')
+    if (args.regular_ckf_update_chart or args.regular_ckf_smoothing_chart) and args.variant != 'beforeGeo':
+        parser.error('the CKF direction-chart adapter is defined for the native beforeGeo frame')
     if args.run_only_input_seeds and not args.full_seed_input_file:
         parser.error('--run-only-input-seeds requires --full-seed-input-file')
     from AthenaCommon.Configurable import Configurable
@@ -204,6 +210,10 @@ def main():
         ckf.SeedComponentInputFile = args.seed_component_input_file
     if args.component_refit:
         ckf.ComponentRefit = True
+    if args.regular_ckf_update_chart:
+        ckf.RegularCkfUpdateChart = True
+    if args.regular_ckf_smoothing_chart:
+        ckf.RegularCkfSmoothingChart = True
     if args.source_link_selection_file:
         ckf.SourceLinkSelectionFile = args.source_link_selection_file
     if args.ckf_no_scattering:
@@ -257,6 +267,10 @@ def main():
             BackwardPropagation=True, noDiagnostics=True, seedWriter=False,
             StatesWriter=False, SummaryWriter=False)
         backward_ckf = backward_cfg.getEventAlgo('CKF_Slope_Backward')
+        if args.regular_ckf_update_chart:
+            backward_ckf.RegularCkfUpdateChart = True
+        if args.regular_ckf_smoothing_chart:
+            backward_ckf.RegularCkfSmoothingChart = True
         if args.isolate_smoothing:
             backward_ckf.IsolateCandidateSmoothing=True
         if args.shared_smoothing:
@@ -300,6 +314,8 @@ def main():
         refit_update_angles_canonical=args.canonical_refit_update_angles,
         refit_smoothing_chart_regular=args.regular_refit_smoothing_chart,
         refit_update_chart_regular=args.regular_refit_update_chart,
+        ckf_update_chart_regular=args.regular_ckf_update_chart,
+        ckf_smoothing_chart_regular=args.regular_ckf_smoothing_chart,
         actual_refit_controls_by_direction=refit_controls,
         conversion_covariance_basis_corrected=args.correct_conversion_basis,
         refit_covariance_basis_corrected=args.correct_refit_basis,

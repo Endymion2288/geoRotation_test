@@ -45,6 +45,8 @@ def validate(folder):
     options = task.get('options', [])
     assert run['refit_update_chart_regular'] == ('--regular-refit-update-chart' in options)
     assert run['refit_smoothing_chart_regular'] == ('--regular-refit-smoothing-chart' in options)
+    assert run.get('ckf_update_chart_regular', False) == ('--regular-ckf-update-chart' in options)
+    assert run.get('ckf_smoothing_chart_regular', False) == ('--regular-ckf-smoothing-chart' in options)
     expected = input_rows(Path(task['component_file']))
     seeds, terminals, stages = set(), set(), Counter()
     found, selected, converted, finals = Counter(), Counter(), Counter(), Counter()

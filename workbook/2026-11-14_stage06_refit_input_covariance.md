@@ -1,5 +1,7 @@
 # S06：实际 refit 输入与对角 covariance 放大的单因素检查
 
+后续[实际 CKF chart 四模式控制](2026-11-14_stage06_ckf_direction_chart.md)已定位本批39条路径差异，并联合降低物理state差异；宽度/分量数稳健性及极端状态仍在继续检查。
+
 **两版 refit 都先将 covariance 对角项额外乘10，再将完整矩阵乘10。只取消前一步，两例“相同 CKF hits、双方 refit 成功”的版本间最终符号差异均消失；另两例不同路径、afterGeo fallback 的差异保留。第一例变成两版都错，第二例两版都对，因此该控制证明 refit 对物理先验和 chart 的敏感性，不代表生产误判率改善。**
 
 ## 阶段目标
