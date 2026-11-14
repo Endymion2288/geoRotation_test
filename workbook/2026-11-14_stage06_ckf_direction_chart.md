@@ -98,4 +98,6 @@ python3 scripts/submit_momentum.py --tasks <K>/control_tasks.json \
 
 ## 下一步计划
 
+四组检查已经完成，结果及后续输入精度控制见[宽度扫描报告](2026-11-14_stage06_ckf_chart_width_scan.md)。
+
 以相同真实Calypso联合chart及refit scale1，对既有四组宽度/分量数作完整before/after检查，复用本批n32 C/256，新增另外三组共18个重建。逐组报告选择、hits、sign、refit/fallback与物理state差异的max/p95/median，并对最差状态定位首个增长操作；不能仅用无sign分歧作为posterior等价证据。冻结入口 [prepare_charge_ckf_chart_scan.py](../scripts/prepare_charge_ckf_chart_scan.py)，任务保存在 `K/width_scan_v1`。
