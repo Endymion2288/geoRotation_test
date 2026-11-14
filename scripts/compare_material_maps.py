@@ -26,8 +26,8 @@ def describe(value):
 def transform(utility):
     data = utility.get("transform", {})
     rotation = data.get("rotation")
-    matrix = np.eye(3) if rotation is None else np.asarray(rotation).reshape(3, 3, order="F")
-    return matrix, np.asarray(data.get("translation", [0., 0., 0.]))
+    matrix = np.eye(3) if rotation is None else np.asarray(rotation).reshape(3, 3)
+    return matrix, np.asarray(data.get("translation") or [0., 0., 0.])
 
 
 def compare_values(first, second):

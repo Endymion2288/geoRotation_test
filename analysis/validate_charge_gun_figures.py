@@ -19,8 +19,8 @@ def normalized_graphics(page):
     def marker(match):
         obj = resources['/XObject'][match[1]].get_object()
         metadata = {key: value for key, value in obj.items() if key not in ['/Length', '/Filter']}
-        return json.dumps(metadata, sort_keys=True, default=str)+' '+obj.get_data().decode()+' Do'
-    content = page.get_contents().get_data().decode()
+        return json.dumps(metadata, sort_keys=True, default=str)+' '+obj.get_data().decode('latin1')+' Do'
+    content = page.get_contents().get_data().decode('latin1')
     content = re.sub(r'(/A\d+) gs', state, content)
     return re.sub(r'(/M\d+) Do', marker, content)
 

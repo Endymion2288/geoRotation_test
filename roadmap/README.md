@@ -4,7 +4,7 @@
 
 研究起点为本地旋转版Calypso `88c457c1e4bf4154e67b96114ee8e7020d9b1a97`。S00–S05已交付：S03建立五类各10k事件的原版基线，S04完成动量逐运算研究、独立50k母事件的材料配对验证及Calypso内T0–T4控制，S05完成角度主要结构来源、独立控制及限定窗口余量。此前独立ACTS toy退出验收，T5在Calypso实际几何/组件内的完整统计closure未测量，列入S07；[源码与软件来源](../workbook/2026-11-12_stage04_calypso_provenance.md)列明实际路径与patch。
 
-实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)、[S04](../workbook/2026-11-12_stage04_momentum.md)。S04证实current22材料与旋转几何的坐标不一致，主要通过scattering covariance/gain制造大负尾；严格旋转同一map后，独立110051尾率从34.151%降至10.543%，Good95效率提高4.018个百分点。接口chart/refit起点问题、seed混合和辐射后KF残余分别保留受控实验入口。补充G4退出134已定位修复，同sensor truth关联通过2400事件、81153 steps逐值验证。
+实测入口：[S01](../workbook/2026-11-11_stage01_inputs_and_definitions.md)、[S02](../workbook/2026-11-11_stage02_rotation_and_audit_closure.md)、[S03](../workbook/2026-11-11_stage03_baseline.md)、[S04](../workbook/2026-11-12_stage04_momentum.md)。S04证实current22材料与旋转几何的坐标不一致，主要通过scattering covariance/gain制造大负尾；改用历史legacy-strict配置后，独立110051尾率34.151%→10.543%，Good95效率+4.018个百分点。该旧配置仍有JSON转置错误，数值保留为真实配置比较，撤回“严格物理旋转”解释，见下述decoder更正。接口chart/refit、seed混合和辐射后KF残余保留独立控制；补充G4退出134修复及同sensor truth的2400事件/81153 steps验证已完成。
 
 110051的S04材料对照见[全20文件专项报告](../workbook/2026-11-12_stage04_full110051_pfs.md)：20,000源事件，材料坐标修正前后final尾率33.858%→10.577%。该报告使用S04 Good95/SDO选择，补齐原10文件逐层图，给出predicted/filtered/smoothed的信息范围、同state尾部迁移与曲率不确定度；这些图不代表整体坐标旋转beforeGeo/afterGeo，也不能代替GitHub原宏的复现。
 
@@ -30,6 +30,10 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 本次isolated smoothing ON的[S05全量复核](../workbook/2026-11-13_stage05_isolated_validation.md)确认两版各500k的最终量及选样成员与OFF一致，57页ON参考图已交付。[S06全量基线](../workbook/2026-11-13_stage06_charge_baseline.md)使用μ±各500k/版，误判率为μ+0.163695%→0.010923%、μ−0.314528%→0.012519%；after正负差95%为[−0.004386,+0.007578]个百分点。[谱、模式与逐运算控制](../workbook/2026-11-13_stage06_charge_controls.md)已完成production-only平衡、100k模式、119事件r/S/K/C及500k一阶matched prior；56次CKF翻转中31无SDO、25仅primary支持，3例从seed保留。hit过滤恢复17例、6例仍错、36例质量失败；q/B全119路径闭合。100k before refit update为额外错号主因，[独立full-G4与模式计数](../workbook/2026-11-13_stage06_independent_charge_controls.md)提供新样本及全分母证据。Q5的完整纯旋转、剩余纯轨迹机制与后续回归尚未完成。
 
+[联合refit全量回归](../workbook/2026-11-14_stage06_joint_refit_regression.md)已补齐μ±各40k、两类A′各10k源事件、3/4站F/B/merge的48组。所有模式错号计数下降，110051三站forward为1212/13589→297/13648，correct效率+4.9722 pp [4.6127,5.3316]，production-relative半动量尾36.7577%→9.8916%；18页图、fallback/CPU及选择迁移通过核对。merge的控制已实际应用至两个refit方向。Q5完整共同物理先验、材料查询与剩余measurement机制继续执行。
+
+[原生材料decoder与有限物理先验](../workbook/2026-11-14_stage06_physical_prior_material_decoder.md)已定位旧map的rotation数组转置错误：原脚本按列编码而ACTS按行读取，AFS共同12项也有相同编码。修正后176次native查询的bin/raw材料全部一致，7,680点确定性transport最大位置差4.69×10⁻¹³ mm、方向差2.21×10⁻¹⁶ rad、相对p差6.66×10⁻¹⁶，sign差异为0。此为transport闭合，不是完整CKF posterior等价。原历史文件和测量保留；isolated smoothing ON的三个20-event legacy replay分别58/58/56字段精确，AFS仅改编码的μ±及100044各500k全量重建已提交，角度/电荷影响未测量。
+
 | 文档 | 内容 |
 | --- | --- |
 | [00 材料与源码](00_materials_and_source.md) | PDF 页码、历史数值、输入样本、源码检查点及尚缺信息 |
@@ -41,7 +45,7 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 ## 目前证据决定的优先级
 
-0. **以已完成的原宏对照为入口，分离局部bias与production-relative能损。** `t_eQOP`与相同majority barcode的production p实测一致；历史图继续保留`t_eQOP`，逐层算法检验使用同面G4 p。beforeGeo/afterGeo的原生covariance不同，后续固定物理先验及共同seed/hits，才能判断旋转、covariance和选择各自的贡献。AFS/strict有小的产额差异，其navigation/candidate来源尚未定位；file0的三个mask控制27图相同。
+0. **完成材料编码修正的全量重建控制。** `t_eQOP`与同majority production p一致，历史图保留原宏定义；局部bias用同面G4 p。native decoder已证明旧AFS/strict的转置错误，正确map的有限物理点transport闭合；先完成仅改编码的500k/样本角度、charge、momentum和效率配对，再推进完整CKF共同先验。AFS/旧strict空条目/法向平移的候选差异仍单列；file0三个mask控制27图相同。
    原生共享smoothed slots与候选隔离重算分开呈现，truth purity分组保留共同母样本；两者对旧图形状的作用已定量，按鼓包复核报告使用各自适用的states。
 1. **S05成因定位与生产修复分别验收。** 整体beforeGeo/afterGeo的统一物理面、near-pole联合chart、独立μ± full-G4、after肩峰strip/response余量及A′拓扑均已测量。后续S07在新保留输入上检查chart补丁的全量效率与pull校准；固定输入的成因改善不代替生产验收。同面truth model与实际G4真值继续分别标注。
 2. **S06分开处理入口条件与production输入。** 两种overlap均在held-out通过五项|SMD|<0.05、KS<0.05；production-only已使before原始正负差区间包含0。119事件精确重放及100k模式已归约；matched prior的500k率为μ+19/254297、μ−26/262987，仅证明一阶seed C控制。hit/qB/refit、独立gun和模式fallback已测量。[centroid与seed q/p控制](../workbook/2026-11-13_stage06_measurement_seed_controls.md)在59错号中分别恢复23条与0条selected正确；[完整seed固定控制](../workbook/2026-11-14_stage06_fixed_seed_alignment.md)仍为5条pure selected恢复、1条符号正确但rmax=95.0914 mm失败，正常控制59/60通过。MC conditions下192个sensor的alignment与nominal相同；匹配G4/digitization/reco全链通过，default/nominal六组58字段精确相同。before updater-only有角大尾代价，both才联合改善。完整共同先验及留出回归继续执行；原生版本差不冒称纯旋转净效应。

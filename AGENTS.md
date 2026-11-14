@@ -81,6 +81,7 @@ condor_q -name <schedd> -totals
 - 每个参数、表和图声明坐标系、参考 surface、单位和 stage。区分原始 FASER frame 与旋转 ACTS frame，以及 GeV/MeV、`q/p` 和 `p`、`py/pz` 和 `atan(py/pz)`。
 - 保留稳定的 event/particle/seed/candidate/state 标识；truth matching 使用 hit/SDO/barcode，电荷与重建动量不参与主匹配条件。失败、未匹配、重复候选和 refit fallback 分别计数。
 - 新增诊断保持 reconstruction 行为一致；先验证观察开关不改变事件和候选结果，再做单因素消融。几何旋转的 on/off 必须覆盖几何、磁场、seed、refit、输出和 covariance；不能只切换 `geometryRotation` 成员。
+- 材料transform必须按实际ACTS JSON decoder验证。除脚本代数检查外，读取真实Calypso surface上的已解码matrix、local coordinates、bin indices与raw slab；生成和验证共用同一Python解码函数的自洽结果不能代替native查表证据。历史材料文件冻结，新修正使用新路径并单独测量重建影响。
 - 所有重建结果、物理结论和验收图均基于 `/eos/home-x/xcheng/FASER/geoRotation_calypso` 的实际组件及其匹配构建。新增诊断、truth seed、固定 hits 和消融在该源码树内实现并保存 patch；配置脚本调用 Calypso 组件，仓库分析脚本负责 matching、统计和绘图。禁止使用另写的独立 tracking、简化 detector/field 或 standalone ACTS toy 代替 Calypso 结果。冻结的 `.so` 是该 Calypso 构建的运行副本，记录来源、commit/patch、配置和库目录；实际源码的本地改动必须如实列明。
 - 本研究默认的 beforeGeo/afterGeo 指整体坐标旋转前后；beforeGeo 使用本地 Calypso `master` 的真实源码与原生配置，afterGeo 使用旋转分支。材料图之间的比较单列为 material control。允许同 release 的隔离 Calypso worktree，记录完整 commit、重编 package、共享依赖及实际加载库；不得称不同原生 covariance 的版本比较为保持物理先验一致的纯旋转效应。
 - 对坐标、单位、covariance Jacobian、候选归属和已定位缺陷增加有意义的小型回归检查。文档调整使用链接检查和 `git diff --check`；物理结论使用明确样本上的比较与区间估计。

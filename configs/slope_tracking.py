@@ -10,6 +10,32 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 
 
+def configure_refit(ckf, args, factory, suffix=''):
+    """Apply the requested refit control to each actual CKF direction."""
+    fitter = ckf.KalmanFitterTool1
+    if args.refit_covariance_scale is not None:
+        fitter.SeedCovarianceScale = args.refit_covariance_scale
+    for option, property_name in [
+            ('wrap_refit_smoothing_phi', 'WrapRefitSmoothingPhi'),
+            ('canonical_refit_smoothing_angles', 'CanonicalRefitSmoothingAngles'),
+            ('canonical_refit_update_angles', 'CanonicalRefitUpdateAngles'),
+            ('regular_refit_smoothing_chart', 'RegularRefitSmoothingChart'),
+            ('regular_refit_update_chart', 'RegularRefitUpdateChart'),
+            ('correct_refit_basis', 'CorrectCovarianceBasis'),
+            ('refit_input_reference_plane', 'UseInputReferencePlane')]:
+        if getattr(args, option):
+            setattr(fitter, property_name, True)
+    if args.correct_conversion_basis:
+        ckf.CreateTrkTrackTool = factory.CreateTrkTrackTool('SlopeCKFConverter'+suffix,
+                                                         CorrectCovarianceBasis=True)
+        fitter.CreateTrkTrackTool = factory.CreateTrkTrackTool('SlopeRefitConverter'+suffix,
+                                                            CorrectCovarianceBasis=True)
+    return {name: getattr(fitter, name, False) for name in [
+        'SeedCovarianceScale', 'WrapRefitSmoothingPhi', 'CanonicalRefitSmoothingAngles',
+        'CanonicalRefitUpdateAngles', 'RegularRefitSmoothingChart',
+        'RegularRefitUpdateChart', 'CorrectCovarianceBasis', 'UseInputReferencePlane']}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', required=True)
@@ -155,25 +181,8 @@ def main():
     ckf.KalmanFitterTool1.StatesWriter = args.native_states
     ckf.KalmanFitterTool1.RootTrajectoryStatesWriterTool.noDiagnostics = not args.native_states
     ckf.KalmanFitterTool1.SummaryWriter = False
-    if args.refit_covariance_scale is not None:
-        ckf.KalmanFitterTool1.SeedCovarianceScale=args.refit_covariance_scale
-    if args.wrap_refit_smoothing_phi:
-        ckf.KalmanFitterTool1.WrapRefitSmoothingPhi=True
-    if args.canonical_refit_smoothing_angles:
-        ckf.KalmanFitterTool1.CanonicalRefitSmoothingAngles=True
-    if args.canonical_refit_update_angles:
-        ckf.KalmanFitterTool1.CanonicalRefitUpdateAngles=True
-    if args.regular_refit_smoothing_chart:
-        ckf.KalmanFitterTool1.RegularRefitSmoothingChart=True
-    if args.regular_refit_update_chart:
-        ckf.KalmanFitterTool1.RegularRefitUpdateChart=True
-    if args.correct_conversion_basis:
-        ckf.CreateTrkTrackTool=CompFactory.CreateTrkTrackTool('SlopeCKFConverter', CorrectCovarianceBasis=True)
-        ckf.KalmanFitterTool1.CreateTrkTrackTool=CompFactory.CreateTrkTrackTool('SlopeRefitConverter', CorrectCovarianceBasis=True)
-    if args.correct_refit_basis:
-        ckf.KalmanFitterTool1.CorrectCovarianceBasis=True
-    if args.refit_input_reference_plane:
-        ckf.KalmanFitterTool1.UseInputReferencePlane=True
+    refit_controls = {'backward' if args.backward else 'forward':
+                      configure_refit(ckf, args, CompFactory)}
     if args.refit_outcomes:
         ckf.RefitOutcomeFile='refit_outcomes.csv'
     acc.merge(cfg)
@@ -190,6 +199,7 @@ def main():
             backward_ckf.IsolateCandidateSmoothing=False
         if args.mode_refit_counters:
             backward_ckf.ChargeDiagnosticFile = 'mode_refit_backward.csv'
+        refit_controls['backward'] = configure_refit(backward_ckf, args, CompFactory, 'Backward')
         acc.merge(backward_cfg)
         from FaserActsKalmanFilter.MergeTracksConfig import MergeTrackCfg
         acc.merge(MergeTrackCfg(flags, TrackCollectionForward='CKFTrackCollectionWithoutIFT',
@@ -226,6 +236,7 @@ def main():
         refit_update_angles_canonical=args.canonical_refit_update_angles,
         refit_smoothing_chart_regular=args.regular_refit_smoothing_chart,
         refit_update_chart_regular=args.regular_refit_update_chart,
+        actual_refit_controls_by_direction=refit_controls,
         conversion_covariance_basis_corrected=args.correct_conversion_basis,
         refit_covariance_basis_corrected=args.correct_refit_basis,
         refit_uses_input_reference_plane=args.refit_input_reference_plane,

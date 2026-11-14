@@ -11,9 +11,10 @@ R = np.array([[0., 0., 1.], [0., 1., 0.], [-1., 0., 0.]])
 
 
 def transform(value):
+    """Decode the row-major matrix used by ACTS 32 Transform3::from_json."""
     rotation = value.get("rotation")
-    return (np.eye(3) if rotation is None else np.asarray(rotation).reshape(3, 3, order="F"),
-            np.asarray(value.get("translation", [0., 0., 0.])))
+    return (np.eye(3) if rotation is None else np.asarray(rotation).reshape(3, 3),
+            np.asarray(value.get("translation") or [0., 0., 0.]))
 
 
 def rotate(source):
@@ -24,7 +25,7 @@ def rotate(source):
             if utility is None:
                 continue
             old_rotation, translation = transform(utility.get("transform", {}))
-            utility["transform"] = {"rotation": (R @ old_rotation).flatten(order="F").tolist(),
+            utility["transform"] = {"rotation": (R @ old_rotation).flatten().tolist(),
                                     "translation": (R @ translation).tolist()}
     return result
 
@@ -60,6 +61,7 @@ def main():
     report = dict(source=str(args.source.resolve()), output=str(args.output), entries=entry_counts,
                   points_per_surface=len(points), max_local_coordinate_difference_mm=max_error,
                   geometry_ids_identical=True, material_bin_data_identical=True,
+                  json_rotation_order="row-major, matching ACTS 32.0.2 from_json",
                   rotation=R.tolist())
     args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

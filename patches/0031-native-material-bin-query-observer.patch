@@ -1,0 +1,44 @@
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -344,6 +344,7 @@
+ 
+ #include <iomanip>
+ #include "Acts/Geometry/TrackingVolume.hpp"
++#include "Acts/Material/BinnedSurfaceMaterial.hpp"
+ 
+ // Separate propagation-only algorithm for archived native states and free
+ // direction checks. It calls the same Calypso extrapolation tool as NtupleDumper.
+@@ -418,7 +419,7 @@
+     m_trace.open(m_materialTrace.value());
+     m_materialSummary.open(m_materialTrace.value()+".calls.csv");
+     if(!m_trace || !m_materialSummary) return StatusCode::FAILURE;
+-    m_trace<<std::setprecision(17)<<"source_entry,seed,candidate,target,interaction,geometry_id,surface,updated_volume_step,xF_mm,yF_mm,zF_mm,dirFx,dirFy,dirFz,deltaP_GeV,path_correction,thickness_mm,thickness_X0,thickness_L0,material_0,material_1,material_2,material_3,material_4\n";
++    m_trace<<std::setprecision(17)<<"source_entry,seed,candidate,target,interaction,geometry_id,surface,updated_volume_step,xF_mm,yF_mm,zF_mm,dirFx,dirFy,dirFz,deltaP_GeV,path_correction,thickness_mm,thickness_X0,thickness_L0,material_0,material_1,material_2,material_3,material_4,binned,bin_transform_00,bin_transform_01,bin_transform_02,bin_transform_03,bin_transform_10,bin_transform_11,bin_transform_12,bin_transform_13,bin_transform_20,bin_transform_21,bin_transform_22,bin_transform_23,bin_local_x,bin_local_y,bin_local_z,bin_0,bin_1,bin_2,raw_thickness_mm,raw_material_0,raw_material_1,raw_material_2,raw_material_3,raw_material_4\n";
+     m_materialSummary<<std::setprecision(17)<<"source_entry,seed,candidate,target,input_charge,input_p_GeV,normal_end_p_GeV,steps,interactions,material_X0,material_L0,sum_deltaP_GeV\n";
+   }
+   m_entry=m_skip;return StatusCode::SUCCESS;
+@@ -460,6 +461,24 @@
+           <<hit.materialSlab.thicknessInX0()<<','<<hit.materialSlab.thicknessInL0();
+         const auto parameters=hit.materialSlab.material().parameters();
+         for(int j=0;j<5;++j) m_trace<<','<<parameters[j];
++        const auto* binned=hit.surface ?
++          dynamic_cast<const Acts::BinnedSurfaceMaterial*>(hit.surface->surfaceMaterial()) : nullptr;
++        m_trace<<','<<bool(binned);
++        if(binned) {
++          const auto& utility=binned->binUtility();
++          const auto& matrix=utility.transform().matrix();
++          for(int r=0;r<3;++r) for(int c=0;c<4;++c) m_trace<<','<<matrix(r,c);
++          const Acts::Vector3 local=utility.transform().inverse()*hit.position;
++          for(int j=0;j<3;++j) m_trace<<','<<local[j];
++          const auto bins=utility.binTriple(hit.position);
++          for(auto bin:bins) m_trace<<','<<bin;
++          const auto& slab=binned->materialSlab(hit.position);
++          m_trace<<','<<slab.thickness();
++          const auto raw=slab.material().parameters();
++          for(int j=0;j<5;++j) m_trace<<','<<raw[j];
++        } else {
++          for(int j=0;j<24;++j) m_trace<<','<<NAN;
++        }
+         m_trace<<'\n';deltaP+=hit.deltaP;
+       }
+       m_materialSummary<<m_entry<<','<<m_seed<<','<<m_candidate<<','<<i<<','<<start.charge()<<','

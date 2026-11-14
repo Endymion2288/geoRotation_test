@@ -1,5 +1,7 @@
 # S04：动量低估的逐运算定位与材料坐标一致性验证
 
+2026-11-14材料定义更正：本文`strict`是历史配置名，其JSON仍存在旋转数组转置错误，不能称为严格物理旋转。下列数字保留为真实current/legacy-strict两配置的测量；解码根因、native bins及新修正transport见[材料decoder报告](2026-11-14_stage06_physical_prior_material_decoder.md)。
+
 日期：2026-11-12（Europe/Zurich）。阶段结果目录：`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_momentum`，下文以 `$R` 表示。
 
 ## 阶段目标
@@ -8,7 +10,7 @@
 
 ## 已确认的主要结果
 
-当前旋转几何与未旋转 current22 材料查表坐标不一致，是本配置中后续拟合大负尾的重要程序原因。严格旋转同一份 map，保留全部 geometry IDs 和 bin data，在五类独立样本上均显著降低 production-referenced tail；A′ 110051 从 4272/12509（34.151%）降至 1401/13288（10.543%），Good95 效率提高 4.018 个百分点，bootstrap95 为 [3.544,4.529] 个百分点。
+当前旋转几何与未旋转current22材料查表坐标不一致，是本配置中后续拟合大负尾的重要程序原因。换用当时名为strict的legacy旋转map，保留geometry IDs和bin data，在五类独立样本上均降低production-referenced tail；A′ 110051从4272/12509（34.151%）降至1401/13288（10.543%），Good95效率提高4.018个百分点，bootstrap95为[3.544,4.529]个百分点。该性能改善不证明legacy map物理正确，修正其转置编码后的全链影响另测。
 
 生产点 residual 包含真实上游能损。历史 RDO 只能从 continuation vertices 给局部 p 的上下界；本阶段另生成与 seed plane 同面的 G4 样本，执行确定性 q/p、完整 mean 和纯 truth hits 非组合 KF 实验。
 
@@ -24,7 +26,7 @@
 
 - 三站 forward 主实验冻结 FASERNU-04、OFLCOND-FASER-05、maskedLayers=0..5；所有候选间比较通过 final ancestry 的 seed/candidate ID。参考动量默认是 production truth；同面真值和上下界另标。所有 p ratio 均使用有效正的 Cartesian norm。
 
-- `current`为冻结的未旋转current22，`strict`为同一map的严格刚体旋转current22。历史AFS rotated12与strict的共同材料数据相同，缺少的10项均为空材料，部分binUtility平移沿法向相差2 mm；本阶段保留22项以固定原map全部IDs。逐项差异见[材料图比较](2026-11-12_stage04_material_maps.md)。本阶段改善不是AFS旋转图→strict的测量。
+- `current`为冻结的未旋转current22，`strict`为同一map的legacy旋转编码current22，实际解码矩阵为预期旋转的转置。历史AFS rotated12与旧strict的共同数据/编码相同，额外10项均为空材料，部分binUtility平移沿法向相差2 mm；本阶段保留22项以固定原map全部IDs。逐项差异见[材料图比较](2026-11-12_stage04_material_maps.md)。本阶段改善不是AFS→strict的测量。
 
 - 主材料配对和独立验证均使用 S03 的冻结重建库，未同时启用 chart/refit plane 等修正。新 observer/control 的普通开关默认保持原行为。
 

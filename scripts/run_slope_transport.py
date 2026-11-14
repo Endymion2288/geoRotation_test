@@ -25,6 +25,7 @@ def main():
         command.append('--direction-scan')
     if task.get('states'):
         command.extend(['--states', task['states']])
+    command.extend(task.get('options', []))
     with Path('transport.log').open('w') as log:
         status = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT).returncode
     with Path('transport.log').open('rb') as source, gzip.open(output/'transport.log.gz', 'wb') as target:
@@ -38,6 +39,9 @@ def main():
     with np.load(compact,allow_pickle=False) as check:
         assert np.array_equal(check['source_entry'],data['source_entry'])
     shutil.copy2(compact,output/'transport.npz')
+    for name in ['material_trace.csv', 'material_trace.csv.calls.csv']:
+        if Path(name).exists():
+            shutil.copy2(name, output/name)
     (output/'source_task.json').write_text(json.dumps(task, indent=2)+'\n')
     print(f"Exported {len(data['source_entry'])} actual Calypso transport inputs", flush=True)
 

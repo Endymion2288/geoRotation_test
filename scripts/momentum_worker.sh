@@ -10,6 +10,11 @@ source /eos/home-x/xcheng/FASER/geoRotation_calypso/setup_environment.sh > envir
 georotation_status=$?
 set -eu
 if [[ $georotation_status -ne 0 ]]; then exit "$georotation_status"; fi
+# Analysis dependencies are installed here for Python 3.9. Keep the release's
+# packages first and make the additional path explicit on batch workers whose
+# Python user-site directory is not automatically visible.
+georotation_analysis_site=/afs/cern.ch/user/x/xcheng/.local/lib/python3.9/site-packages
+export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$georotation_analysis_site"
 export GEOROTATION_LIBRARY_DIR="$georotation_library"
 export LD_LIBRARY_PATH="$GEOROTATION_LIBRARY_DIR:$LD_LIBRARY_PATH"
 georotation_python="${GEOROTATION_LIBRARY_DIR%/lib}/python"

@@ -1,5 +1,7 @@
 # 阶段 02：旋转、接口与诊断闭合
 
+2026-11-14更正：本文材料4096点自检重复使用了错误的JSON数组解码假设，未证明实际Calypso材料旋转闭合。旧`strict`加载的是预期旋转的转置；native bin-query已定位并修正编码，176次查询及7,680点transport的实测见[材料decoder报告](2026-11-14_stage06_physical_prior_material_decoder.md)。sensor、field和其余独立测试保留各自原验证范围。
+
 日期：2026-11-11。192 个 sensor 的旋转位置和 basis 与 GeoModel 完全一致；无材料 ACTS 传播的动量模长保持不变。10 个 μ+ 事件的原版、审计版与 ROOT diagnostics 开关对照，最终 track 数和记录参数完全相同。实际接口测试确认原版 plane→curvilinear covariance 缺少 chart 变换；实验修正已通过有限差分，但其对总体异常率的影响属于后续因果研究。
 
 ## 阶段目标
@@ -77,7 +79,7 @@
 
 ### 材料与数值预算
 
-当前默认未旋转 map 有 22 surfaces；历史 rotated map 有 12 surfaces，部分中心还相差 2 mm。因此不能把两者对比等同于纯旋转。`scripts/rotate_material.py` 从冻结的当前 map 生成 22-surface 旋转版本，每 surface 4096 points，bin data 和 geometry IDs 完全相同，变换前后 local-coordinate 最大差=0 mm。
+当前默认未旋转 map 有 22 surfaces；历史 rotated map 有 12 surfaces，部分中心还相差 2 mm。因此不能把两者对比等同于纯旋转。旧`rotate_material.py`从冻结map生成22-surface legacy版本，每surface的4096点脚本内部local-coordinate差为0，bin data和geometry IDs相同；前者受上述解码错误影响，不是原生查表闭合证明。
 
 2026-11-12逐项补查：AFS旋转图与strict共同12项的86400个材料bin完全相同；strict额外10项的118个bin全为零厚度空材料。2 mm差沿binUtility局部法向，不改变共同项的binX/binY查询，不能将12/22解释为缺失10层非零材料。具体数据与已有Calypso小样本差异见[专项比较](2026-11-12_stage04_material_maps.md)。
 

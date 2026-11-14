@@ -14,6 +14,9 @@ S06 isolated-smoothing批次的增量与基底：
 - `0026_charge_conjugated_truth_transport.patch`：相对0023后的observer增量，只将原输入production truth用于model transport的charge反号；reco charge已由CKF反号，不重复乘。v2的三DSID smoke默认58字段精确、q/B路径和完整C闭合，见`stage06_charge/20261113_isolated_v1/hitcontrol_smoke_v2/validation.json`。
 - `0027_charge_refit_chart_before.patch`：0022之后的refit五文件增量，来自S05已测量的native regular update/smoother chart；默认关闭，不包含CKF替换。实际beforeGeo build及两电荷20-event默认58字段、全部CKF行闭合，见`refit_control_smoke_v1/validation.json`。
 - `0028-nominal-alignment-store-control.patch`：真实`FaserSCT_AlignCondAlg`默认关闭的nominal store控制与sensor transform只读审计；nominal模式不读alignment folder、不施加conditions displacement，仍生成实际SCT conditions store供detector elements和ACTS消费。相对`88c457c1`、仅conditions package；该package在before/after基底源码相同。实际11个translation units编译成功，6组20事件默认58字段精确，192个sensor实际/default矩阵差为0。匹配G4/digitization/reco链通过，default/nominal六组58字段精确相同，见[固定seed与alignment报告](../workbook/2026-11-14_stage06_fixed_seed_alignment.md)。
+- `0029-transport-endpoint-charge-observer.patch`：基于S05冻结`software_transport_probe_common/CalypsoSlopeDiagnosticsAlg.cxx`，在原生`propagate()`后读取实际endpoint charge/qop，不从输入charge反推输出。编译副本为S06 `software_transport_sign_v2`。
+- `0030-native-transport-material-trace.patch`：0029后observer的增量，另用实际extrapolator `propagationSteps()`记录geometry ID、interaction位置、path correction和slab。原endpoint仍由原生`propagate()`取得；编译副本为`software_material_trace_v3`。
+- `0031-native-material-bin-query-observer.patch`：0030后observer的增量，在真实`BinnedSurfaceMaterial`上读取已解码matrix、native local coordinates、`binTriple()`及`materialSlab()`原始材料。实际worktree为`geoRotation_calypso_material_bins_v4`，编译副本`software_material_bins_v4`；六组原18字段逐值复现v3。0029–0031均在各自正确基底上apply并逐字节复现编译源码，见[材料decoder报告](../workbook/2026-11-14_stage06_physical_prior_material_decoder.md)。它们是transport observer增量，不直接改变CKF或其smoothing。
 
 S06全量主测量及历史Alma配对的cuts、分母、软件快照与未完成实验同见该报告；不将探索控制视为正式生产修复。
 
@@ -48,7 +51,7 @@ SD patch 对应 `FaserGeant4` target 和 `build/Simulation/FaserGeant4/cmake_ins
 
 `0004` 的 Pythia 修正已通过现有 `link.txt` 加 `-Wl,--exclude-libs,ALL` 重新链接并安装；实测完整命令及日志在 `stage04_momentum/g4_debug/relink_pythia_command.json`、`relink_pythia.log`。正常重建使用更新后的 CMake 定义；本轮未把未经执行的全项目 reconfigure 当作验证结果。
 
-材料最小修复是使用与 A frame 一致的 current22 map，保持全部 geometry IDs 与 bin data。运行 [rotate_material.py](../scripts/rotate_material.py) 后，在配置中显式设置 `flags.TrackingGeometry.MaterialSource` 或通过 `tracking_runner.py --material <map>` 指定。材料 JSON 保存在 results，不进入 Git；历史 rotated12 map 不作为严格旋转 current22 的替代品。
+材料编码修正使用实际ACTS按行读取的rotation数组，保持geometry IDs、bin axes/data及原transform来源。运行修正后的[rotate_material.py](../scripts/rotate_material.py)生成新路径，再显式设置`flags.TrackingGeometry.MaterialSource`或`tracking_runner.py --material <map>`；以native matrix/bin/slab和transport验证。旧脚本生成的`strict`和AFS rotated12共同加载为转置旋转，保留历史文件，不当作纯旋转控制。S06新current22修正map已完成transport闭合；AFS仅改编码的实际CKF影响另作500k/样本对照。JSON保存在results，不进入Git。
 
 问题对应的Calypso源码路径、默认材料入口和实际作业来源见[源码与结果来源报告](../workbook/2026-11-12_stage04_calypso_provenance.md)。当前`faser_reco.py`第196行的默认材料路径尚未修改，已经验证的是显式flag替换；诊断及修复继续在同一Calypso源码树和匹配构建中进行。
 

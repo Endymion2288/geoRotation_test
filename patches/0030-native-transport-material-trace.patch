@@ -1,0 +1,64 @@
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -342,6 +342,9 @@
+ 
+ DECLARE_COMPONENT(CalypsoSlopeDiagnosticsAlg)
+ 
++#include <iomanip>
++#include "Acts/Geometry/TrackingVolume.hpp"
++
+ // Separate propagation-only algorithm for archived native states and free
+ // direction checks. It calls the same Calypso extrapolation tool as NtupleDumper.
+ class CalypsoSlopeTransportProbeAlg final : public AthAlgorithm {
+@@ -356,6 +359,8 @@
+   Gaudi::Property<bool> m_rotated{this,"Rotated",true},m_scan{this,"DirectionScan",false};
+   Gaudi::Property<long> m_skip{this,"Skip",0};
+   Gaudi::Property<std::string> m_input{this,"InputStates",""},m_output{this,"Output","transport_probe.root"};
++  Gaudi::Property<std::string> m_materialTrace{this,"MaterialTraceOutput",""};
++  std::ofstream m_trace,m_materialSummary;
+   const FaserSCT_ID* m_ids=nullptr;
+   const TrackerDD::SCT_DetectorManager* m_manager=nullptr;
+   std::unique_ptr<TFile> m_file;
+@@ -409,6 +414,13 @@
+   m_tree->Branch("projection_charge",m_outputCharge,"projection_charge[3]/D");
+   m_tree->Branch("projection_covariance_native",m_outputCovariance,"projection_covariance_native[3][6][6]/D");
+   m_tree->Branch("projection_valid",m_valid,"projection_valid[3]/I");
++  if(!m_materialTrace.value().empty()) {
++    m_trace.open(m_materialTrace.value());
++    m_materialSummary.open(m_materialTrace.value()+".calls.csv");
++    if(!m_trace || !m_materialSummary) return StatusCode::FAILURE;
++    m_trace<<std::setprecision(17)<<"source_entry,seed,candidate,target,interaction,geometry_id,surface,updated_volume_step,xF_mm,yF_mm,zF_mm,dirFx,dirFy,dirFz,deltaP_GeV,path_correction,thickness_mm,thickness_X0,thickness_L0,material_0,material_1,material_2,material_3,material_4\n";
++    m_materialSummary<<std::setprecision(17)<<"source_entry,seed,candidate,target,input_charge,input_p_GeV,normal_end_p_GeV,steps,interactions,material_X0,material_L0,sum_deltaP_GeV\n";
++  }
+   m_entry=m_skip;return StatusCode::SUCCESS;
+ }
+ 
+@@ -433,6 +445,28 @@
+     for(int j=0;j<3;++j) {m_outputParameters[i][j]=x[j];m_outputParameters[i][j+3]=p[j];}
+     if(result->covariance()) for(int j=0;j<6;++j) for(int k=0;k<6;++k) m_outputCovariance[i][j][k]=(*result->covariance())(j,k);
+     m_valid[i]=1;
++    if(!m_materialTrace.value().empty()) {
++      const auto trace=m_tool->propagationSteps(ctx,start,*target,direction);
++      double deltaP=0.;int ordinal=0;
++      for(const auto& hit:trace.second.materialInteractions) {
++        const auto x=toF(hit.position),d=toF(hit.direction);
++        const auto id=hit.surface ? hit.surface->geometryId().value() :
++          hit.volume.trackingVolume ? hit.volume.trackingVolume->geometryId().value() : 0;
++        m_trace<<m_entry<<','<<m_seed<<','<<m_candidate<<','<<i<<','<<ordinal++<<','<<id<<','
++          <<bool(hit.surface)<<','<<hit.updatedVolumeStep;
++        for(int j=0;j<3;++j) m_trace<<','<<x[j];
++        for(int j=0;j<3;++j) m_trace<<','<<d[j];
++        m_trace<<','<<hit.deltaP<<','<<hit.pathCorrection<<','<<hit.materialSlab.thickness()<<','
++          <<hit.materialSlab.thicknessInX0()<<','<<hit.materialSlab.thicknessInL0();
++        const auto parameters=hit.materialSlab.material().parameters();
++        for(int j=0;j<5;++j) m_trace<<','<<parameters[j];
++        m_trace<<'\n';deltaP+=hit.deltaP;
++      }
++      m_materialSummary<<m_entry<<','<<m_seed<<','<<m_candidate<<','<<i<<','<<start.charge()<<','
++        <<start.momentum().norm()<<','<<result->momentum().norm()<<','<<trace.first.size()<<','
++        <<trace.second.materialInteractions.size()<<','<<trace.second.materialInX0<<','
++        <<trace.second.materialInL0<<','<<deltaP<<'\n';
++    }
+   }
+   m_tree->Fill();
+ }

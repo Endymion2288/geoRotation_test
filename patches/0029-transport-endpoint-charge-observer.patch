@@ -1,0 +1,44 @@
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -363,8 +363,9 @@
+   long m_entry=0;
+   int m_seed=0,m_candidate=0,m_barcode=0,m_stage=0,m_layer=0,m_hasCov=0;
+   unsigned long long m_geometryID=0;
+-  double m_inputPosition[3]{},m_inputMomentum[3]{},m_inputAngles[2]{},m_charge=0;
++  double m_inputPosition[3]{},m_inputMomentum[3]{},m_inputAngles[2]{},m_charge=0,m_inputQop=0;
+   double m_outputParameters[3][6]{},m_outputCovariance[3][6][6]{};
++  double m_outputQop[3]{},m_outputCharge[3]{};
+   int m_valid[3]{};
+   struct Input {int seed,candidate,barcode,stage,layer,kind;unsigned long long geometry;double charge;Acts::BoundVector values;};
+   std::map<long,std::vector<Input>> m_inputs;
+@@ -402,7 +403,10 @@
+   m_tree->Branch("input_angles_native",m_inputAngles,"input_angles_native[2]/D");
+   m_tree->Branch("input_has_covariance",&m_hasCov,"input_has_covariance/I");
+   m_tree->Branch("charge",&m_charge,"charge/D");
++  m_tree->Branch("input_qop_GeVinv",&m_inputQop,"input_qop_GeVinv/D");
+   m_tree->Branch("projection_F",m_outputParameters,"projection_F[3][6]/D");
++  m_tree->Branch("projection_qop_GeVinv",m_outputQop,"projection_qop_GeVinv[3]/D");
++  m_tree->Branch("projection_charge",m_outputCharge,"projection_charge[3]/D");
+   m_tree->Branch("projection_covariance_native",m_outputCovariance,"projection_covariance_native[3][6][6]/D");
+   m_tree->Branch("projection_valid",m_valid,"projection_valid[3]/I");
+   m_entry=m_skip;return StatusCode::SUCCESS;
+@@ -413,9 +417,10 @@
+   const auto pos=toF(start.position(gctx)),mom=toF(start.momentum());
+   for(int j=0;j<3;++j) {m_inputPosition[j]=pos[j];m_inputMomentum[j]=mom[j];}
+   m_inputAngles[0]=start.parameters()[2];m_inputAngles[1]=start.parameters()[3];
+-  m_hasCov=start.covariance().has_value();m_charge=start.charge();
++  m_hasCov=start.covariance().has_value();m_charge=start.charge();m_inputQop=start.parameters()[4];
+   for(int i=0;i<3;++i) {
+     m_valid[i]=0;
++    m_outputQop[i]=m_outputCharge[i]=NAN;
+     for(double& v:m_outputParameters[i]) v=NAN;
+     for(auto& row:m_outputCovariance[i]) for(double& v:row) v=NAN;
+     if(!std::isfinite(targets[i])) {m_valid[i]=-1;continue;}
+@@ -423,6 +428,7 @@
+     const auto direction=targets[i]>=pos.z() ? Acts::Direction::Forward : Acts::Direction::Backward;
+     auto result=m_tool->propagate(ctx,start,*target,direction);
+     if(!result) continue;
++    m_outputQop[i]=result->parameters()[4];m_outputCharge[i]=result->charge();
+     const auto x=toF(result->position(gctx)),p=toF(result->momentum());
+     for(int j=0;j<3;++j) {m_outputParameters[i][j]=x[j];m_outputParameters[i][j+3]=p[j];}
+     if(result->covariance()) for(int j=0;j<6;++j) for(int k=0;k<6;++k) m_outputCovariance[i][j][k]=(*result->covariance())(j,k);

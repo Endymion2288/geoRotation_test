@@ -1,5 +1,7 @@
 # S04补充：AFS旋转材料图与strict current22的逐项比较
 
+2026-11-14更正：AFS与旧strict的共同数组确实一致，但原报告按列解码，实际ACTS按行读取，二者均加载为预期旋转的转置。下文保留结构/材料数值比较并修正物理解释；native matrix/bin/slab证据及修正后的7,680点transport见[材料decoder报告](2026-11-14_stage06_physical_prior_material_decoder.md)。
+
 日期：2026-11-12。结果目录为`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_momentum/material_map_comparison`。
 
 ## 阶段目标
@@ -10,7 +12,7 @@
 
 两份JSON存在结构差异，但共同12个surface的86400个材料bin完全相同，旋转矩阵和分箱定义也完全相同。strict额外保留10个surface，共118个bin，全部为`material=null`且`thickness=0`。共同surface的transform translation相差2 mm，方向沿材料面的法向，不改变当前局部`binX/binY`查询。
 
-因此，不能把12与22的surface数量差解释为AFS文件缺少10层非零材料。AFS文件已经包含正确旋转；S04已报告的尾部改善对应未旋转current22→strict current22，并非AFS旋转图→strict的改善。strict保留原current22的所有IDs和transform来源，是研究纯坐标旋转时的受控配置。
+因此，不能把12与22的surface数量差解释为AFS文件缺少10层非零材料。S04已报告的尾部改善对应未旋转current22→旧strict current22，并非AFS→strict的改善。strict保留原current22的IDs和材料数据，但旋转编码存在转置错误，不能作为纯物理旋转控制；“AFS已经正确旋转”的原结论撤回。
 
 ## 工作内容与详细数据
 
@@ -26,7 +28,7 @@
 | 共同材料grid | 每surface 120行×60列，共86400 bins | 同左 | 全部`material`数组及`thickness`精确相同 |
 | 共同metadata | `mapMaterial`、`mappingType`、`type` | 同左 | 完全相同 |
 | 共同局部分箱 | binX 60 bins、binY 120 bins | 同左 | 轴、范围、open/type均相同 |
-| 共同旋转矩阵 | F→A：`(z_F,y_F,-x_F)` | 同左 | 完全相同 |
+| 共同实际解码矩阵 | 预期F→A旋转的转置`Rᵀ` | 同左 | 两份旧编码完全相同 |
 | 共同平移 | 下表 | 下表 | 仅global A-frame x差±2 mm |
 
 共同surface的平移只有A-frame x分量非零，单位mm；下表的差为AFS−strict。这是材料bin utility的transform，不是一次修改实际tracking geometry surface位置。
@@ -63,7 +65,7 @@ strict额外保留的10项均为`sensitive=1`，具体如下：
 /cvmfs/atlas.cern.ch/repo/sw/software/24.0/AthenaExternals/24.0.41/InstallArea/x86_64-el9-gcc13-opt/include/Acts/Utilities/BinUtility.hpp
 ```
 
-两图共同surface都使用`u=-z_A`、`v=y_A`、`w=x_A-t_x`的局部坐标，分箱轴只有u/v。±2 mm的`t_x`差仅改变w，因此对任意有限global position，共同材料的bin选择相同。比较脚本逐surface检查`Rᵀ(t_strict−t_AFS)`，其局部x/y分量均精确为0。
+两图共同surface实际使用`u=+z_A`、`v=y_A`、`w=−(x_A−t_x)`，而正确物理旋转应为`u=−z_A`、`v=y_A`、`w=x_A−t_x`。分箱轴只有u/v，±2 mm的`t_x`差仅改变w，因此两份旧图彼此的横向bin选择相同；这不表示它们与beforeGeo查询同一物理材料。修正后的比较脚本按ACTS实际行顺序解码。
 
 零材料条目与没有material object仍是不同的配置表示。完整tracking还包含surface导航、seed顺序与branch/pruning，不能从上述材料数据一致直接推出逐事件输出完全一致。
 
@@ -95,4 +97,4 @@ python3 scripts/compare_material_maps.py \
 
 ## 下一步计划
 
-保留strict current22作为当前研究的纯旋转控制，并在材料配置记录中明确AFS已旋转图与未旋转current的区别。如果需要量化AFS图与strict的全链性能差异，在实际Calypso内固定物理seed及输入顺序，分别控制空条目和法向平移，再做同输入验证；验收同时检查candidate迁移、p/charge、效率和导航记录。此项本次未测量，不将已有current→strict改善移用于该比较。
+保留旧strict为历史配置，纯旋转transport使用按实际decoder修正的新map。AFS仅改rotation编码的S05/S06全量重建控制已启动，见上述新报告；AFS与旧strict之间的空条目/法向平移及候选迁移仍需单独区分，不将current→旧strict的改善移用于该比较。
