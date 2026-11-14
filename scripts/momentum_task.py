@@ -15,6 +15,11 @@ def main():
     args = parser.parse_args()
     task = json.loads(args.tasks.read_text())[args.index]
     destination = Path(task["output"])
+    if destination.exists() and (destination/'task.json').is_file() and (destination/'exit_code.txt').is_file():
+        assert json.loads((destination/'task.json').read_text()) == task
+        status = int((destination/'exit_code.txt').read_text())
+        print('Reusing the completed identical task after a scheduler restart:', destination, status, flush=True)
+        return status
     destination.mkdir(parents=True, exist_ok=False)
     kind=task.get('kind')
     if kind == 'reference':

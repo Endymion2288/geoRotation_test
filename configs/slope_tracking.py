@@ -49,6 +49,8 @@ def main():
     parser.add_argument('--no-observer', action='store_true', help='Native Ntuple baseline for the read-only observer check')
     parser.add_argument('--stage-audit', action='store_true', help='Read-only detailed states; requires the recorded Calypso audit library')
     parser.add_argument('--charge-audit', action='store_true', help='Retain r/S/K and full C for the frozen small charge replay sample')
+    parser.add_argument('--prior-component-audit', action='store_true',
+                        help='Retain actual CKF seed and state matrices, including events with no selected component')
     parser.add_argument('--native-states', action='store_true', help='Enable existing Calypso CKF/refit ROOT state writers for both native branches')
     smoothing = parser.add_mutually_exclusive_group()
     smoothing.add_argument('--isolate-smoothing', action='store_true', help='Recompute each selected candidate on its private state path')
@@ -94,11 +96,37 @@ def main():
                         help='Actual CKF seed overrides: local event index, seed index, six bound parameters per row; preserve covariance')
     parser.add_argument('--seed-override-mode', choices=['qop', 'mean'], default='qop',
                         help='Replace q/p only or the complete mean; requires the recorded Calypso hit-control library')
+    parser.add_argument('--full-seed-input-file',
+                        help='Actual CKF diagnostic: complete seed mean, covariance and reference-plane transform')
+    parser.add_argument('--seed-component-input-file',
+                        help='Actual CKF diagnostic: independent native finder/update/smoother calls for finite prior components')
+    parser.add_argument('--component-refit', action='store_true',
+                        help='Extend each finite-prior component through the native converter and refit')
+    parser.add_argument('--run-only-input-seeds', action='store_true',
+                        help='Run the native CKF only for seed indices listed in the full seed input')
+    parser.add_argument('--source-link-selection-file',
+                        help='Actual CKF diagnostic: admit only the listed original cluster identifiers')
+    parser.add_argument('--ckf-no-scattering', action='store_true',
+                        help='Disable only the native CKF material scattering term; refit and observer retain their native settings')
+    parser.add_argument('--ckf-no-energy-loss', action='store_true',
+                        help='Disable only the native CKF material energy-loss term; refit and observer retain their native settings')
     args = parser.parse_args()
     if args.charge_audit and not args.stage_audit:
         parser.error('--charge-audit requires --stage-audit')
+    if args.prior_component_audit and args.stage_audit:
+        parser.error('prior-component and stage audit use separate output reductions')
     if args.mode_refit_counters and args.charge_diagnostics:
         parser.error('--mode-refit-counters and --charge-diagnostics use different compact outputs')
+    if args.full_seed_input_file and args.seed_override_file:
+        parser.error('full seed input and mean-only overrides are separate controls')
+    if args.seed_component_input_file and (
+            not args.prior_component_audit or not args.isolate_smoothing or
+            args.full_seed_input_file or args.seed_override_file or args.run_only_input_seeds):
+        parser.error('seed components require prior-component audit and isolated smoothing, without other seed overrides')
+    if args.component_refit and not args.seed_component_input_file:
+        parser.error('--component-refit requires --seed-component-input-file')
+    if args.run_only_input_seeds and not args.full_seed_input_file:
+        parser.error('--run-only-input-seeds requires --full-seed-input-file')
     from AthenaCommon.Configurable import Configurable
     from AthenaConfiguration.ComponentFactory import CompFactory
     from CalypsoConfiguration.AllConfigFlags import initConfigFlags
@@ -150,9 +178,11 @@ def main():
     acc.merge(GhostBustersCfg(flags))
     acc.merge(xAODTruthCnvAlgCfg(flags))
     mask = [0, 1, 2] if args.four_station else [0, 1, 2, 3, 4, 5]
-    if args.merge_directions and (args.backward or args.charge_diagnostics or args.stage_audit or args.native_states
+    if args.merge_directions and (args.backward or args.charge_diagnostics or args.stage_audit or args.prior_component_audit or args.native_states
                                   or args.truth_source_link_barcode or args.reverse_charge_and_field
-                                  or args.seed_override_file):
+                                  or args.seed_override_file or args.full_seed_input_file
+                                  or args.source_link_selection_file or args.ckf_no_scattering
+                                  or args.ckf_no_energy_loss):
         parser.error('--merge-directions uses two native CKF paths; single-path audit flags do not apply')
     primary_tag = f'slope_{4 if args.four_station else 3}station_'+('backward' if args.backward else 'forward')
     cfg = CKF2Cfg(flags, actsOutputTag=primary_tag, name='CKF_Slope',
@@ -167,6 +197,19 @@ def main():
     if args.seed_override_file:
         ckf.SeedOverrideFile = args.seed_override_file
         ckf.SeedOverrideMode = args.seed_override_mode
+    if args.full_seed_input_file:
+        ckf.FullSeedInputFile = args.full_seed_input_file
+        ckf.RunOnlyInputSeeds = args.run_only_input_seeds
+    if args.seed_component_input_file:
+        ckf.SeedComponentInputFile = args.seed_component_input_file
+    if args.component_refit:
+        ckf.ComponentRefit = True
+    if args.source_link_selection_file:
+        ckf.SourceLinkSelectionFile = args.source_link_selection_file
+    if args.ckf_no_scattering:
+        ckf.MaterialScattering = False
+    if args.ckf_no_energy_loss:
+        ckf.MaterialEnergyLoss = False
     if args.truth_source_link_barcode:
         ckf.TruthSourceLinkBarcode = args.truth_source_link_barcode
     if args.reverse_charge_and_field:
@@ -190,7 +233,7 @@ def main():
         ckf.ChargeDiagnosticFile = 'charge_lineage.csv'
     if args.mode_refit_counters:
         ckf.ChargeDiagnosticFile = 'mode_refit_forward.csv'
-    if args.stage_audit:
+    if args.stage_audit or args.prior_component_audit:
         ckf.AuditFile = 'stages.jsonl'
         ckf.AuditStates = True
         ckf.AuditSelectedStatesOnly = True
@@ -270,9 +313,16 @@ def main():
         magnetic_field_scale=-1. if args.reverse_charge_and_field else 1.,
         seed_charge_reversed=args.reverse_charge_and_field,
         seed_override_file=args.seed_override_file, seed_override_mode=args.seed_override_mode,
+        full_seed_input_file=args.full_seed_input_file, run_only_input_seeds=args.run_only_input_seeds,
+        seed_component_input_file=args.seed_component_input_file,
+        component_refit=args.component_refit,
+        source_link_selection_file=args.source_link_selection_file,
+        ckf_material_scattering=getattr(ckf, 'MaterialScattering', True),
+        ckf_material_energy_loss=getattr(ckf, 'MaterialEnergyLoss', True),
         backward=args.backward, masked_layers=mask, merge_directions=args.merge_directions,
         output_collection=observer_collection,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False,
+        prior_component_audit=args.prior_component_audit,
         charge_matrix_audit=args.charge_audit,
         isolate_smoothing=bool(getattr(ckf, 'IsolateCandidateSmoothing', False)), observer=not args.no_observer,
         propagation_material_energy_loss=propagator.InteractionEloss,

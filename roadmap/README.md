@@ -36,6 +36,12 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [测量坐标与实际CKF误差控制](../workbook/2026-11-14_stage06_measurement_coordinates_and_errors.md)完成六条pure wrong与60条normal的330次真实重建。CKF原生measurement固定σ=0.0231 mm；仅放大V至4倍或使用cluster V，均恢复4条pure selected正确且全部更换selected hits，60条normal均通过。固定完整seed的SiHit centroid恢复5条selected正确，另1条符号正确但rmax失败；51839保留同一路径，仅坐标控制恢复。六条native的85个measurement中7个cluster含29条无SDO strips，全部同primary SiHit端点跨度≤0.0005503 mm，不能以track purity=1排除cluster中心偏移。[保留strip量化的SDO中心控制](../workbook/2026-11-14_stage06_sdo_strip_quantization.md)现已完成66事件：恢复5条pure selected正确，439421保留同一路径，60条normal全通过；51839仍为近零错号。29条无SDO strips全部与同wafer barcode0的真实G4 SiHit端点X范围重叠，缺可用SDO贡献不等于电子学噪声；粒子种类及逐strip charge分解未测量。完整非线性CKF共同先验仍未完成。
 
+[固定完整seed与原cluster IDs的过程项控制](../workbook/2026-11-14_stage06_fixed_hits_process_noise.md)完成792次真实Calypso重建、13,540次measurement核对。六条pure wrong全部设置保持完整ordered hits；SDO中心恢复5条，关闭CKF scattering只恢复439421，发生在S3同hit update的恢复能力变化。51839在所有CKF材料设置仍错号、centroid则恢复；60 normal在native/SDO坐标均全部通过，centroid有1条质量失败。四页图已数值核对和全尺寸目视。
+
+[共同有限先验的完整原生链路](../workbook/2026-11-14_stage06_common_prior_full_chain.md)完成四组width/分量数、24个CKF-only和36个conversion/refit作业：10,560个物理分量、42,240条比较记录。四组的CKF首选存在性/sign一致、conversion保留sign；n32 C/256的final有4个版本间sign差异，其中2个same-hit且双方refit成功，2个伴随路径差与after fallback；其他三组无final sign差异。refit仅376/368个成功，CDF单列双方成功子组，width改变仍有明显选择迁移，未验收posterior收敛。primary μ truth gate修正早期exploratory计数，权威结果为`common_prior_component_refit_v1/analysis_v3`。六页图已数值及原始分辨率目视核对；下一步检验实际refit物理mean/C/surface与对角inflation。
+
+[实际 refit 输入审计](../workbook/2026-11-14_stage06_refit_input_covariance.md)已完成15个重建、6组观察精确重放及9组单因素 gate。两版均先对角×10再完整C×10；只取消前者，两条 same-hit/both-success sign 分歧消失，其中一条两版都错。共同组物理C差异中位数100044为0.793→0.286、100116为0.737→0.147、100117为0.283→0.138；CKF/mean/surface不变。其余两条path/fallback差异保留，未闭合上游CKF posterior。三页英文图已验收；下一步以实际CKF update/smoothing chart控制定位上游分叉。
+
 | 文档 | 内容 |
 | --- | --- |
 | [00 材料与源码](00_materials_and_source.md) | PDF 页码、历史数值、输入样本、源码检查点及尚缺信息 |

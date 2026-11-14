@@ -117,6 +117,7 @@ def outcome(folder, task):
     return dict(status=STATUS[int(decision['status'][i])],
         primary_barcode=int(tables['truth']['barcode'][i]),
         final_qop_GeVinv=float(tables['tracks']['qop_GeVinv'][chosen]) if chosen >= 0 else None,
+        final_qop_variance_GeVinv2=float(tables['tracks']['qop_variance_GeVinv2'][chosen]) if chosen >= 0 else None,
         quality=quality, failed_quality_conditions=failed_quality(quality))
 
 

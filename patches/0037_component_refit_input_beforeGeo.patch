@@ -1,0 +1,74 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+@@ -36,6 +36,7 @@
+ };
+ 
+ class FaserSCT_ID;
++class TrackingAudit;
+ 
+ 
+ 
+@@ -45,6 +46,11 @@
+   virtual ~KalmanFitterTool() = default;
+   virtual StatusCode initialize() override;
+   virtual StatusCode finalize() override;
++
++  std::unique_ptr<Trk::Track> fitAudited(
++      const EventContext &ctx, const Acts::GeometryContext &gctx, Trk::Track *inputTrack,
++      const Acts::BoundVector &inputVector, bool isMC, TrackingAudit *audit,
++      int auditSeed, int auditCandidate) const;
+ 
+   virtual Acts::MagneticFieldContext getMagneticFieldContext(const EventContext& ctx) const;
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+@@ -1,4 +1,5 @@
+ #include "KalmanFitterTool.h"
++#include "TrackingAudit.h"
+ 
+ #include "FaserActsGeometry/FASERMagneticFieldWrapper.h"
+ #include "FaserActsKalmanFilter/IndexSourceLink.h"
+@@ -343,6 +344,13 @@
+ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx,
+                       Trk::Track* inputTrack, const Acts::BoundVector& inputVector,
+                       bool isMC) const {
++  return fitAudited(ctx,gctx,inputTrack,inputVector,isMC,nullptr,-1,-1);
++}
++
++std::unique_ptr<Trk::Track>
++KalmanFitterTool::fitAudited(const EventContext &ctx, const Acts::GeometryContext &gctx,
++                      Trk::Track* inputTrack, const Acts::BoundVector& inputVector,
++                      bool isMC, TrackingAudit* audit, int auditSeed, int auditCandidate) const {
+   std::unique_ptr<Trk::Track> newTrack = nullptr;
+ 
+   if (!inputTrack->measurementsOnTrack() || inputTrack->measurementsOnTrack()->size() < m_minMeasurements) {
+@@ -372,6 +380,7 @@
+   if(trackParameters.covariance().has_value()){ 
+     trackParameters.covariance() = (trackParameters.covariance().value())*10; 
+   }
++  if(audit) audit->parameters("refit_input",gctx,trackParameters,auditSeed,auditCandidate);
+  
+   ATH_MSG_DEBUG("trackParameters: " << trackParameters.parameters().transpose());
+   ATH_MSG_DEBUG("position: " << trackParameters.position(gctx).transpose());
+@@ -401,6 +410,7 @@
+ 
+   if (result.ok()) {
+     const auto& track = result.value();
++    if(audit) audit->track("refit",gctx,track,auditSeed,auditCandidate);
+     //if (track.hasReferenceSurface()) {
+       //const auto& params = track.fittedParameters.value();
+       //ATH_MSG_DEBUG("ReFitted parameters");
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -385,7 +385,7 @@
+           auto converted=m_createTrkTrackTool->createTrack(
+               gctx,dest,fittedParams,m_backwardPropagation);
+           m_audit->trk("converted",converted.get(),component.seed,selected.index);
+-          auto refitted=m_kalmanFitterTool1->fit(ctx,gctx,converted.get(),Acts::BoundVector::Zero(),m_isMC);
++          auto refitted=m_kalmanFitterTool1->fitAudited(ctx,gctx,converted.get(),Acts::BoundVector::Zero(),m_isMC,m_audit.get(),component.seed,selected.index);
+           m_audit->trk("final",refitted ? refitted.get() : converted.get(),
+                        component.seed,selected.index,refitted ? 1 : 0);
+           if (refitted) outputTracks->push_back(std::move(refitted));

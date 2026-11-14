@@ -83,6 +83,13 @@ def main():
     if '--cluster-coordinate-audit' in task.get('options', []) and Path('cluster_coordinates.jsonl').exists():
         with Path('cluster_coordinates.jsonl').open('rb') as source, gzip.open(output/'cluster_coordinates.jsonl.gz', 'wb') as target:
             shutil.copyfileobj(source, target)
+    # Keep completed native audit records even when a small diagnostic fails.
+    # Otherwise the first failing CKF component is lost with worker scratch.
+    if '--prior-component-audit' in task.get('options', []) and Path('stages.jsonl').exists():
+        with Path('stages.jsonl').open('rb') as source, gzip.open(
+                output/'prior_audit.jsonl.gz', 'wb', compresslevel=4) as target:
+            shutil.copyfileobj(source, target, length=1024*1024)
+        Path('stages.jsonl').unlink()
     if status:
         raise RuntimeError(f'Calypso reconstruction failed: exit {status}; see {output}/tracking.log.gz')
     reference = read_ntuple(output) if '--ntuple-check' in task.get('options', []) else None
@@ -138,6 +145,8 @@ def main():
         from slope_stage_extract import extract
         summary['audit_state_rows'] = extract('stages.jsonl', output, task)
         Path('stages.jsonl').unlink()
+    if '--prior-component-audit' in task.get('options', []):
+        summary['prior_component_audit'] = 'prior_audit.jsonl.gz'
     if '--native-states' in task.get('options', []):
         from slope_native_states import extract
         summary['native_state_rows'] = extract(output, task, arrays)

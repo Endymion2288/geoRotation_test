@@ -15,6 +15,13 @@ PACKAGES = ('FaserActsGeometry', 'FaserActsKalmanFilter')
 TARGETS = ('FaserActsGeometryLib', 'FaserActsGeometry', 'FaserActsKalmanFilter')
 
 
+def geometry_patch(diff):
+    prefixes = ('a/Tracking/Acts/FaserActsGeometry/',
+                'a/Tracking/Acts/FaserActsGeometryInterfaces/')
+    return ''.join('diff --git '+block for block in diff.split('diff --git ')[1:]
+                   if block.startswith(prefixes))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=Path, required=True)
@@ -45,8 +52,7 @@ def main():
     if args.reuse_geometry:
         previous = json.loads((args.reuse_geometry/'software.json').read_text())
         assert previous['commit'] == commit
-        assert not any(line.startswith(('diff --git a/Tracking/Acts/FaserActsGeometry/',
-            'diff --git a/Tracking/Acts/FaserActsGeometryInterfaces/')) for line in diff.splitlines())
+        assert geometry_patch(diff) == geometry_patch(previous['source_patch'])
         for target in TARGETS[:2]:
             name = 'lib'+target+'.so'
             shutil.copy2(args.reuse_geometry/'lib'/name, local_lib/name)

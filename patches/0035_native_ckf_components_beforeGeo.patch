@@ -1,0 +1,147 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -92,6 +92,14 @@
+   Gaudi::Property<std::string> m_sourceLinkSelectionFile {this, "SourceLinkSelectionFile", "",
+       "Diagnostic: local event, count, exact original cluster identifiers admitted to the native finder"};
+   std::map<std::pair<size_t,int>,FullSeedInput> m_fullSeedInputs;
++  struct SeedComponentInput {
++    int seed, component;
++    FullSeedInput input;
++  };
++  Gaudi::Property<std::string> m_seedComponentInputFile {this, "SeedComponentInputFile", "",
++      "Diagnostic: independent native CKF calls, local event/native seed/component/mean/C/surface"};
++  std::map<size_t,std::vector<SeedComponentInput>> m_seedComponentInputs;
++
+   std::map<size_t,std::set<uint64_t>> m_sourceLinkSelections;
+   Gaudi::Property<std::string> m_auditFile {this, "AuditFile", ""};
+   Gaudi::Property<bool> m_auditStates {this, "AuditStates", false};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -79,6 +79,27 @@
+     m_audit->idHelper=m_idHelper;
+     m_audit->selectedStatesOnly=m_selectedStatesOnly;
+   }
++
++  if (!m_seedComponentInputFile.value().empty()) {
++    if (!m_fullSeedInputFile.value().empty() || m_runOnlyInputSeeds ||
++        !m_audit || !m_auditStates || !m_selectedStatesOnly || !m_isolateSmoothing)
++      return StatusCode::FAILURE;
++    std::ifstream input(m_seedComponentInputFile.value());
++    if (!input) return StatusCode::FAILURE;
++    size_t entry; int seed, component;
++    std::set<std::pair<size_t,int>> seen;
++    while (input >> entry >> seed >> component) {
++      FullSeedInput value;
++      for (int i=0;i<6;++i) input >> value.mean[i];
++      for (int i=0;i<6;++i) for (int j=0;j<6;++j) input >> value.covariance(i,j);
++      for (int i=0;i<4;++i) for (int j=0;j<4;++j) input >> value.transform.matrix()(i,j);
++      if (!input || seed<0 || component<0 || !value.mean.allFinite() ||
++          !value.covariance.allFinite() || !value.transform.matrix().allFinite() ||
++          !seen.emplace(entry,component).second) return StatusCode::FAILURE;
++      m_seedComponentInputs[entry].push_back({seed,component,value});
++    }
++    if (m_seedComponentInputs.empty()) return StatusCode::FAILURE;
++  }
+   if (!m_fullSeedInputFile.value().empty()) {
+     std::ifstream input(m_fullSeedInputFile.value());
+     if (!input) return StatusCode::FAILURE;
+@@ -295,6 +316,78 @@
+   GeneralFitterOptions options{
+     gctx, magFieldContext, calibContext, &(*targetSurface), pOptions};
+ 
++
++  // Each component invokes this version's actual finder, calibrator, transport,
++  // measurement updates and isolated GainMatrixSmoother. Components never
++  // compete in the event-level shared-hit selector. Only CKF posterior states
++  // are observed in this opt-in mode; conversion/refit are not invoked.
++  if (!m_seedComponentInputFile.value().empty()) {
++    const auto inputs=m_seedComponentInputs.find(m_numberOfEvents-1);
++    // A native seed finder can legitimately produce no seed for an event.
++    // The component diagnostic input then has no rows for that local event;
++    // this is an empty CKF call, not a malformed component file.  Preserve
++    // the normal successful event flow and record an empty output collection.
++    if (inputs==m_seedComponentInputs.end()) {
++      m_audit->begin("component_event_end");
++      m_audit->out << ",\"components\":0";
++      m_audit->end();
++      ATH_CHECK(trackContainer.record(std::move(outputTracks)));
++      return StatusCode::SUCCESS;
++    }
++    for (const auto& component:inputs->second) {
++      if (static_cast<size_t>(component.seed)>=initialParameters->size())
++        return StatusCode::FAILURE;
++      m_audit->inputComponent=component.component;
++      const auto& value=component.input;
++      Acts::BoundTrackParameters initial(
++          Acts::Surface::makeShared<Acts::PlaneSurface>(value.transform),
++          value.mean,value.covariance,initialParameters->at(component.seed).particleHypothesis());
++      std::vector<const Tracker::FaserSCT_Cluster*> seedHits;
++      if (Tool) seedHits=Tool->seeds()->at(component.seed).clusters;
++      m_audit->parameters("seed",gctx,initial,component.seed,-1,seedHits);
++      tracksTemp.clear();
++      selectedTracks.clear();
++      auto result=(*m_finder)(initial,options,calibrator,slAccessor,
++                             Acts::MeasurementSelector(measurementSelectorCfg),tracksTemp);
++      if (!result.ok()) {
++        m_audit->begin("component_finder_error",component.seed);
++        m_audit->out << ",\"error\":" << result.error().value(); m_audit->end();
++        continue;
++      }
++      std::list<TrackInfo> candidates;
++      for (const auto& track:result.value()) {
++        candidates.push_back(track);
++        m_audit->track("found",gctx,track,component.seed,track.index());
++      }
++      m_numberOfFittedTracks+=candidates.size();
++      candidates.sort([](const TrackInfo& left,const TrackInfo& right) {
++        if (left.nMeasurements>right.nMeasurements) return true;
++        if (left.nMeasurements<right.nMeasurements) return false;
++        return left.chi2<right.chi2;
++      });
++      while (!candidates.empty()) {
++        const TrackInfo selected=candidates.front();
++        candidates.erase(candidates.begin());
++        auto dest=selectedTracks.getTrack(selectedTracks.addTrack());
++        dest.copyFrom(tracksTemp.getTrack(selected.index),true);
++        const auto status=Acts::GainMatrixSmoother()(
++            gctx,selectedTracks.trackStateContainer(),dest.tipIndex(),*m_logger);
++        if (!status.ok()) return StatusCode::FAILURE;
++        m_audit->track("selected",gctx,dest,component.seed,selected.index);
++        ++m_numberOfSelectedTracks;
++        candidates.remove_if([&](const TrackInfo& other) {
++          return other.nMeasurements<=12 || (other.clusterSet&selected.clusterSet).count()>6;
++        });
++      }
++      m_audit->begin("component_end",component.seed);
++      m_audit->out << ",\"found\":" << result.value().size()
++                   << ",\"selected\":" << selectedTracks.size(); m_audit->end();
++    }
++    m_audit->inputComponent=-1;
++    ATH_CHECK(trackContainer.record(std::move(outputTracks)));
++    return StatusCode::SUCCESS;
++  }
++
+   // Perform the track finding for all initial parameters
+   m_numberOfTrackSeeds += initialParameters->size();
+   ATH_MSG_DEBUG("Invoke track finding with " << initialParameters->size() << " seeds.");
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackingAudit.h
+@@ -28,6 +28,7 @@
+   bool selectedStatesOnly = false;
+   uint64_t run = 0, event = 0, lumi = 0;
+   std::string collection;
++  int inputComponent = -1;
+   const TrackerSimDataCollection* simData = nullptr;
+   const FaserSCT_ID* idHelper = nullptr;
+ 
+@@ -54,6 +55,7 @@
+         << ",\"collection\":\"" << collection << "\",\"stage\":\"" << stage
+         << "\",\"seed\":" << seed << ",\"candidate\":" << candidate
+         << ",\"state\":" << state;
++    if (inputComponent>=0) out << ",\"input_component\":" << inputComponent;
+   }
+   void end() { out << "}\n"; }
+   void truth(const McEventCollection& events, const FaserSiHitCollection& hits,

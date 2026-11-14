@@ -1,0 +1,54 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -99,6 +99,9 @@
+   Gaudi::Property<std::string> m_seedComponentInputFile {this, "SeedComponentInputFile", "",
+       "Diagnostic: independent native CKF calls, local event/native seed/component/mean/C/surface"};
+   std::map<size_t,std::vector<SeedComponentInput>> m_seedComponentInputs;
++  Gaudi::Property<bool> m_componentRefit {this, "ComponentRefit", false,
++      "Diagnostic: run each finite-prior component through native conversion and refit"};
++
+ 
+   std::map<size_t,std::set<uint64_t>> m_sourceLinkSelections;
+   Gaudi::Property<std::string> m_auditFile {this, "AuditFile", ""};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -317,10 +317,11 @@
+     gctx, magFieldContext, calibContext, &(*targetSurface), pOptions};
+ 
+ 
++  // Optional ComponentRefit continues the same candidate through native conversion/refit.
+   // Each component invokes this version's actual finder, calibrator, transport,
+   // measurement updates and isolated GainMatrixSmoother. Components never
+-  // compete in the event-level shared-hit selector. Only CKF posterior states
+-  // are observed in this opt-in mode; conversion/refit are not invoked.
++  // compete in the event-level shared-hit selector. The default component
++  // mode observes CKF states; ComponentRefit adds native conversion/refit.
+   if (!m_seedComponentInputFile.value().empty()) {
+     const auto inputs=m_seedComponentInputs.find(m_numberOfEvents-1);
+     // A native seed finder can legitimately produce no seed for an event.
+@@ -374,6 +375,23 @@
+             gctx,selectedTracks.trackStateContainer(),dest.tipIndex(),*m_logger);
+         if (!status.ok()) return StatusCode::FAILURE;
+         m_audit->track("selected",gctx,dest,component.seed,selected.index);
++        if (m_componentRefit) {
++          std::optional<Acts::BoundTrackParameters> fittedParams=std::nullopt;
++          if (dest.hasReferenceSurface() && m_addFittedParamsToTrack) {
++            fittedParams=Acts::BoundTrackParameters(
++                dest.referenceSurface().getSharedPtr(),dest.parameters(),dest.covariance(),
++                Acts::ParticleHypothesis::muon());
++          }
++          auto converted=m_createTrkTrackTool->createTrack(
++              gctx,dest,fittedParams,m_backwardPropagation);
++          m_audit->trk("converted",converted.get(),component.seed,selected.index);
++          auto refitted=m_kalmanFitterTool1->fit(ctx,gctx,converted.get(),Acts::BoundVector::Zero(),m_isMC);
++          m_audit->trk("final",refitted ? refitted.get() : converted.get(),
++                       component.seed,selected.index,refitted ? 1 : 0);
++          if (refitted) outputTracks->push_back(std::move(refitted));
++          else outputTracks->push_back(std::move(converted));
++        }
++
+         ++m_numberOfSelectedTracks;
+         candidates.remove_if([&](const TrackInfo& other) {
+           return other.nMeasurements<=12 || (other.clusterSet&selected.clusterSet).count()>6;

@@ -1,0 +1,120 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -87,6 +87,34 @@
+       for(int i=0;i<6;++i) input >> mean[i];
+       if(!input) return StatusCode::FAILURE;
+       m_seedOverrides[{entry,seed}]=mean;
++    }
++  }
++  if (!m_fullSeedInputFile.value().empty()) {
++    if (!m_seedOverrideFile.value().empty()) return StatusCode::FAILURE;
++    std::ifstream input(m_fullSeedInputFile.value());
++    if (!input) return StatusCode::FAILURE;
++    size_t entry; int seed;
++    while (input >> entry >> seed) {
++      FullSeedInput value;
++      for (int i=0;i<6;++i) input >> value.mean[i];
++      for (int i=0;i<6;++i) for (int j=0;j<6;++j) input >> value.covariance(i,j);
++      for (int i=0;i<4;++i) for (int j=0;j<4;++j) input >> value.transform.matrix()(i,j);
++      if (!input || !value.mean.allFinite() || !value.covariance.allFinite() ||
++          !value.transform.matrix().allFinite() ||
++          !m_fullSeedInputs.emplace(std::make_pair(entry,seed),value).second)
++        return StatusCode::FAILURE;
++    }
++  } else if (m_runOnlyInputSeeds) return StatusCode::FAILURE;
++  if (!m_sourceLinkSelectionFile.value().empty()) {
++    std::ifstream input(m_sourceLinkSelectionFile.value());
++    if (!input) return StatusCode::FAILURE;
++    size_t entry,count;
++    while (input >> entry >> count) {
++      std::set<uint64_t> hits;
++      for (size_t i=0;i<count;++i) { uint64_t hit; input >> hit; hits.insert(hit); }
++      if (!input || hits.size()!=count ||
++          !m_sourceLinkSelections.emplace(entry,std::move(hits)).second)
++        return StatusCode::FAILURE;
+     }
+   }
+ 
+@@ -257,6 +285,33 @@
+       m_audit->end();
+     }
+   }
++  IndexSourceLinkContainer selectedSourceLinks;
++  if (!m_sourceLinkSelectionFile.value().empty()) {
++    const auto allowed=m_sourceLinkSelections.find(m_numberOfEvents-1);
++    if (allowed==m_sourceLinkSelections.end()) return StatusCode::FAILURE;
++    std::set<uint64_t> found;
++    for (const auto& sl : *slAccessor.container) {
++      const auto hit=sl.hit()->identify().get_compact();
++      if (allowed->second.count(hit)) {
++        selectedSourceLinks.emplace_hint(selectedSourceLinks.end(),sl);
++        found.insert(hit);
++      }
++    }
++    if (found!=allowed->second) {
++      ATH_MSG_ERROR("Source-link selection did not find every requested cluster identifier");
++      return StatusCode::FAILURE;
++    }
++    slAccessor.container=&selectedSourceLinks;
++    if (m_audit) {
++      m_audit->begin("source_link_selection");
++      m_audit->out << ",\"original\":" << sourceLinks->size()
++                   << ",\"retained\":" << selectedSourceLinks.size()
++                   << ",\"hit_ids\":[";
++      bool comma=false;
++      for (const auto hit:found) {if(comma)m_audit->out << ',';m_audit->out << hit;comma=true;}
++      m_audit->out << ']';m_audit->end();
++    }
++  }
+ 
+   //3) measurement selector 
+   Acts::MeasurementSelector::Config measurementSelectorCfg = {
+@@ -296,6 +351,15 @@
+ 
+   for (std::size_t iseed = 0; iseed < (*initialParameters).size(); ++iseed) {
+     auto initial=initialParameters->at(iseed);
++    const auto fullInput=m_fullSeedInputs.find({m_numberOfEvents-1,iseed});
++    if (m_runOnlyInputSeeds && fullInput==m_fullSeedInputs.end()) continue;
++    if (fullInput!=m_fullSeedInputs.end()) {
++      if (m_audit) m_audit->parameters("seed_original",gctx,initial,iseed,-1);
++      const auto& value=fullInput->second;
++      initial=Acts::BoundTrackParameters(
++          Acts::Surface::makeShared<Acts::PlaneSurface>(value.transform),
++          value.mean,value.covariance,initial.particleHypothesis());
++    }
+     auto override=m_seedOverrides.find({m_numberOfEvents-1,iseed});
+     if(override!=m_seedOverrides.end()) {
+       auto mean=initial.parameters();
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -25,6 +25,8 @@
+ #include "CreateTrkTrackTool.h"
+ #include "xAODEventInfo/EventInfo.h"
+ #include "TrackingAudit.h"
++#include <cstdint>
++#include <set>
+ 
+ 
+ using ClusterSet = boost::dynamic_bitset<>;
+@@ -97,6 +99,19 @@
+   Gaudi::Property<std::string> m_seedOverrideFile {this, "SeedOverrideFile", ""};
+   Gaudi::Property<std::string> m_seedOverrideMode {this, "SeedOverrideMode", "mean"};
+   std::map<std::pair<size_t,int>,Acts::BoundVector> m_seedOverrides;
++  struct FullSeedInput {
++    Acts::BoundVector mean;
++    Acts::BoundSquareMatrix covariance;
++    Acts::Transform3 transform=Acts::Transform3::Identity();
++  };
++  Gaudi::Property<std::string> m_fullSeedInputFile {this, "FullSeedInputFile", "",
++      "Diagnostic: local event, native seed index, six means, row-major 6x6 covariance and 4x4 plane transform"};
++  Gaudi::Property<bool> m_runOnlyInputSeeds {this, "RunOnlyInputSeeds", false,
++      "Diagnostic: invoke the native finder only for seeds listed in FullSeedInputFile"};
++  Gaudi::Property<std::string> m_sourceLinkSelectionFile {this, "SourceLinkSelectionFile", "",
++      "Diagnostic: local event, count, exact original cluster identifiers admitted to the native finder"};
++  std::map<std::pair<size_t,int>,FullSeedInput> m_fullSeedInputs;
++  std::map<size_t,std::set<uint64_t>> m_sourceLinkSelections;
+   size_t m_numberOfEvents {0};
+   size_t m_numberOfTrackSeeds {0};
+   size_t m_numberOfFittedTracks {0};
