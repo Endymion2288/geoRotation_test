@@ -48,6 +48,8 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [完整C原生surface间传播](../workbook/2026-11-14_stage06_bound_transport.md)已完成24个Calypso作业、816对局部transport，均两侧valid。四条极端路径固定同物理mean/C后，方向差≤3.432×10⁻¹⁶；材料ON最大direction-C指标约3.35×10⁻⁸，OFF≤2.511×10⁻¹⁴。100117长段使用各自native输入时，10 m/100 mm/10 mm上限使方向差4.783×10⁻⁷→4.889×10⁻⁹→8.127×10⁻¹²；这尚非内部CKF全链步长控制。前向位置诊断已按native Plane/Disc类型更正：8,986对有类型、5,171对未测量，方向结论不变。下一项为内部CKF步长与native材料C/J审计；完整有限分布与posterior仍未验收。
 
+[内部CKF完整步长控制](../workbook/2026-11-14_stage06_ckf_step_control.md)已完成18个真实重建、默认六组完整输出精确重放和99,099对states。μ−最大smoothed direction-C差异指标default→10 mm为1.940×10⁻³→1.317×10⁻⁷；首选、完整state拓扑、sign及refit成败不变。selected最大|Δq/p|降至1.820×10⁻¹¹ GeV⁻¹，但final最大差仍约9.117×10⁻⁶ GeV⁻¹。三页英文图已数值和原始分辨率目视验收；继续原生材料噪声与完整有限先验posterior，不将内部步长控制当作refit或生产修复验收。
+
 [完整前向states定位](../workbook/2026-11-14_stage06_forward_covariance.md)已覆盖14,157对P/F/S，包括9,259个被动states；5,081对有材料的surface查询raw slab相同，所有共同路径hits/signature一致。μ−极端例约134→1194 mm段的方向差从4.79×10⁻¹²增至2.86×10⁻⁶，保存J差异项同时增加；随后update的scaled C差增约27倍，但绝对C差仅增约6%。三页图和133页汇编已验收，完整固定mean/C/surface的原生transport实验继续执行；未将矩阵余额当作实测Q或宣布posterior闭合。
 
 | 文档 | 内容 |

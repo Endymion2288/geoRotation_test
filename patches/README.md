@@ -73,3 +73,4 @@ SD patch 对应 `FaserGeant4` target 和 `build/Simulation/FaserGeant4/cmake_ins
 
 - `0018_writer_seed_lineage.patch`：只读诊断，为 `RootTrajectoryStatesWriterTool` 增加 `seed_nr` 分支，从实际 CKF `trackGroup` 读取 seed 编号；不含该列的 refit writer 输出 `UINT32_MAX`。同一补丁适用于 before/after 原生基底，不更改状态、选择或拟合。与 seed writer 的 `seedIndex` 按 input file + source entry 联结，避免重复 event number 或同 barcode 多 seed 造成错误归属。
 - `0019_native_ckf_seed_index.patch`：修正两个原生基底 CKF 的来源标签 `nSeed-1`（`nSeed` 恒为0）为真实 `iseed`。该标签在本次禁用 alignment writer 的配置中不参与 tracking；与 0018 配合导出精确 seed 归属。主诊断源码树的 audit patch 已使用 `iseed`，不重复应用 0019。
+- `0043_before_native_ckf_step_control.patch`：在已含component/regular chart/smoother observer的beforeGeo审计基底上增加默认0的 `MaxStepSize`，大于0才覆盖真实CKF propagator上限；afterGeo复用已有同义属性。默认完整输出精确重放、100/10 mm完整链路及实际worktree/构建来源见[内部CKF步长报告](../workbook/2026-11-14_stage06_ckf_step_control.md)。不是对extrapolator或refit的统一步长替换。

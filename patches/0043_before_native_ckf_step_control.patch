@@ -1,0 +1,23 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -150,6 +150,8 @@
+   Gaudi::Property<bool> m_resolveMaterial {this, "resolveMaterial", true};
+   Gaudi::Property<bool> m_resolveSensitive {this, "resolveSensitive", true};
+   Gaudi::Property<bool> m_addFittedParamsToTrack {this, "addFittedParamsToTrack", true};
++  Gaudi::Property<double> m_maxStepSize {this,"MaxStepSize",0.,
++      "Optional explicit CKF propagation step limit in ACTS mm; zero keeps native default"};
+   Gaudi::Property<double> m_maxSteps {this, "maxSteps", 10000};
+   Gaudi::Property<double> m_chi2Max {this, "chi2Max", 15};
+   Gaudi::Property<unsigned long> m_nMax {this, "nMax", 10};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -324,6 +324,7 @@
+   
+   Acts::PropagatorPlainOptions pOptions;
+   pOptions.maxSteps = m_maxSteps;
++  if(m_maxStepSize>0.) pOptions.maxStepSize=m_maxStepSize;
+   if (m_backwardPropagation) {
+     pOptions.direction = Acts::Direction::Backward;
+   } else {

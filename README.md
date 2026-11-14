@@ -18,6 +18,7 @@
 - [S05角度来源结论](workbook/2026-11-13_stage05_angle_structure_conclusions.md)及[isolated smoothing全量复核](workbook/2026-11-13_stage05_isolated_validation.md)：两版各500k，ON/OFF最终量与选样成员一致，新增57页ON参考图。
 - [S06全量电荷测量与路径统计](workbook/2026-11-13_stage06_charge_baseline.md)：100116/100117各500k、before/after均ON；误判率、入口条件谱平衡、全量lineage及历史Alma差异。详细机制与对称性控制继续执行。
 - [S06谱、模式与逐运算控制](workbook/2026-11-13_stage06_charge_controls.md)：production-only平衡、100k/电荷的真实方向/IFT/merge、119事件58字段精确重放及500k matched seed covariance；hit/qB/refit与独立gun继续验证。
+- [S06原生CKF步长与有限先验检查](workbook/2026-11-14_stage06_ckf_step_control.md)：18个完整Calypso重建，10 mm上限压低极端逐层mean/C差；最终q/p与完整likelihood posterior仍继续验收。
 - [各阶段参考图清单](roadmap/05_reference_figures.md)：S04–S07对应的参考页、图组和PNG/PDF交付要求。
 - [Calypso patches 与构建](patches/README.md)；[冻结定义](configs/definitions.json)；[诊断字段](configs/fields.md)。
 - [仓库协作规范](AGENTS.md)。

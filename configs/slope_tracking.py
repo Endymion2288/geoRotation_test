@@ -116,7 +116,11 @@ def main():
                         help='Disable only the native CKF material scattering term; refit and observer retain their native settings')
     parser.add_argument('--ckf-no-energy-loss', action='store_true',
                         help='Disable only the native CKF material energy-loss term; refit and observer retain their native settings')
+    parser.add_argument('--ckf-max-step-mm', type=float,
+                        help='Explicit step limit inside the actual CKF propagator, in mm; refit and observer unchanged')
     args = parser.parse_args()
+    if args.ckf_max_step_mm is not None and args.ckf_max_step_mm <= 0.:
+        parser.error('--ckf-max-step-mm must be positive')
     if args.charge_audit and not args.stage_audit:
         parser.error('--charge-audit requires --stage-audit')
     if args.prior_component_audit and args.stage_audit:
@@ -200,6 +204,8 @@ def main():
         BackwardPropagation=args.backward, noDiagnostics=False, seedWriter=not args.no_seed_writer,
         StatesWriter=args.native_states, SummaryWriter=False)
     ckf = cfg.getEventAlgo('CKF_Slope')
+    if args.ckf_max_step_mm is not None:
+        ckf.MaxStepSize = args.ckf_max_step_mm
     if args.ckf_measurement_variance_scale is not None:
         ckf.TrackSeed.MeasurementVarianceScale=args.ckf_measurement_variance_scale
     if args.ckf_cluster_measurement_variance:
@@ -274,6 +280,8 @@ def main():
             BackwardPropagation=True, noDiagnostics=True, seedWriter=False,
             StatesWriter=False, SummaryWriter=False)
         backward_ckf = backward_cfg.getEventAlgo('CKF_Slope_Backward')
+        if args.ckf_max_step_mm is not None:
+            backward_ckf.MaxStepSize = args.ckf_max_step_mm
         if args.regular_ckf_update_chart:
             backward_ckf.RegularCkfUpdateChart = True
         if args.regular_ckf_smoothing_chart:
@@ -343,6 +351,8 @@ def main():
         source_link_selection_file=args.source_link_selection_file,
         ckf_material_scattering=getattr(ckf, 'MaterialScattering', True),
         ckf_material_energy_loss=getattr(ckf, 'MaterialEnergyLoss', True),
+        ckf_max_step_mm=args.ckf_max_step_mm,
+        actual_ckf_max_step_mm=float(getattr(ckf, 'MaxStepSize', 0.)),
         backward=args.backward, masked_layers=mask, merge_directions=args.merge_directions,
         output_collection=observer_collection,
         audit=args.stage_audit, native_states=args.native_states, reset_event_maps=False,
