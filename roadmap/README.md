@@ -42,7 +42,7 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [实际 refit 输入审计](../workbook/2026-11-14_stage06_refit_input_covariance.md)已完成15个重建、6组观察精确重放及9组单因素 gate。两版均先对角×10再完整C×10；只取消前者，两条 same-hit/both-success sign 分歧消失，其中一条两版都错。共同组物理C差异中位数100044为0.793→0.286、100116为0.737→0.147、100117为0.283→0.138；CKF/mean/surface不变。其余两条path/fallback差异保留，未闭合上游CKF posterior。三页英文图已验收；下一步以实际CKF update/smoothing chart控制定位上游分叉。
 
-[实际 CKF chart 四模式控制](../workbook/2026-11-14_stage06_ckf_direction_chart.md)完成12个重建及默认关闭精确重放。固定n32 C/256输入，regular update消除全部39条有序hit路径差异；再联合regular smoothing，共同集合smoothed direction-C差异中位数降至约5–7×10⁻⁹，925个首选的最终sign分歧为0。原path/fallback两例变成双方均错号、均fallback，说明版本一致性不等于正确性改善。[四组宽度扫描](../workbook/2026-11-14_stage06_ckf_chart_width_scan.md)新增18个真实重建：4,056个首选全部same ordered hits/sign，只有368个双方成功refit；smoothed direction-C中位数约5×10⁻⁹至10⁻⁸，最大1.757×10⁻³，最终|Δq/p|最大9.115×10⁻⁶ GeV⁻¹。三页英文扫描图及124页汇编已验收。下一步只替换after seed C的解析Jacobian，检验输入数值精度贡献；Q5未验收完整posterior闭合。
+[实际 CKF chart 四模式控制](../workbook/2026-11-14_stage06_ckf_direction_chart.md)完成12个重建及默认关闭精确重放。固定n32 C/256输入，regular update消除全部39条有序hit路径差异；再联合regular smoothing，共同集合smoothed direction-C差异中位数降至约5–7×10⁻⁹，925个首选的最终sign分歧为0。原path/fallback两例变成双方均错号、均fallback，说明版本一致性不等于正确性改善。[四组宽度扫描](../workbook/2026-11-14_stage06_ckf_chart_width_scan.md)新增18个真实重建：4,056个首选全部same ordered hits/sign，只有368个双方成功refit；保留非零极端差异。[只替换after seed C的解析Jacobian](../workbook/2026-11-14_stage06_analytic_seed_covariance.md)新增12次实际重建，输入物理C差异中位数约4×10⁻⁹→10⁻¹⁴，部分smoothed差异下降，hits/refit/sign全部不变；100117最大smoothed direction-C仍1.757×10⁻³，最终|Δq/p|最大9.115×10⁻⁶ GeV⁻¹。三页新图及127页汇编已验收。下一步记录真实smoother求逆、gain和PSD修正的执行中间量；Q5未验收完整posterior闭合。
 
 | 文档 | 内容 |
 | --- | --- |

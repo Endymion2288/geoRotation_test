@@ -91,4 +91,6 @@ before新增9次重建cluster1582682，after新增9次1582684，全部exit0。�
 
 ## 下一步计划
 
+解析Jacobian单因素已经完成，见[实际重建与结果](2026-11-14_stage06_analytic_seed_covariance.md)。输入C精度贡献得到分离，剩余极端差异继续按真实后向执行顺序诊断。
+
 新增可选解析Jacobian，默认保留历史实现。检查完整position/direction/qop/time covariance及近极点与角度等价表示，冻结只改after C的新输入。复用现有before运行，比较after两种输入下的ordered hits、P/F/S、refit/fallback和最终sign；保留全部max/p95/median与极端状态。Q5保持未完成，posterior聚合、纯旋转证据与生产修复的验收分别记录。

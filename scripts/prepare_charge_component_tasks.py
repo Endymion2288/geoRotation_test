@@ -79,8 +79,40 @@ def _physical_map(mean_f, surface_f, surface_a, qop=None):
                               time, surface_a, 'A')
 
 
-def _jacobian_to_after(mean_f, surface_f, surface_a):
-    """Numerical exact physical F->A bound Jacobian for covariance transport."""
+def _jacobian_to_after_analytic(mean_f, surface_f, surface_a):
+    """Exact differential of the bound-coordinate map at the supplied mean.
+
+    This transports a local covariance, not a finite Gaussian distribution.
+    The source angles may use an equivalent noncanonical representation;
+    differentiate that representation before mapping to canonical A angles.
+    """
+    transform_f = np.asarray(surface_f, dtype=float).reshape(4, 4)
+    transform_a = np.asarray(surface_a, dtype=float).reshape(4, 4)
+    phi, theta = mean_f[2:4]
+    cp, sp, ct, st = np.cos(phi), np.sin(phi), np.cos(theta), np.sin(theta)
+    direction_a = ROTATE_F_TO_A @ _direction(phi, theta)
+    x, y, z = direction_a
+    radius = np.hypot(x, y)
+    norm_squared = float(direction_a @ direction_a)
+    if radius == 0.:
+        raise ValueError('A-frame angular Jacobian is undefined at its polar axis')
+    direction_derivative = np.array([[-sp*st, cp*ct], [cp*st, sp*ct], [0., -st]])
+    angle_derivative = np.array([[-y/radius**2, x/radius**2, 0.],
+        [z*x/(radius*norm_squared), z*y/(radius*norm_squared), -radius/norm_squared]])
+    jacobian = np.zeros((6, 6), dtype=float)
+    jacobian[:2, :2] = (np.linalg.inv(transform_a)[:2, :3] @
+                        ROTATE_F_TO_A @ transform_f[:3, :2])
+    jacobian[2:4, 2:4] = angle_derivative @ ROTATE_F_TO_A @ direction_derivative
+    jacobian[4, 4] = jacobian[5, 5] = 1.
+    return jacobian
+
+
+def _jacobian_to_after(mean_f, surface_f, surface_a, method='finite_difference'):
+    """F->A bound differential, with the historical central difference default."""
+    if method == 'analytic':
+        return _jacobian_to_after_analytic(mean_f, surface_f, surface_a)
+    if method != 'finite_difference':
+        raise ValueError('unknown covariance Jacobian method: '+method)
     base = _physical_map(mean_f, surface_f, surface_a)
     jacobian = np.zeros((6, 6), dtype=float)
     steps = np.array([1e-4, 1e-4, 1e-6, 1e-6, 1e-8, 1e-4])
@@ -113,7 +145,8 @@ def _standard_cloud(n_components, seed):
     return values
 
 
-def _component_rows(before, after, n_components, seed, within_fraction):
+def _component_rows(before, after, n_components, seed, within_fraction,
+                    covariance_jacobian='finite_difference'):
     if not 0. < within_fraction <= 1.:
         raise ValueError('within-component covariance fraction must be in (0, 1]')
     mean_f = np.asarray(before['bound'], dtype=float)
@@ -144,7 +177,8 @@ def _component_rows(before, after, n_components, seed, within_fraction):
             sampled_f, surface_f, 'FASER')
         sampled_a = _physical_to_bound(position, direction, sampled_qop, sampled_time,
                                        surface_a, 'A')
-        jacobian = _jacobian_to_after(sampled_f, surface_f, surface_a)
+        jacobian = _jacobian_to_after(sampled_f, surface_f, surface_a,
+                                      method=covariance_jacobian)
         covariance_a = jacobian @ within_f @ jacobian.T
         covariance_a = (covariance_a + covariance_a.T) / 2.
         np.linalg.cholesky(covariance_a)
@@ -157,6 +191,7 @@ def _component_rows(before, after, n_components, seed, within_fraction):
     return rows, dict(total_F_covariance_scaled_error=float(scaled_error),
         maximum_inner_sigma_direction_error=physical_error,
         inner_sigma_points_per_component=len(inner_offsets),
+        covariance_jacobian=covariance_jacobian,
         finite_width_chart_mapping='first order at each component mean; convergence required')
 
 
@@ -167,7 +202,8 @@ def _line(entry, seed, component, mean, covariance, surface):
                     for v in values) + '\n'
 
 
-def prepare(root, output, n_components, within_fraction):
+def prepare(root, output, n_components, within_fraction,
+            covariance_jacobian='finite_difference'):
     output.mkdir(exist_ok=False)
     code = output / 'code'
     (code / 'scripts').mkdir(parents=True)
@@ -179,6 +215,7 @@ def prepare(root, output, n_components, within_fraction):
     tasks = {variant: [] for variant in VARIANTS}
     maps = json.loads((root / 'physical_prior_material_bins_v4/manifest.json').read_text())
     manifest = dict(n_components=n_components, within_component_covariance_fraction=within_fraction,
+                    covariance_jacobian=covariance_jacobian,
                     samples={}, rotation=ROTATE_F_TO_A.tolist(),
                     material_maps={v:maps[k] for v,k in [('beforeGeo','source_map'), ('afterGeo','corrected_map')]},
                     scope='Finite moment-matched split of the recorded beforeGeo Gaussian. '
@@ -199,7 +236,8 @@ def prepare(root, output, n_components, within_fraction):
             before, after = source_rows['beforeGeo'][(entry, seed)], source_rows['afterGeo'][(entry, seed)]
             assert before['hits'] == after['hits'] and before['bound'][4] == after['bound'][4]
             rows, checks = _component_rows(before, after, n_components,
-                2026111400 + int(dsid) * 10000 + entry * 101 + seed, within_fraction)
+                2026111400 + int(dsid) * 10000 + entry * 101 + seed, within_fraction,
+                covariance_jacobian=covariance_jacobian)
             input_checks.append(dict(entry=entry, seed=seed, **checks))
             component_base = components_per_event.get(entry, 0)
             for draw, (mean_f, mean_after, cov_before, cov_after) in enumerate(rows):
@@ -269,6 +307,8 @@ def main():
     parser.add_argument('--n-components', type=int, default=32)
     parser.add_argument('--within-fraction', type=float, default=1./16.,
                         help='Fraction of original covariance within each component; remaining variance is between means')
+    parser.add_argument('--covariance-jacobian', choices=['finite_difference', 'analytic'],
+                        default='finite_difference', help='Only the local covariance map; means remain exact')
     parser.add_argument('--component-directory', default='common_prior_components_v4')
     parser.add_argument('--output-name', default='smoke_v1',
                         help='Subdirectory below the selected component directory')
@@ -278,7 +318,7 @@ def main():
     if args.phase == 'prepare':
         if args.n_components < 14 or args.n_components % 2 or not 0. < args.within_fraction <= 1.:
             parser.error('use an even component count >=14 and within-fraction in (0,1]')
-        prepare(root, output, args.n_components, args.within_fraction)
+        prepare(root, output, args.n_components, args.within_fraction, args.covariance_jacobian)
     else:
         validate(root, output)
     print(output)
