@@ -22,7 +22,7 @@ def values(source):
         assert len(selected) == group['counts']['paired_states']
         for stage in STAGES:
             for field, expected in group['cohorts']['all']['stages'][stage].items():
-                assert metrics([r[stage][field] for r in selected]) == expected
+                assert metrics([r[stage][field] for r in selected if r[stage][field] is not None]) == expected
         groups[dsid] = dict(counts=group['counts'],
             stages={stage: [r[stage]['direction_scaled_max'] for r in selected] for stage in STAGES})
     path = [r for r in rows if (r['dsid'], r['entry'], r['component']) == ('100117', 1, 24)]

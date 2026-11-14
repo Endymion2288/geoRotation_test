@@ -10,6 +10,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--revision', type=int, default=1)
+    parser.add_argument('--surface-catalog', type=Path)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     root = args.root.resolve()/'common_prior_ckf_chart_v1'
@@ -21,13 +22,15 @@ def main():
     code.mkdir(exist_ok=False)
     paths = ['scripts/validate_charge_components.py'] + ['analysis/'+name for name in
         ['charge_forward_covariance.py', 'charge_component_refit.py', 'charge_refit_input.py',
-         'charge_smoothing_operations.py', 'slope_tables.py']]
+         'charge_smoothing_operations.py', 'slope_tables.py', 'bound_surface_coordinates.py']]
     for relative in paths:
         target = code/relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(repo/relative, target)
     tasks = [dict(kind='analysis', command=['python3', str(code/'analysis/charge_forward_covariance.py'),
         '--input', str(source), '--output', str(output/('analysis_'+revision))], output=str(output/'jobs'/('analysis_'+revision)))]
+    if args.surface_catalog:
+        tasks[0]['command'] += ['--surface-catalog', str(args.surface_catalog.resolve())]
     (output/('analysis_tasks_'+revision+'.json')).write_text(json.dumps(tasks, indent=2)+'\n')
     (output/('manifest_'+revision+'.json')).write_text(json.dumps(dict(source_manifest=str(source/'manifest.json'),
         source_validation=str(source/'analysis_v2/validation.json'), code=str(code),

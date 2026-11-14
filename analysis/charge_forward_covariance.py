@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from charge_component_refit import components, first, metrics
-from charge_refit_input import physical, ROTATE_F_TO_A
+from bound_surface_coordinates import direction_f, surface_position, ROTATE_F_TO_A
 from charge_smoothing_operations import scaled
 from slope_tables import write_json
 
@@ -72,16 +72,24 @@ def matrix_metrics(a, b, reference_a=None, reference_b=None):
 def state_metrics(a, b, stage):
     ma, ca, _ = common(a, 'beforeGeo', stage)
     mb, cb, _ = common(b, 'afterGeo', stage)
-    pa, pca = physical(a, 'beforeGeo', stage)
-    pb, pcb = physical(b, 'afterGeo', stage)
+    da, ga = direction_f(np.asarray(a[stage]), 'beforeGeo')
+    db, gb = direction_f(np.asarray(b[stage]), 'afterGeo')
+    pca = ga @ np.asarray(a[stage+'_cov']) @ ga.T
+    pcb = gb @ np.asarray(b[stage+'_cov']) @ gb.T
+    position_difference = None
+    if a.get('surface_type') is not None and b.get('surface_type') is not None:
+        assert a['surface_type'] == b['surface_type']
+        pa, _ = surface_position(a[stage], a['surface'], a['surface_type'])
+        pb, _ = surface_position(b[stage], b['surface'], b['surface_type'])
+        position_difference = float(np.linalg.norm(pa-ROTATE_F_TO_A.T @ pb))
     angle_delta = mb[2:4]-ma[2:4]
     angle_delta[0] = np.arctan2(np.sin(angle_delta[0]), np.cos(angle_delta[0]))
     return dict(**matrix_metrics(ca, cb),
-        position_difference_mm=float(np.linalg.norm(pa[:3]-pb[:3])),
-        direction_difference_norm=float(np.linalg.norm(pa[3:6]-pb[3:6])),
+        position_difference_mm=position_difference,
+        direction_difference_norm=float(np.linalg.norm(da-db)),
         angular_difference_rad=float(np.abs(angle_delta).max()),
         qop_difference_GeVinv=float(abs(ma[4]-mb[4])),
-        physical_direction_C_scaled_max=float(scaled(pca, pcb)[3:6, 3:6].max()),
+        physical_direction_C_scaled_max=float(scaled(pca, pcb).max()),
         before_direction_variance_trace_rad2=float(np.trace(ca[2:4, 2:4])),
         after_direction_variance_trace_rad2=float(np.trace(cb[2:4, 2:4])))
 
@@ -135,7 +143,7 @@ def signature(row):
         ('geometry_id', 'hit', 'measurement_flag', 'outlier_flag', 'hole_flag'))
 
 
-def paired_path(a, b, ia, ib, tag):
+def paired_path(a, b, ia, ib, tag, surface_catalog=None):
     before, after = forward_states(a, ia), forward_states(b, ib)
     assert list(map(signature, before)) == list(map(signature, after)), tag
     rows = []
@@ -144,11 +152,17 @@ def paired_path(a, b, ia, ib, tag):
     previous = (a['seed'], b['seed'])
     previous_stage = None
     for ordinal, (ra, rb) in enumerate(zip(before, after)):
+        for variant, state in [('beforeGeo', ra), ('afterGeo', rb)]:
+            metadata = (surface_catalog or {}).get(variant+'|'+str(state['geometry_id']))
+            if metadata is not None:
+                np.testing.assert_allclose(state['surface'], metadata['surface'], rtol=0, atol=2e-9)
+                state['surface_type'] = metadata['surface_type']
         surface_error = float(np.abs(rotation @ np.asarray(ra['surface'])-np.asarray(rb['surface'])).max())
         assert surface_error < 2e-9, (tag, ordinal, surface_error)
         assert all(stage in ra and stage in rb for stage in STAGES)
         item = dict(**tag, forward_index=ordinal, path_length_mm=ra['path_length_mm'],
             geometry_id=ra['geometry_id'], hit=ra.get('hit'),
+            surface_type=ra.get('surface_type'),
             measurement_flag=ra['measurement_flag'], outlier_flag=ra['outlier_flag'],
             hole_flag=ra['hole_flag'], surface_rotation_error_mm=surface_error,
             path_length_difference_mm=rb['path_length_mm']-ra['path_length_mm'])
@@ -182,8 +196,9 @@ def paired_path(a, b, ia, ib, tag):
     return rows, before, after
 
 
-def analyze(root, output):
+def analyze(root, output, surface_catalog_path=None):
     manifest = json.loads((root/'manifest.json').read_text())
+    surface_catalog = json.loads(surface_catalog_path.read_text()) if surface_catalog_path else {}
     for mode in ('off', 'on'):
         assert json.loads((root/('gate_'+mode+'_v1')/'validation.json').read_text())['all_exact']
     points = {(p['dsid'], p['variant']): p for p in manifest['points']}
@@ -209,13 +224,15 @@ def analyze(root, output):
                 continue
             counts['same_ordered_hits'] += 1
             rows, raw_a, raw_b = paired_path(a, b, ia, ib,
-                dict(dsid=dsid, entry=key[0], component=key[1], candidate_before=ia, candidate_after=ib))
+                dict(dsid=dsid, entry=key[0], component=key[1], candidate_before=ia, candidate_after=ib), surface_catalog)
             counts['terminal_only'] += len(rows) == 1
             counts['measurement_states'] += sum(r['measurement_flag'] for r in rows)
             counts['passive_states'] += sum(not r['measurement_flag'] for r in rows)
             counts['material_states'] += sum(r['material']['before']['material_full_X0'] is not None for r in rows)
             counts['different_raw_material_slabs'] += sum(not r['material']['raw_slab_equal'] for r in rows)
             counts['paired_states'] += len(rows)
+            counts['position_measured_states'] += sum(r['surface_type'] is not None for r in rows)
+            counts['position_unmeasured_states'] += sum(r['surface_type'] is None for r in rows)
             counts['negative_path_steps'] += sum(r['path_step_mm'] is not None and r['path_step_mm'] < -1e-8 for r in rows)
             paths[key] = dict(rows=rows, before_seed=a['seed'], after_seed=b['seed'],
                               before_states=raw_a, after_states=raw_b)
@@ -234,7 +251,8 @@ def analyze(root, output):
                                 ('passive', lambda r: not r['measurement_flag'])]:
             selected = [r for r in sample if predicate(r)]
             cohorts[name] = dict(states=len(selected), stages={stage: {
-                field: metrics([r[stage][field] for r in selected]) for field in fields} for stage in STAGES})
+                field: metrics([r[stage][field] for r in selected if r[stage][field] is not None])
+                for field in fields} for stage in STAGES})
         summary[dsid] = dict(counts=counts, cohorts=cohorts,
             link_terms={term: metrics([r['link'][term]['direction_scaled_max'] for r in sample])
                         for term in ('inherited_C', 'saved_J', 'remaining_balance')})
@@ -254,12 +272,17 @@ def analyze(root, output):
                 stream.write(json.dumps(row, separators=(',', ':'), allow_nan=False)+'\n')
     write_json(output/'extreme_forward_paths.json', extremes)
     write_json(output/'summary.json', dict(groups=summary, source_events=60,
+        surface_catalog=str(surface_catalog_path) if surface_catalog_path else None,
         scope='All stored states of first-ranked common ordered-hit native Calypso paths; '
               'isolated smoothing ON, n32 C/256 analytic input. Common bound angular chart and '
-              'physical Cartesian metrics are separate. Covariance balance is not measured native Q. '
+              'physical direction metrics are separate. Position requires native surface type; '
+              'unknown positions are unmeasured, never interpreted as planar. '
+              'Covariance balance is not measured native Q. '
               'No new tracking or production-rate estimate; full posterior remains open.'))
     write_json(output/'validation.json', dict(coverage=coverage,
         paired_states=len(all_rows), full_stream_replay_gates_passed=True,
+        position_measured_states=sum(r['surface_type'] is not None for r in all_rows),
+        position_unmeasured_states=sum(r['surface_type'] is None for r in all_rows),
         linked_forward_state_indices_and_surface_rotation_checked=True,
         different_raw_material_slabs=sum(not r['material']['raw_slab_equal'] for r in all_rows),
         covariance_balance_algebra_checked=True,
@@ -272,8 +295,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--surface-catalog', type=Path)
     args = parser.parse_args()
-    analyze(args.input, args.output)
+    analyze(args.input, args.output, args.surface_catalog)
 
 
 if __name__ == '__main__':

@@ -2,11 +2,13 @@
 
 **原先在 smoothing 中看到的 μ− 极端差异，已有可定位的前向来源：entry 1、component 24 在约134→1194 mm的原生传播段，physical direction差从4.79×10⁻¹²增至2.86×10⁻⁶。全部14,157对states的raw material slab相同。后续update的归一化C指标增加不等于绝对误差等比例增加；完整固定输入传播和posterior检验继续执行。**
 
+**位置诊断更正已完成：`analysis_v2`将被动surface的loc0/loc1统一按平面x/y转换，该假设不成立。权威更正为`analysis_v3`，使用实际Calypso的Plane/Disc类型覆盖8,986对states，其余5,171对位置未测量；旧归档相关位置指标撤回。方向结论不变，逐项重算差异及真实传播结果见[完整C transport报告](2026-11-14_stage06_bound_transport.md)。下表index7位置已按typed转换更新。**
+
 ## 阶段目标
 
 延续[真实smoother审计](2026-11-14_stage06_smoothing_operations.md)，将检查范围从measurement扩展到全部保存的被动材料面，沿ACTS真实state links定位前向mean/C差异，区分继承输入、保存的transport Jacobian和其余covariance增量。验收包括完整路径覆盖、共同surface检查、相同定义下的数值/分布图及可复核的极端路径。
 
-结果目录`F=/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/common_prior_ckf_chart_v1/forward_covariance_v1`；权威统计为`F/analysis_v2`，图为`F/figures_v1/results`。
+结果目录`F=/eos/home-x/xcheng/FASER/geoRotation_test_results/stage06_charge/20261113_isolated_v1/common_prior_ckf_chart_v1/forward_covariance_v1`；权威更正统计为`F/analysis_v3`，图为`F/figures_v2/results`。原`analysis_v2`及`figures_v1`保留作历史记录。
 
 ## 工作内容
 
@@ -57,7 +59,7 @@
 | --- | ---: | --- | ---: | ---: | ---: | ---: |
 |0|3.888|否|1.726×10⁻¹⁵|1.726×10⁻¹⁵|2.321×10⁻¹⁶|0|
 |1|10.000|是|2.336×10⁻⁸|2.336×10⁻⁸|1.230×10⁻¹⁶|1.421×10⁻¹⁴|
-|7|133.934|否|7.193×10⁻⁹|7.193×10⁻⁹|4.791×10⁻¹²|6.951×10⁻¹⁰|
+|7|133.934|否|7.193×10⁻⁹|7.193×10⁻⁹|4.791×10⁻¹²|7.597×10⁻¹⁰|
 |8|1193.919|否|5.408×10⁻⁶|5.408×10⁻⁶|2.858×10⁻⁶|1.528×10⁻³|
 |9|1208.862|是|5.365×10⁻⁶|1.463×10⁻⁴|2.859×10⁻⁶|1.570×10⁻³|
 

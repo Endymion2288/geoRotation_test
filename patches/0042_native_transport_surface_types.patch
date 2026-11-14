@@ -1,0 +1,42 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -374,7 +374,7 @@
+   double m_outputParameters[3][6]{},m_outputCovariance[3][6][6]{};
+   double m_outputBound[3][6]{},m_inputCovariance[6][6]{},m_inputSurface[4][4]{},m_outputSurface[3][4][4]{};
+   double m_outputQop[3]{},m_outputCharge[3]{};
+-  int m_valid[3]{};
++  int m_valid[3]{},m_inputSurfaceType=0,m_outputSurfaceType[3]{};
+   struct Input {int seed,candidate,barcode,stage,layer,kind;unsigned long long geometry;double charge;Acts::BoundVector values;Acts::BoundSquareMatrix covariance;unsigned long long targetGeometry=0;};
+   std::map<long,std::vector<Input>> m_inputs;
+   Acts::Vector3 toF(const Acts::Vector3& x) const {return m_rotated ? Acts::Vector3(-x.z(),x.y(),x.x()) : x;}
+@@ -442,6 +442,8 @@
+   m_tree->Branch("projection_valid",m_valid,"projection_valid[3]/I");
+   m_tree->Branch("input_covariance_native",m_inputCovariance,"input_covariance_native[6][6]/D");
+   m_tree->Branch("input_surface_native",m_inputSurface,"input_surface_native[4][4]/D");
++  m_tree->Branch("input_surface_type",&m_inputSurfaceType,"input_surface_type/I");
++  m_tree->Branch("projection_surface_type",m_outputSurfaceType,"projection_surface_type[3]/I");
+   m_tree->Branch("projection_bound_native",m_outputBound,"projection_bound_native[3][6]/D");
+   m_tree->Branch("projection_surface_native",m_outputSurface,"projection_surface_native[3][4][4]/D");
+   if(!m_materialTrace.value().empty()) {
+@@ -461,10 +463,11 @@
+   m_inputAngles[0]=start.parameters()[2];m_inputAngles[1]=start.parameters()[3];
+   m_hasCov=start.covariance().has_value();m_charge=start.charge();m_inputQop=start.parameters()[4];
+   for(int r=0;r<6;++r) for(int c=0;c<6;++c) m_inputCovariance[r][c]=m_hasCov ? (*start.covariance())(r,c) : NAN;
++  m_inputSurfaceType=static_cast<int>(start.referenceSurface().type());
+   const auto& inputTransform=start.referenceSurface().transform(gctx).matrix();
+   for(int r=0;r<4;++r) for(int c=0;c<4;++c) m_inputSurface[r][c]=inputTransform(r,c);
+   for(int i=0;i<3;++i) {
+-    m_valid[i]=0;
++    m_valid[i]=0;m_outputSurfaceType[i]=-1;
+     m_outputQop[i]=m_outputCharge[i]=NAN;
+     for(double& v:m_outputParameters[i]) v=NAN;
+     for(auto& row:m_outputCovariance[i]) for(double& v:row) v=NAN;
+@@ -477,6 +480,7 @@
+     if(!result) continue;
+     m_outputQop[i]=result->parameters()[4];m_outputCharge[i]=result->charge();
+     for(int j=0;j<6;++j) m_outputBound[i][j]=result->parameters()[j];
++    m_outputSurfaceType[i]=static_cast<int>(result->referenceSurface().type());
+     const auto& outputTransform=result->referenceSurface().transform(gctx).matrix();
+     for(int r=0;r<4;++r) for(int c=0;c<4;++c) m_outputSurface[i][r][c]=outputTransform(r,c);
+     const auto x=toF(result->position(gctx)),p=toF(result->momentum());

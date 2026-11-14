@@ -1,0 +1,105 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -371,9 +371,10 @@
+   unsigned long long m_geometryID=0;
+   double m_inputPosition[3]{},m_inputMomentum[3]{},m_inputAngles[2]{},m_charge=0,m_inputQop=0;
+   double m_outputParameters[3][6]{},m_outputCovariance[3][6][6]{};
++  double m_outputBound[3][6]{},m_inputCovariance[6][6]{},m_inputSurface[4][4]{},m_outputSurface[3][4][4]{};
+   double m_outputQop[3]{},m_outputCharge[3]{};
+   int m_valid[3]{};
+-  struct Input {int seed,candidate,barcode,stage,layer,kind;unsigned long long geometry;double charge;Acts::BoundVector values;};
++  struct Input {int seed,candidate,barcode,stage,layer,kind;unsigned long long geometry;double charge;Acts::BoundVector values;Acts::BoundSquareMatrix covariance;unsigned long long targetGeometry=0;};
+   std::map<long,std::vector<Input>> m_inputs;
+   Acts::Vector3 toF(const Acts::Vector3& x) const {return m_rotated ? Acts::Vector3(-x.z(),x.y(),x.x()) : x;}
+   Acts::Vector3 toNative(const Acts::Vector3& x) const {return m_rotated ? Acts::Vector3(x.z(),x.y(),-x.x()) : x;}
+@@ -382,7 +383,7 @@
+     if(m_rotated) {basis.col(0)=Acts::Vector3(0,-1,0);basis.col(1)=Acts::Vector3(0,0,-1);basis.col(2)=Acts::Vector3(1,0,0);}
+     return Acts::Surface::makeShared<Acts::PlaneSurface>(Acts::Transform3(Acts::Translation3(toNative(Acts::Vector3(0,0,z)))*basis));
+   }
+-  void propagate(const EventContext&,const Acts::GeometryContext&,const Acts::BoundTrackParameters&,const std::array<double,3>&);
++  void propagate(const EventContext&,const Acts::GeometryContext&,const Acts::BoundTrackParameters&,const std::array<double,3>&,const Acts::Surface* exactTarget=nullptr);
+ };
+ 
+ StatusCode CalypsoSlopeTransportProbeAlg::initialize() {
+@@ -393,6 +394,10 @@
+     long entry;Input row;
+     while(file>>entry>>row.seed>>row.candidate>>row.barcode>>row.stage>>row.layer>>row.kind>>row.geometry>>row.charge) {
+       for(int i=0;i<6;++i) if(!(file>>row.values[i])) return StatusCode::FAILURE;
++      if(row.kind==2) {
++        for(int r=0;r<6;++r) for(int c=0;c<6;++c) if(!(file>>row.covariance(r,c))) return StatusCode::FAILURE;
++        if(!(file>>row.targetGeometry)) return StatusCode::FAILURE;
++      }
+       m_inputs[entry].push_back(row);
+     }
+     if(!file.eof()) return StatusCode::FAILURE;
+@@ -415,6 +420,10 @@
+   m_tree->Branch("projection_charge",m_outputCharge,"projection_charge[3]/D");
+   m_tree->Branch("projection_covariance_native",m_outputCovariance,"projection_covariance_native[3][6][6]/D");
+   m_tree->Branch("projection_valid",m_valid,"projection_valid[3]/I");
++  m_tree->Branch("input_covariance_native",m_inputCovariance,"input_covariance_native[6][6]/D");
++  m_tree->Branch("input_surface_native",m_inputSurface,"input_surface_native[4][4]/D");
++  m_tree->Branch("projection_bound_native",m_outputBound,"projection_bound_native[3][6]/D");
++  m_tree->Branch("projection_surface_native",m_outputSurface,"projection_surface_native[3][4][4]/D");
+   if(!m_materialTrace.value().empty()) {
+     m_trace.open(m_materialTrace.value());
+     m_materialSummary.open(m_materialTrace.value()+".calls.csv");
+@@ -426,22 +435,30 @@
+ }
+ 
+ void CalypsoSlopeTransportProbeAlg::propagate(const EventContext& ctx,const Acts::GeometryContext& gctx,
+-    const Acts::BoundTrackParameters& start,const std::array<double,3>& targets) {
++    const Acts::BoundTrackParameters& start,const std::array<double,3>& targets,const Acts::Surface* exactTarget) {
+   const auto pos=toF(start.position(gctx)),mom=toF(start.momentum());
+   for(int j=0;j<3;++j) {m_inputPosition[j]=pos[j];m_inputMomentum[j]=mom[j];}
+   m_inputAngles[0]=start.parameters()[2];m_inputAngles[1]=start.parameters()[3];
+   m_hasCov=start.covariance().has_value();m_charge=start.charge();m_inputQop=start.parameters()[4];
++  for(int r=0;r<6;++r) for(int c=0;c<6;++c) m_inputCovariance[r][c]=m_hasCov ? (*start.covariance())(r,c) : NAN;
++  const auto& inputTransform=start.referenceSurface().transform(gctx).matrix();
++  for(int r=0;r<4;++r) for(int c=0;c<4;++c) m_inputSurface[r][c]=inputTransform(r,c);
+   for(int i=0;i<3;++i) {
+     m_valid[i]=0;
+     m_outputQop[i]=m_outputCharge[i]=NAN;
+     for(double& v:m_outputParameters[i]) v=NAN;
+     for(auto& row:m_outputCovariance[i]) for(double& v:row) v=NAN;
++    for(double& v:m_outputBound[i]) v=NAN;
++    for(auto& row:m_outputSurface[i]) for(double& v:row) v=NAN;
+     if(!std::isfinite(targets[i])) {m_valid[i]=-1;continue;}
+-    auto target=plane(targets[i]);
++    std::shared_ptr<const Acts::Surface> target=(i==0 && exactTarget) ? exactTarget->getSharedPtr() : plane(targets[i]);
+     const auto direction=targets[i]>=pos.z() ? Acts::Direction::Forward : Acts::Direction::Backward;
+     auto result=m_tool->propagate(ctx,start,*target,direction);
+     if(!result) continue;
+     m_outputQop[i]=result->parameters()[4];m_outputCharge[i]=result->charge();
++    for(int j=0;j<6;++j) m_outputBound[i][j]=result->parameters()[j];
++    const auto& outputTransform=result->referenceSurface().transform(gctx).matrix();
++    for(int r=0;r<4;++r) for(int c=0;c<4;++c) m_outputSurface[i][r][c]=outputTransform(r,c);
+     const auto x=toF(result->position(gctx)),p=toF(result->momentum());
+     for(int j=0;j<3;++j) {m_outputParameters[i][j]=x[j];m_outputParameters[i][j+3]=p[j];}
+     if(result->covariance()) for(int j=0;j<6;++j) for(int k=0;k<6;++k) m_outputCovariance[i][j][k]=(*result->covariance())(j,k);
+@@ -537,7 +554,7 @@
+     for(const auto& row:found->second) {
+       m_seed=row.seed;m_candidate=row.candidate;m_barcode=row.barcode;m_stage=row.stage;m_layer=row.layer;m_geometryID=row.geometry;
+       std::shared_ptr<const Acts::Surface> surface;Acts::BoundVector pars=row.values;
+-      if(row.kind==1) {
++      if(row.kind==1 || row.kind==2) {
+         const auto* s=tracking->findSurface(Acts::GeometryIdentifier(row.geometry));
+         if(!s) {ATH_MSG_ERROR("Archived state surface not found: "<<row.geometry);return StatusCode::FAILURE;}
+         surface=s->getSharedPtr();
+@@ -546,8 +563,14 @@
+         surface=plane(toF(pos).z());pars.setZero();pars.head<2>()=surface->globalToLocal(gctx,pos,mom.normalized()).value();
+         pars[2]=Acts::VectorHelpers::phi(mom);pars[3]=Acts::VectorHelpers::theta(mom);pars[4]=row.charge/mom.norm();
+       }
+-      Acts::BoundTrackParameters start(std::move(surface),pars,std::nullopt,Acts::ParticleHypothesis::muon());
+-      propagate(ctx,gctx,start,{0.,-3112.,first.count(row.barcode) ? first.at(row.barcode) : NAN});
++      std::optional<Acts::BoundSquareMatrix> covariance;
++      if(row.kind==2) covariance=row.covariance;
++      Acts::BoundTrackParameters start(std::move(surface),pars,covariance,Acts::ParticleHypothesis::muon());
++      if(row.kind==2) {
++        const auto* exact=tracking->findSurface(Acts::GeometryIdentifier(row.targetGeometry));
++        if(!exact) return StatusCode::FAILURE;
++        propagate(ctx,gctx,start,{toF(exact->center(gctx)).z(),NAN,NAN},exact);
++      } else propagate(ctx,gctx,start,{0.,-3112.,first.count(row.barcode) ? first.at(row.barcode) : NAN});
+     }
+   }
+   ++m_entry;return StatusCode::SUCCESS;

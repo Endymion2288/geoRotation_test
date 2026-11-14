@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'analysis'))
-from charge_forward_covariance import chart, covariance_balance, forward_states
+from charge_forward_covariance import chart, covariance_balance, forward_states, state_metrics
 from charge_refit_input import ROTATE_F_TO_A
 
 
@@ -68,6 +68,16 @@ class ForwardCovarianceDiagnostics(unittest.TestCase):
         states = [dict(acts_state_index=0, acts_previous_index=1, path_length_mm=-10.),
                   dict(acts_state_index=1, acts_previous_index=4294967295, path_length_mm=0.)]
         self.assertEqual([r['acts_state_index'] for r in forward_states(dict(states={0: states}), 0)], [1, 0])
+
+    def test_unknown_surface_position_is_unmeasured_but_direction_is_retained(self):
+        before = np.array([100., .6, .1, .003, -.002, 0.])
+        mean, _ = chart(before, 'beforeGeo')
+        mean[3] = np.pi/2.-mean[3]
+        a = dict(predicted=before, predicted_cov=np.eye(6), surface=np.eye(4))
+        b = dict(predicted=mean, predicted_cov=np.eye(6), surface=np.eye(4))
+        result = state_metrics(a, b, 'predicted')
+        self.assertIsNone(result['position_difference_mm'])
+        self.assertLess(result['direction_difference_norm'], 3e-16)
 
 
 if __name__ == '__main__':

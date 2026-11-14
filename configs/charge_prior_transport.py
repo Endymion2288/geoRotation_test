@@ -17,6 +17,8 @@ def main():
     parser.add_argument('--events', type=int, default=20)
     parser.add_argument('--disable-material', action='store_true')
     parser.add_argument('--trace-material', action='store_true')
+    parser.add_argument('--max-step-size-m', type=float,
+                        help='Explicit native extrapolator step limit in metres')
     args = parser.parse_args()
     from AthenaCommon.Configurable import Configurable
     from AthenaConfiguration.ComponentFactory import CompFactory
@@ -50,6 +52,8 @@ def main():
         InteractionEloss=not args.disable_material,
         InteractionMultiScatering=not args.disable_material,
         InteractionRecord=args.trace_material)
+    if args.max_step_size_m is not None:
+        propagator.MaxStepSize = args.max_step_size_m
     acc.addEventAlgo(CompFactory.CalypsoSlopeTransportProbeAlg('ChargePriorTransport',
         ExtrapolationTool=propagator, Rotated=args.variant != 'beforeGeo',
         DirectionScan=False, InputStates=args.states, Skip=args.skip,
@@ -60,8 +64,11 @@ def main():
         interaction_energy_loss=propagator.InteractionEloss,
         interaction_scattering=propagator.InteractionMultiScatering,
         material_trace=args.trace_material,
-        prior='Identical finite samples of the complete recorded F-frame Gaussian; exact nonlinear direction map; no Gaussian projection of the prior between frames',
-        scope='Actual Calypso transport only; sample points have no per-point Gaussian covariance; no CKF fit or charge inference is substituted')
+        max_step_size_m=propagator.MaxStepSize,
+        prior='Native bound inputs: legacy kinds carry no covariance; kind 2 supplies complete '
+              '6x6 bound covariance and the actual target geometry ID. Input files define the mode.',
+        scope='Actual Calypso extrapolation only. A tangent covariance coordinate map does not '
+              'establish finite-distribution or CKF posterior equivalence.')
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
     begin = time.monotonic()
     status = acc.run(args.events)

@@ -1,0 +1,55 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CalypsoSlopeDiagnosticsAlg.cxx
+@@ -344,6 +344,7 @@
+ 
+ #include <iomanip>
+ #include "Acts/Geometry/TrackingVolume.hpp"
++#include "Acts/Geometry/ApproachDescriptor.hpp"
+ #include "Acts/Material/BinnedSurfaceMaterial.hpp"
+ 
+ // Separate propagation-only algorithm for archived native states and free
+@@ -382,6 +383,25 @@
+     Acts::RotationMatrix3 basis=Acts::RotationMatrix3::Identity();
+     if(m_rotated) {basis.col(0)=Acts::Vector3(0,-1,0);basis.col(1)=Acts::Vector3(0,0,-1);basis.col(2)=Acts::Vector3(1,0,0);}
+     return Acts::Surface::makeShared<Acts::PlaneSurface>(Acts::Transform3(Acts::Translation3(toNative(Acts::Vector3(0,0,z)))*basis));
++  }
++  const Acts::Surface* completeSurface(const Acts::TrackingVolume& volume,unsigned long long id) const {
++    for(const auto& boundary:volume.boundarySurfaces()) {
++      const auto& surface=boundary->surfaceRepresentation();
++      if(surface.geometryId().value()==id) return &surface;
++    }
++    if(volume.confinedLayers()) for(const auto& layer:volume.confinedLayers()->arrayObjects()) {
++      const auto& surface=layer->surfaceRepresentation();
++      if(surface.geometryId().value()==id) return &surface;
++      if(layer->approachDescriptor()) for(const auto* approach:layer->approachDescriptor()->containedSurfaces())
++        if(approach->geometryId().value()==id) return approach;
++      if(layer->surfaceArray()) for(const auto* sensitive:layer->surfaceArray()->surfaces())
++        if(sensitive->geometryId().value()==id) return sensitive;
++    }
++    if(volume.confinedVolumes()) for(const auto& child:volume.confinedVolumes()->arrayObjects())
++      if(const auto* found=completeSurface(*child,id)) return found;
++    for(const auto& child:volume.denseVolumes())
++      if(const auto* found=completeSurface(*child,id)) return found;
++    return nullptr;
+   }
+   void propagate(const EventContext&,const Acts::GeometryContext&,const Acts::BoundTrackParameters&,const std::array<double,3>&,const Acts::Surface* exactTarget=nullptr);
+ };
+@@ -555,7 +575,7 @@
+       m_seed=row.seed;m_candidate=row.candidate;m_barcode=row.barcode;m_stage=row.stage;m_layer=row.layer;m_geometryID=row.geometry;
+       std::shared_ptr<const Acts::Surface> surface;Acts::BoundVector pars=row.values;
+       if(row.kind==1 || row.kind==2) {
+-        const auto* s=tracking->findSurface(Acts::GeometryIdentifier(row.geometry));
++        const auto* s=completeSurface(*tracking->highestTrackingVolume(),row.geometry);
+         if(!s) {ATH_MSG_ERROR("Archived state surface not found: "<<row.geometry);return StatusCode::FAILURE;}
+         surface=s->getSharedPtr();
+       } else {
+@@ -567,7 +587,7 @@
+       if(row.kind==2) covariance=row.covariance;
+       Acts::BoundTrackParameters start(std::move(surface),pars,covariance,Acts::ParticleHypothesis::muon());
+       if(row.kind==2) {
+-        const auto* exact=tracking->findSurface(Acts::GeometryIdentifier(row.targetGeometry));
++        const auto* exact=completeSurface(*tracking->highestTrackingVolume(),row.targetGeometry);
+         if(!exact) return StatusCode::FAILURE;
+         propagate(ctx,gctx,start,{toF(exact->center(gctx)).z(),NAN,NAN},exact);
+       } else propagate(ctx,gctx,start,{0.,-3112.,first.count(row.barcode) ? first.at(row.barcode) : NAN});
