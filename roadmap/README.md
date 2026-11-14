@@ -32,7 +32,7 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [联合refit全量回归](../workbook/2026-11-14_stage06_joint_refit_regression.md)已补齐μ±各40k、两类A′各10k源事件、3/4站F/B/merge的48组。所有模式错号计数下降，110051三站forward为1212/13589→297/13648，correct效率+4.9722 pp [4.6127,5.3316]，production-relative半动量尾36.7577%→9.8916%；18页图、fallback/CPU及选择迁移通过核对。merge的控制已实际应用至两个refit方向。Q5完整共同物理先验、材料查询与剩余measurement机制继续执行。
 
-[原生材料decoder与有限物理先验](../workbook/2026-11-14_stage06_physical_prior_material_decoder.md)已定位旧map的rotation数组转置错误：原脚本按列编码而ACTS按行读取，AFS共同12项也有相同编码。修正后176次native查询的bin/raw材料全部一致，7,680点确定性transport最大位置差4.69×10⁻¹³ mm、方向差2.21×10⁻¹⁶ rad、相对p差6.66×10⁻¹⁶，sign差异为0。此为transport闭合，不是完整CKF posterior等价。原历史文件和测量保留；isolated smoothing ON的三个20-event legacy replay分别58/58/56字段精确，AFS仅改编码的μ±及100044各500k全量重建已提交，角度/电荷影响未测量。
+[原生材料decoder与有限物理先验](../workbook/2026-11-14_stage06_physical_prior_material_decoder.md)已定位旧map的rotation数组转置错误：原脚本按列编码而ACTS按行读取，AFS共同12项也有相同编码。修正后176次native查询的bin/raw材料全部一致，7,680点确定性transport最大位置差4.69×10⁻¹³ mm、方向差2.21×10⁻¹⁶ rad、相对p差6.66×10⁻¹⁶，sign差异为0。此为transport闭合，不是完整CKF posterior等价。原历史文件和测量保留；isolated smoothing ON的三个20-event legacy replay分别58/58/56字段精确。[150万事件材料编码重建控制](../workbook/2026-11-14_stage06_material_encoding_reconstruction.md)已完成：μ±仍为同一27/32个wrong，100044为292→291并有双向迁移，truth model精确不变，冻结角峰窗口及角核心变化较小；12页图已验收。该编码修正不能解释本批剩余μ±错号，详细audit继续检验机制。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -45,7 +45,7 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 ## 目前证据决定的优先级
 
-0. **完成材料编码修正的全量重建控制。** `t_eQOP`与同majority production p一致，历史图保留原宏定义；局部bias用同面G4 p。native decoder已证明旧AFS/strict的转置错误，正确map的有限物理点transport闭合；先完成仅改编码的500k/样本角度、charge、momentum和效率配对，再推进完整CKF共同先验。AFS/旧strict空条目/法向平移的候选差异仍单列；file0三个mask控制27图相同。
+0. **在修正材料编码后继续完整CKF及错号机制。** `t_eQOP`与同majority production p一致，历史图保留原宏定义；局部bias用同面G4 p。native decoder已证明旧AFS/strict的转置错误，正确map的有限物理点transport闭合；仅改编码的500k/样本角度、charge、momentum和效率配对已完成，μ±无selected correct↔wrong迁移，各0/500k的事件级单侧95%上限为5.99145×10⁻⁶/event。继续原59wrong/60normal的corrected-map audit及完整CKF共同先验。AFS/旧strict空条目/法向平移的候选差异仍单列；file0三个mask控制27图相同。
    原生共享smoothed slots与候选隔离重算分开呈现，truth purity分组保留共同母样本；两者对旧图形状的作用已定量，按鼓包复核报告使用各自适用的states。
 1. **S05成因定位与生产修复分别验收。** 整体beforeGeo/afterGeo的统一物理面、near-pole联合chart、独立μ± full-G4、after肩峰strip/response余量及A′拓扑均已测量。后续S07在新保留输入上检查chart补丁的全量效率与pull校准；固定输入的成因改善不代替生产验收。同面truth model与实际G4真值继续分别标注。
 2. **S06分开处理入口条件与production输入。** 两种overlap均在held-out通过五项|SMD|<0.05、KS<0.05；production-only已使before原始正负差区间包含0。119事件精确重放及100k模式已归约；matched prior的500k率为μ+19/254297、μ−26/262987，仅证明一阶seed C控制。hit/qB/refit、独立gun和模式fallback已测量。[centroid与seed q/p控制](../workbook/2026-11-13_stage06_measurement_seed_controls.md)在59错号中分别恢复23条与0条selected正确；[完整seed固定控制](../workbook/2026-11-14_stage06_fixed_seed_alignment.md)仍为5条pure selected恢复、1条符号正确但rmax=95.0914 mm失败，正常控制59/60通过。MC conditions下192个sensor的alignment与nominal相同；匹配G4/digitization/reco全链通过，default/nominal六组58字段精确相同。before updater-only有角大尾代价，both才联合改善。完整共同先验及留出回归继续执行；原生版本差不冒称纯旋转净效应。
