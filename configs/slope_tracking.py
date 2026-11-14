@@ -80,6 +80,8 @@ def main():
                         help='Calypso diagnostic: apply the existing beam-regular direction adapter to actual CKF updates')
     parser.add_argument('--regular-ckf-smoothing-chart', action='store_true',
                         help='Calypso diagnostic: apply the existing beam-regular direction adapter to CKF and isolated smoothing')
+    parser.add_argument('--smoothing-operation-selection-file',
+                        help='Read-only native smoothing operations for listed local event/component pairs')
     parser.add_argument('--correct-conversion-basis', action='store_true', help='Calypso diagnostic: transform ACTS surface covariance to the actual Trk curvilinear local basis')
     parser.add_argument('--correct-refit-basis', action='store_true', help='Calypso diagnostic: transform input curvilinear covariance to the actual refit plane basis')
     parser.add_argument('--refit-input-reference-plane', action='store_true', help='Calypso diagnostic: keep the refit plane at the input point, independently of covariance changes')
@@ -129,6 +131,8 @@ def main():
         parser.error('seed components require prior-component audit and isolated smoothing, without other seed overrides')
     if args.component_refit and not args.seed_component_input_file:
         parser.error('--component-refit requires --seed-component-input-file')
+    if args.smoothing_operation_selection_file and not args.seed_component_input_file:
+        parser.error('smoothing operation audit requires seed component mode')
     if (args.regular_ckf_update_chart or args.regular_ckf_smoothing_chart) and args.variant != 'beforeGeo':
         parser.error('the CKF direction-chart adapter is defined for the native beforeGeo frame')
     if args.run_only_input_seeds and not args.full_seed_input_file:
@@ -214,6 +218,9 @@ def main():
         ckf.RegularCkfUpdateChart = True
     if args.regular_ckf_smoothing_chart:
         ckf.RegularCkfSmoothingChart = True
+    if args.smoothing_operation_selection_file:
+        ckf.SmoothingOperationFile = 'smoothing_operations.jsonl'
+        ckf.SmoothingOperationSelectionFile = args.smoothing_operation_selection_file
     if args.source_link_selection_file:
         ckf.SourceLinkSelectionFile = args.source_link_selection_file
     if args.ckf_no_scattering:
@@ -332,6 +339,7 @@ def main():
         full_seed_input_file=args.full_seed_input_file, run_only_input_seeds=args.run_only_input_seeds,
         seed_component_input_file=args.seed_component_input_file,
         component_refit=args.component_refit,
+        smoothing_operation_selection_file=args.smoothing_operation_selection_file,
         source_link_selection_file=args.source_link_selection_file,
         ckf_material_scattering=getattr(ckf, 'MaterialScattering', True),
         ckf_material_energy_loss=getattr(ckf, 'MaterialEnergyLoss', True),

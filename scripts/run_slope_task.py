@@ -80,6 +80,10 @@ def main():
     with Path('tracking.log').open('rb') as source, gzip.open(output/'tracking.log.gz', 'wb') as target:
         shutil.copyfileobj(source, target)
     (output/'source_task.json').write_text(json.dumps(task, indent=2)+'\n')
+    if Path('smoothing_operations.jsonl').exists():
+        with Path('smoothing_operations.jsonl').open('rb') as source, gzip.open(
+                output/'smoothing_operations.jsonl.gz', 'wb', compresslevel=4) as target:
+            shutil.copyfileobj(source, target, length=1024*1024)
     if '--cluster-coordinate-audit' in task.get('options', []) and Path('cluster_coordinates.jsonl').exists():
         with Path('cluster_coordinates.jsonl').open('rb') as source, gzip.open(output/'cluster_coordinates.jsonl.gz', 'wb') as target:
             shutil.copyfileobj(source, target)

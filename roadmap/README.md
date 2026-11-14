@@ -44,6 +44,8 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [实际 CKF chart 四模式控制](../workbook/2026-11-14_stage06_ckf_direction_chart.md)完成12个重建及默认关闭精确重放。固定n32 C/256输入，regular update消除全部39条有序hit路径差异；再联合regular smoothing，共同集合smoothed direction-C差异中位数降至约5–7×10⁻⁹，925个首选的最终sign分歧为0。原path/fallback两例变成双方均错号、均fallback，说明版本一致性不等于正确性改善。[四组宽度扫描](../workbook/2026-11-14_stage06_ckf_chart_width_scan.md)新增18个真实重建：4,056个首选全部same ordered hits/sign，只有368个双方成功refit；保留非零极端差异。[只替换after seed C的解析Jacobian](../workbook/2026-11-14_stage06_analytic_seed_covariance.md)新增12次实际重建，输入物理C差异中位数约4×10⁻⁹→10⁻¹⁴，部分smoothed差异下降，hits/refit/sign全部不变；100117最大smoothed direction-C仍1.757×10⁻³，最终|Δq/p|最大9.115×10⁻⁶ GeV⁻¹。三页新图及127页汇编已验收。下一步记录真实smoother求逆、gain和PSD修正的执行中间量；Q5未验收完整posterior闭合。
 
+[真实 smoother 逐步审计](../workbook/2026-11-14_stage06_smoothing_operations.md)已完成默认 OFF / observer ON 各六组完整逐值重放。925 个 selected 分量中 9 个只有终端 state，其余 916 条路径共 13,232 对后向运算；两版 PSD 修正均为零，raw/validated C 完全相同。100117 极端例在 S1 约73 mm 处的大 S 差异已经存在于 inherited next-S；更早约1194 mm 非 measurement state 的 common-chart direction-C 差异指标为1.940×10⁻³。三页新图已通过数值及原始分辨率目视检查。下一步固定完整输入追踪前向 covariance transport、chart Jacobian 和过程噪声，继续完整 posterior 闭合。
+
 | 文档 | 内容 |
 | --- | --- |
 | [00 材料与源码](00_materials_and_source.md) | PDF 页码、历史数值、输入样本、源码检查点及尚缺信息 |

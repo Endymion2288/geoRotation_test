@@ -2,6 +2,8 @@
 
 **解析 Jacobian 将输入物理C差异中位数从约4×10⁻⁹降至约10⁻¹⁴，并显著减小部分 smoothed 差异；4,056个选中分量的有序hits、refit成功状态和最终电荷符号全部不变。100117最差smoothed direction-C仍约1.757×10⁻³，最终|Δq/p|最大仍约9.115×10⁻⁶ GeV⁻¹。因此输入数值微分解释部分差异，不能解释剩余全部差异。**
 
+后续[原生 smoother 逐步审计](2026-11-14_stage06_smoothing_operations.md)已完成：默认和observer各六组输出逐值重放，13,232对实际后向运算均未触发PSD修正。剩余差异已在raw covariance及输入中存在，继续定位前向transport与后向继承。
+
 ## 阶段目标
 
 延续[四组宽度扫描](2026-11-14_stage06_ckf_chart_width_scan.md)，检验其剩余版本间差异是否由输入准备中固定步长central difference引起。固定所有物理中心、before C、surface、有限分量设置和实际Calypso配置，只替换after输入的covariance Jacobian。

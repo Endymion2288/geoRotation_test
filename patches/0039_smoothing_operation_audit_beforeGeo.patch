@@ -1,0 +1,232 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CandidateSmoothingAudit.h b/Tracking/Acts/FaserActsKalmanFilter/src/CandidateSmoothingAudit.h
+new file mode 100644
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CandidateSmoothingAudit.h
+@@ -0,0 +1,157 @@
++#ifndef FASER_CANDIDATE_SMOOTHING_AUDIT_H
++#define FASER_CANDIDATE_SMOOTHING_AUDIT_H
++
++#include "RefitDirectionChart.h"
++#include "Acts/EventData/VectorMultiTrajectory.hpp"
++#include "Acts/TrackFitting/GainMatrixSmoother.hpp"
++#include "Acts/Utilities/detail/periodic.hpp"
++#include "FaserActsKalmanFilter/IndexSourceLink.h"
++#include "TrackerPrepRawData/FaserSCT_Cluster.h"
++#include <cassert>
++#include <cmath>
++#include <iomanip>
++#include <ostream>
++
++// Read-only instrumentation around the actual Acts::GainMatrixSmoother::calculate.
++// Capture its raw covariance through the existing accessor before ACTS validates
++// it. No alternative smoothing formula supplies the saved track states.
++namespace CandidateSmoothingAudit {
++struct Buffer {
++  Acts::BoundVector filtered=Acts::BoundVector::Zero();
++  Acts::BoundVector predicted=Acts::BoundVector::Zero();
++  Acts::BoundVector smoothed=Acts::BoundVector::Zero();
++  Acts::BoundSquareMatrix filteredCovariance=Acts::BoundSquareMatrix::Zero();
++  Acts::BoundSquareMatrix predictedCovariance=Acts::BoundSquareMatrix::Zero();
++  Acts::BoundSquareMatrix smoothedCovariance=Acts::BoundSquareMatrix::Zero();
++  Acts::BoundSquareMatrix jacobian=Acts::BoundSquareMatrix::Zero();
++  Acts::BoundSquareMatrix rawCovariance=Acts::BoundSquareMatrix::Zero();
++  bool capture=false, captured=false;
++  unsigned covarianceAccesses=0;
++};
++
++template<class Derived>
++void eigen(std::ostream& out,const Eigen::MatrixBase<Derived>& value) {
++  out << '[';
++  for(Eigen::Index i=0;i<value.rows();++i) {
++    if(i) out << ',';
++    if(value.cols()>1) out << '[';
++    for(Eigen::Index j=0;j<value.cols();++j) {
++      if(j) out << ',';
++      if(std::isfinite(value(i,j))) out << value(i,j); else out << "null";
++    }
++    if(value.cols()>1) out << ']';
++  }
++  out << ']';
++}
++
++inline Acts::Result<void> run(bool regular,const Acts::GeometryContext&,
++    Acts::VectorMultiTrajectory& trajectory,std::size_t tip,const Acts::Logger& logger,
++    std::ostream& out,std::size_t event,int seed,int component,std::size_t candidate) {
++  Acts::GainMatrixSmoother native;
++  Acts::GainMatrixSmoother::GetParameters filtered,predicted,smoothed;
++  Acts::GainMatrixSmoother::GetCovariance cf,cp,cs,jacobian;
++  filtered.connect([](const void*,void* p) {
++    return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(p)->filtered.data());
++  });
++  predicted.connect([](const void*,void* p) {
++    return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(p)->predicted.data());
++  });
++  smoothed.connect([](const void*,void* p) {
++    return Eigen::Map<Acts::BoundVector>(static_cast<Buffer*>(p)->smoothed.data());
++  });
++  cf.connect([](const void*,void* p) {
++    return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(p)->filteredCovariance.data());
++  });
++  cp.connect([](const void*,void* p) {
++    return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(p)->predictedCovariance.data());
++  });
++  cs.connect([](const void*,void* p) {
++    auto* b=static_cast<Buffer*>(p);
++    // In the frozen ACTS 32.0.2 calculate(), destination access 1 supplies
++    // the assignment target; access 2 reads that raw result for validation.
++    // Capture zero matrices as well. Later logging/assignment accesses do
++    // not replace the snapshot.
++    if(b->capture && ++b->covarianceAccesses==2) {
++      b->rawCovariance=b->smoothedCovariance;
++      b->captured=true;
++    }
++    return Eigen::Map<Acts::BoundSquareMatrix>(b->smoothedCovariance.data());
++  });
++  jacobian.connect([](const void*,void* p) {
++    return Eigen::Map<Acts::BoundSquareMatrix>(static_cast<Buffer*>(p)->jacobian.data());
++  });
++  auto previous=trajectory.getTrackState(tip);
++  previous.smoothed()=previous.filtered();
++  previous.smoothedCovariance()=previous.filteredCovariance();
++  if(!previous.hasPrevious()) return Acts::Result<void>::success();
++  std::size_t operation=0;
++  std::error_code error;
++  trajectory.applyBackwards(previous.previous(),[&](auto state) {
++    assert(state.hasFiltered() && state.hasPredicted());
++    assert(previous.hasSmoothed() && previous.hasPredicted() && previous.hasJacobian());
++    Buffer current,next;
++    if(regular) {
++      const auto [fm,jf]=refitDirectionChart(state.filtered());
++      const auto [pm,jp]=refitDirectionChart(previous.predicted());
++      const auto [sm,js]=refitDirectionChart(previous.smoothed());
++      current.filtered=fm;
++      current.filteredCovariance=jf*state.filteredCovariance()*jf.transpose();
++      next.predicted=pm;
++      next.predictedCovariance=jp*previous.predictedCovariance()*jp.transpose();
++      next.smoothed=sm;
++      next.smoothed[Acts::eBoundPhi]=pm[Acts::eBoundPhi]+
++          Acts::detail::difference_periodic(sm[Acts::eBoundPhi],pm[Acts::eBoundPhi],2.*std::acos(-1.));
++      next.smoothedCovariance=js*previous.smoothedCovariance()*js.transpose();
++      next.jacobian=jp*previous.jacobian()*jf.inverse();
++    } else {
++      current.filtered=state.filtered();
++      current.filteredCovariance=state.filteredCovariance();
++      next.predicted=previous.predicted();
++      next.predictedCovariance=previous.predictedCovariance();
++      next.smoothed=previous.smoothed();
++      next.smoothedCovariance=previous.smoothedCovariance();
++      next.jacobian=previous.jacobian();
++    }
++    current.capture=true;
++    auto status=native.calculate(&current,&next,filtered,cf,smoothed,predicted,cp,cs,jacobian,logger);
++    if(!status.ok()) {error=status.error();return false;}
++    if(regular) {
++      const auto [mean,back]=refitDirectionChart(current.smoothed,true);
++      state.smoothed()=mean;
++      state.smoothedCovariance()=back*current.smoothedCovariance*back.transpose();
++    } else {
++      state.smoothed()=current.smoothed;
++      state.smoothedCovariance()=current.smoothedCovariance;
++    }
++    const Acts::BoundSquareMatrix reconstructedGain=current.filteredCovariance*
++        next.jacobian.transpose()*next.predictedCovariance.inverse();
++    out << std::setprecision(17) << "{\"event\":" << event << ",\"seed\":" << seed
++        << ",\"component\":" << component << ",\"candidate\":" << candidate
++        << ",\"operation\":" << operation++ << ",\"regular\":" << (regular?"true":"false")
++        << ",\"state_index\":" << state.index() << ",\"next_state_index\":" << previous.index()
++        << ",\"geometry_id\":" << state.referenceSurface().geometryId().value()
++        << ",\"path_length_mm\":" << state.pathLength()
++        << ",\"measurement_flag\":" << (state.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag)?"true":"false")
++        << ",\"raw_covariance_captured\":" << (current.captured?"true":"false")
++        << ",\"raw_psd\":" << (Acts::detail::covariance_helper<Acts::BoundSquareMatrix>::isSemiPositive(current.rawCovariance)?"true":"false")
++        << ",\"validated_psd\":" << (Acts::detail::covariance_helper<Acts::BoundSquareMatrix>::isSemiPositive(current.smoothedCovariance)?"true":"false");
++    if(state.hasUncalibratedSourceLink()) {
++      const auto sl=state.getUncalibratedSourceLink().template get<IndexSourceLink>();
++      out << ",\"hit\":" << sl.hit()->identify().get_compact();
++    } else out << ",\"hit\":null";
++    auto field=[&](const char* name,const auto& value) {out << ",\"" << name << "\":";eigen(out,value);};
++    field("filtered_mean",current.filtered);field("filtered_C",current.filteredCovariance);
++    field("next_predicted_mean",next.predicted);field("next_predicted_C",next.predictedCovariance);
++    field("next_smoothed_mean",next.smoothed);field("next_smoothed_C",next.smoothedCovariance);
++    field("transport_J",next.jacobian);field("reconstructed_gain",reconstructedGain);
++    field("calculated_smoothed_mean",current.smoothed);
++    field("raw_smoothed_C",current.rawCovariance);field("validated_smoothed_C",current.smoothedCovariance);
++    field("native_smoothed_mean",state.smoothed());field("native_smoothed_C",state.smoothedCovariance());
++    out << "}\n";
++    previous=state;
++    return true;
++  });
++  return error?Acts::Result<void>::failure(error):Acts::Result<void>::success();
++}
++} // namespace CandidateSmoothingAudit
++#endif
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -28,6 +28,7 @@
+ #include "TrackingAudit.h"
+ #include <cstdint>
+ #include <set>
++#include <fstream>
+ 
+ 
+ using ClusterSet = boost::dynamic_bitset<>;
+@@ -103,6 +104,12 @@
+       "Diagnostic: native CKF update in the existing beam-regular direction chart"};
+   Gaudi::Property<bool> m_regularCkfSmoothingChart {this,"RegularCkfSmoothingChart",false,
+       "Diagnostic: native CKF and private smoothing in the existing beam-regular direction chart"};
++  Gaudi::Property<std::string> m_smoothingOperationFile {this,"SmoothingOperationFile","",
++      "Read-only actual ACTS backward-operation audit on private component candidates"};
++  Gaudi::Property<std::string> m_smoothingOperationSelectionFile {this,"SmoothingOperationSelectionFile","",
++      "Local event/component pairs to observe, without restricting reconstruction"};
++  std::ofstream m_smoothingOperations;
++  std::set<std::pair<size_t,int>> m_smoothingOperationSelections;
+   Gaudi::Property<bool> m_componentRefit {this, "ComponentRefit", false,
+       "Diagnostic: run each finite-prior component through native conversion and refit"};
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -28,6 +28,7 @@
+ #include "Acts/Propagator/Navigator.hpp"
+ #include "Acts/Propagator/Propagator.hpp"
+ #include "Acts/TrackFitting/GainMatrixSmoother.hpp"
++#include "CandidateSmoothingAudit.h"
+ #include "RegularDirectionKalman.h"
+ #include "Acts/TrackFitting/GainMatrixUpdater.hpp"
+ #include "Acts/EventData/Measurement.hpp"
+@@ -100,6 +101,20 @@
+       m_seedComponentInputs[entry].push_back({seed,component,value});
+     }
+     if (m_seedComponentInputs.empty()) return StatusCode::FAILURE;
++  }
++  if (!m_smoothingOperationFile.value().empty()) {
++    if (m_seedComponentInputFile.value().empty() || !m_isolateSmoothing ||
++        m_smoothingOperationSelectionFile.value().empty()) return StatusCode::FAILURE;
++    std::ifstream input(m_smoothingOperationSelectionFile.value());
++    if (!input) return StatusCode::FAILURE;
++    size_t event; int component;
++    while (input >> event >> component) {
++      if (component<0 || !m_smoothingOperationSelections.emplace(event,component).second)
++        return StatusCode::FAILURE;
++    }
++    if (!input.eof() || m_smoothingOperationSelections.empty()) return StatusCode::FAILURE;
++    m_smoothingOperations.open(m_smoothingOperationFile.value());
++    if (!m_smoothingOperations) return StatusCode::FAILURE;
+   }
+   if (!m_fullSeedInputFile.value().empty()) {
+     std::ifstream input(m_fullSeedInputFile.value());
+@@ -373,7 +388,12 @@
+         candidates.erase(candidates.begin());
+         auto dest=selectedTracks.getTrack(selectedTracks.addTrack());
+         dest.copyFrom(tracksTemp.getTrack(selected.index),true);
+-        const auto status=smoothCkfCandidate(m_regularCkfSmoothingChart,
++        const auto status=(m_smoothingOperations.is_open() &&
++            m_smoothingOperationSelections.count({m_numberOfEvents-1,component.component}))
++            ? CandidateSmoothingAudit::run(m_regularCkfSmoothingChart,gctx,
++                selectedTracks.trackStateContainer(),dest.tipIndex(),*m_logger,m_smoothingOperations,
++                m_numberOfEvents-1,component.seed,component.component,selected.index)
++            : smoothCkfCandidate(m_regularCkfSmoothingChart,
+             gctx,selectedTracks.trackStateContainer(),dest.tipIndex(),*m_logger);
+         if (!status.ok()) return StatusCode::FAILURE;
+         m_audit->track("selected",gctx,dest,component.seed,selected.index);

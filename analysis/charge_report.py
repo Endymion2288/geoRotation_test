@@ -17,6 +17,8 @@ def main():
     parser.add_argument('--figures', type=Path, nargs='+', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--pdf-tools', type=Path, help='Recorded existing pypdf installation')
+    parser.add_argument('--previous-report', type=Path,
+                        help='Verify the exact index, decoded vector streams and boxes of an inherited prefix')
     args = parser.parse_args()
     if args.pdf_tools:
         sys.path.insert(0, str(args.pdf_tools))
@@ -50,6 +52,18 @@ def main():
     write_json(args.output/'validation.json', dict(figure_count=len(index), pdf_pages=len(contents),
         merged_vector_contents_and_boxes_equal=True, PNG_integrity=checks,
         visual_inspection='Pending separate inspection of main figures and the contact sheet'))
+    if args.previous_report:
+        old_index=json.loads((args.previous_report/'figure_index.json').read_text())
+        old=PdfReader(args.previous_report/'charge_stage06_report.pdf')
+        new=PdfReader(target)
+        assert index[:len(old_index)]==old_index
+        assert len(old.pages)==len(old_index) and len(new.pages)>=len(old.pages)
+        for a,b in zip(old.pages,new.pages):
+            assert (a.get_contents().get_data(),list(a.mediabox),list(a.cropbox),a.rotation)==(
+                b.get_contents().get_data(),list(b.mediabox),list(b.cropbox),b.rotation)
+        write_json(args.output/'lineage_validation.json',dict(previous_report=str(args.previous_report),
+            inherited_pages=len(old.pages),new_pages=len(new.pages)-len(old.pages),
+            previous_index_prefix_exact=True,previous_decoded_vector_streams_and_boxes_exact=True))
     (args.output/'figure_index.md').write_text('\n'.join(
         f"- Page {r['report_page']}: [{r['name']}]({r['png']}) · [PDF]({r['pdf']}) · {r['reference']}" for r in index)+'\n')
     print(json.dumps(dict(report=str(target), pages=len(index)), indent=2))
