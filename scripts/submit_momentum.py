@@ -14,15 +14,25 @@ def main():
     parser.add_argument("--library",type=Path,required=True)
     parser.add_argument("--name",required=True)
     parser.add_argument("--stage",default="S04")
+    parser.add_argument("--calypso-source",type=Path,
+        help="Use this Calypso installation's setup, without mixing the legacy release setup")
     parser.add_argument("--cpus",type=int,default=1)
     parser.add_argument("--memory-mb",type=int,default=3500)
     parser.add_argument("--disk-gb",type=int,default=8)
     parser.add_argument("--flavour",default="microcentury")
     parser.add_argument("--exclude-schedd",action='append',default=[],help="Schedd rejected by a recorded compatibility probe")
+    parser.add_argument("--compatible-schedd",action='append',default=[],
+        help="Restrict selection to schedds already verified for this executable/log layout")
     args=parser.parse_args();repo=Path(__file__).resolve().parents[1]
     root=args.tasks.resolve().parent;code=root/(args.name+"_worker")
     code.mkdir(exist_ok=False)
     for name in ("momentum_worker.sh","momentum_task.py","audit_reduce.py","run_momentum_simulation.py","full_momentum_task.py","run_reference_task.py"):shutil.copy2(repo/"scripts"/name,code/name)
+    if args.calypso_source:
+        setup = args.calypso_source.resolve()/'setup_environment.sh'
+        assert setup.is_file(), setup
+        worker = code/'momentum_worker.sh'
+        worker.write_text(worker.read_text().replace(
+            '/eos/home-x/xcheng/FASER/geoRotation_calypso/setup_environment.sh', str(setup)))
     shutil.copy2(repo/'configs/momentum_modes.py',code/'momentum_modes.py')
     (code/"momentum_worker.sh").chmod(0o755)
     load=subprocess.check_output(["condor_status","-schedd","-af","Name","TotalRunningJobs","TotalIdleJobs","MaxJobsRunning"],text=True)
@@ -31,6 +41,8 @@ def main():
     for line in load.splitlines():
         name,running,idle,capacity=line.split()
         if name.startswith("bigbird") and int(name[7:9])<100 and len(name.split('.')[0])==9 and name not in args.exclude_schedd:
+            if args.compatible_schedd and name not in args.compatible_schedd:
+                continue
             ordinary.append((int(running)+int(idle),int(idle),name))
     schedd=min(ordinary)[2]
     queue=subprocess.check_output(["condor_q","-name",schedd,"-totals"],text=True)
@@ -66,7 +78,9 @@ queue {len(tasks)}
         choice="Minimum running+idle among ordinary bigbird; same verified EL9/EOS/CVMFS requirements",
         task_file=str(args.tasks.resolve()),tasks=len(tasks),submission=result,library=str(args.library.resolve()))
     manifest['excluded_schedds']=args.exclude_schedd
+    manifest['compatible_schedds']=args.compatible_schedd
     manifest['stage']=args.stage
+    manifest['calypso_source']=str(args.calypso_source.resolve()) if args.calypso_source else None
     manifest['requested_resources']=dict(cpus=args.cpus,memory_mb=args.memory_mb,
         disk_gb=args.disk_gb,flavour=args.flavour)
     (code/"submission.json").write_text(json.dumps(manifest,indent=2)+'\n');print(json.dumps(manifest,indent=2))

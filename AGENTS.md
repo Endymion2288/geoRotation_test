@@ -21,6 +21,7 @@
 | --- | --- |
 | 输入样本 | `/eos/experiment/faser/data0/sim/mc24/`；已确认的 DSID、RDO/PHYS 和版本见 `roadmap/00_materials_and_source.md`，执行前冻结具体文件与 event range |
 | 旋转版 Calypso | `/eos/home-x/xcheng/FASER/geoRotation_calypso`；研究起点 HEAD `88c457c1e4bf4154e67b96114ee8e7020d9b1a97` |
+| latest 动量溯源 | `/eos/home-x/xcheng/FASER/geoRotation_calypso_latest`，HEAD `7fd40df8cd3b60e81b4095a4f84310c4a54700a0`；同 commit 的 `geoRotation_calypso_latest_momentum_diag` 保存诊断，不混用旧构建 |
 | beforeGeo 原生 Calypso worktree | `/eos/home-x/xcheng/FASER/geoRotation_calypso_main`；本地 master `1eb885ae22299fb39bb352bead6005d41b0f953e`；native geometry/KalmanFilter packages 使用与旋转版相同 Athena 24.0.41 编译环境 |
 | 已有构建与安装 | 上述源码目录下 `build/`、`run/`；源码未变时复用 |
 | Geant4 模拟源码，探测器响应细节以此为准 | 上述 Calypso 下 `Simulation/`、`Tracker/TrackerG4/FaserSCT_G4_SD/`；digitization 见 `Tracker/TrackerDigitization/FaserSCT_Digitization/`，实际样本的生产 release/conditions 另行核对 |
@@ -63,6 +64,8 @@ python3 /eos/home-x/xcheng/FASER/geoRotation_test/configs/tracking_runner.py --d
 `--audit --states --closure` 需要本仓库记录的 Calypso audit patch 及匹配构建；`--correct-interfaces` 和 `--reset-event-maps` 是独立受控实验，不作为未经说明的默认修复。Python observer 的 `events.jsonl` 用于小样本交叉核对，批量用 `--audit --compact-only` 避免重复输出。回归检查在本仓库根目录运行 `python3 -m unittest discover -s tests -v`。
 
 S04 的批量入口为 `scripts/submit_momentum.py`，接受冻结 task JSON、library 目录和唯一任务名，提交前重新选择 schedd。`--states --selected-states-only` 配合 worker 的 `audit_reduce.py` 只保留选中路径的 compact traces；`--isolate-smoothing` 会实际重算候选自身的逐层 smoothed states，并改变少量 rmax 元数据。历史原宏复现保持该开关关闭；隔离 smoothing 的诊断须固定候选、hits、truth 和 cuts，不能把分布变窄当作最终动量已修复。sensor CSV 必须用 patch0005 的 Athena event/source_entry，G4 event ID 在当前调用中恒为1。实际配置、50k独立配对和复现入口见 S04 workbook；大型统计也通过 Condor 执行。
+
+latest 动量溯源使用 `scripts/latest_momentum_tasks.py`、`scripts/run_latest_momentum.py` 和 `analysis/latest_momentum_study.py`，显式 `--calypso-source` 选择 latest setup，库与 Python config 成套冻结。材料固定为 latest 包内 `Tracking/Acts/FaserActsGeometry/data/material-maps-alma9-rotated-rowmajor.json.gz` 的原样解压版本，并做 native decoder 查表验证，不自动换回历史 AFS JSON。九层图同层会合并两个 sensors，S2 首次 predicted、首次 filtered、下一 sensor predicted 必须分开；good-seed gate 不改变原 seed covariance，也不包含 phi cut。seed 均值注入仍按原始 seed 决定 gate；共享 hits 的 seed-p cut 可造成条件选择偏移，须同时报告无该 cut 的对照。native seed-model closure 只调用真实 Calypso extrapolator/CircleFit，使用匹配编译配方，单独标注无 measurement/G4 随机过程的范围。
 
 S05 使用 `configs/slope_tracking.py`、`scripts/run_slope_task.py`、`analysis/slope_analysis.py` 和 `analysis/slope_figures.py`；任务由 `scripts/prepare_slope_tasks.py` 冻结，经相同提交入口指定 `--stage S05`。before/after 库及 Python config 必须成套使用 `stage05_slopes/software_before` / `software_after`。`--native-states` 开启现有 CKF/refit writers，worker 归约后不保留大型 ROOT；seed 仅有 population 身份时不得声明同 ancestor seed。writer 开关需先与保存基线逐值闭合。cluster truth-position 是实际 Calypso 的单因素诊断，保留测量误差/噪声，不称为 digitization off。fixed-plane truth model 将 production p 大小附到首个 st1 SiHit chord 再传播；局部角度真值和实际 G4 momentum 必须区别记录。
 

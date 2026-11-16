@@ -32,6 +32,12 @@ def main():
         help='Diagnostic only: record pre/post-isolation states with an audit-enabled library')
     parser.add_argument('--initial-variance-inflation', type=float, nargs=5,
         help='Override only the five seed variance inflation factors')
+    parser.add_argument('--momentum-audit', action='store_true')
+    parser.add_argument('--ckf-scattering', type=int, choices=[0, 1], default=1)
+    parser.add_argument('--ckf-energy-loss', type=int, choices=[0, 1], default=1)
+    parser.add_argument('--ckf-max-step-mm', type=float, default=0.)
+    parser.add_argument('--seed-override-file')
+    parser.add_argument('--seed-override-mode', choices=['qop', 'full'], default='qop')
     args = parser.parse_args()
     from AthenaCommon.Configurable import Configurable
     from AthenaConfiguration.ComponentFactory import CompFactory
@@ -42,7 +48,12 @@ def main():
     from TrackerPrepRawDataFormation.TrackerPrepRawDataFormationConfig import FaserSCT_ClusterizationCfg
     from TrackerSpacePointFormation.TrackerSpacePointFormationConfig import TrackerSpacePointFinderCfg
     from TrackerSegmentFit.TrackerSegmentFitConfig import SegmentFitAlgCfg
-    from FaserActsKalmanFilter.GhostBustersConfig import GhostBustersCfg
+    # Official master moved this config out of the ACTS package.
+    import importlib.util
+    if importlib.util.find_spec('TrackerSegmentFit.GhostBustersConfig'):
+        from TrackerSegmentFit.GhostBustersConfig import GhostBustersCfg
+    else:
+        from FaserActsKalmanFilter.GhostBustersConfig import GhostBustersCfg
     from FaserActsKalmanFilter.CKF2Config import CKF2Cfg
     from Reconstruction.xAODTruthCnvAlgConfig import xAODTruthCnvAlgCfg
     from reference_truth_observer import ReferenceTruthObserver
@@ -77,6 +88,14 @@ def main():
     ckf = cfg.getEventAlgo('CKF_Reference')
     if args.seed_unbiased:
         ckf.seedWriter = True
+    if args.momentum_audit:
+        ckf.MomentumAuditFile = 'momentum_audit.jsonl'
+        ckf.MomentumScattering = bool(args.ckf_scattering)
+        ckf.MomentumEnergyLoss = bool(args.ckf_energy_loss)
+        ckf.MomentumMaxStepSize = args.ckf_max_step_mm
+        if args.seed_override_file:
+            ckf.MomentumSeedOverride = args.seed_override_file
+            ckf.MomentumSeedOverrideMode = args.seed_override_mode
     if args.isolate_smoothing:
         ckf.IsolateCandidateSmoothing = True
     elif args.shared_smoothing:
@@ -115,7 +134,8 @@ def main():
     begin = time.monotonic()
     status = acc.run(maxEvents=args.events)
     loaded = sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines()
-        if '/libFaserActs' in line and '.so' in line})
+        if any('/lib'+name in line for name in
+               ['FaserActs', 'RootWriterTools', 'TrackingTruthUtils', 'TrackerSegmentFit']) and '.so' in line})
     manifest.update(success=status.isSuccess(), wall_s=time.monotonic()-begin,
         loaded_acts_libraries=loaded)
     Path('run.json').write_text(json.dumps(manifest, indent=2)+'\n')
