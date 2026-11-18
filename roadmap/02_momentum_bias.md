@@ -12,6 +12,8 @@
 
 2026-11-18 的深度源码审计与 C++ 单因素实验见[latest源码审计与18晶圆因果解耦](../workbook/2026-11-18_stage04_latest_momentum_deep_dive.md)：在全20文件（及排除file0标定后的19个独立文件）完成52,338条seed的`−1.0`尖峰互斥归因、旋转seed平面`covLoc0/covLoc1`轴互换与`covQOverP` 100倍膨胀的18晶圆面逐面演化、C++ `SeedBFieldTesla = 0.473662`双向配对/门限闭合，以及无门限总体电子轫致辐射分层与`KalmanFitterTool1` refit对比。
 
+同日新建修复 worktree 的五项逐级消融、粒子假设对照与 seed 组合/积分场拟合检查见[latest修复worktree五类样本600k事件验证](../workbook/2026-11-18_stage04_latest_worktree_fixes_and_checks.md)：基于 `geoRotation_calypso_latest` 新建 `geoRotation_calypso_latest_fix_v1`（分支 `fix/latest-seed-and-momentum-v1`），在 `110051`、`110033`、`100116`、`100117`、`100130` 五类样本（10 组配置共 `600,000` 重建事件）上完成 `0.473662 T` 跨粒子种类普适性闭合、`C0→C1→C2→C3→C4→C5` 逐级必要性验证、`ParticleHypothesis::muon()` vs `electron()` 同事件对比，以及 18-cluster 双磁铁积分场拟合（`S3`）与预筛选/强化去重（`S1, S2`）的分离评估。
+
 1. 在原版配置保留 generator-referenced residual，复现报告 p24 的 seed 与 p16–18 的 per-layer predicted/filtered/smoothed 图，同时记录 event/track/state、单位与 truth 来源。
 2. 逐事件核对 `p=1/|κ|`、Cartesian norm、truth charge/barcode 和 reference surface。检查无匹配 truth、0/负占位 p、q/p=0、invalid state、histogram under/overflow；有效正 p 的 `δp≥−1`，若小于 −1 则先查定义、单位或无效数据。
 3. 增加同面 truth residual；将生产点→sensor 的真实 ΔE 与 reco−local-truth 分别画出。states writer 当前用 HepMC p，需要 S01 确认真值可用性；没有局部 p 的真实样本只报告 generator-relative 观察，另用 G4 audit 样本做物理归因。

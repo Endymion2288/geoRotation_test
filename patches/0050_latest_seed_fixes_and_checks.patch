@@ -1,0 +1,2399 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py b/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py
+index d3f3e816..cb2cb5d2 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py
++++ b/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py
+@@ -42,30 +42,33 @@ def CKF2Cfg(flags, actsOutputTag, **kwargs):
+     # track_seed_tool = CompFactory.ActsTrackSeedTool()
+     # track_seed_tool = CompFactory.MyTrackSeedTool()
+     # track_seed_tool = CompFactory.ThreeStationTrackSeedTool()
++    abs_pdg_hypothesis = int(kwargs.pop("absPdgHypothesis", 13))
++    legacy_swapped_cov_loc = bool(kwargs.pop("legacySwappedCovLoc", False))
+     track_seed_tool = CompFactory.CircleFitTrackSeedTool()
+     sigma_loc0 = 1.9e-2
+     sigma_loc1 = 9e-1
+     sigma_phi = 3.3e-2
+     sigma_theta = 2.9e-4
+-    #sigma_theta = 3e-2
+     p = 1000
+     sigma_p = 0.1 * p
+     sigma_qop = sigma_p / (p * p)
+     initial_variance_inflation = kwargs.pop(
+         "initialVarianceInflation",
+-        [100, 100, 100, 10000, 100000]
++        [100, 100, 100, 100, 1000]
+     )
+-    # initial_variance_inflation = [1000, 1000, 100, 100, 10000]
+-    #initial_variance_inflation = [100, 100, 100, 100, 1000]
+-    #initial_variance_inflation = [100, 100, 10000, 100, 100000]
+-    #initial_variance_inflation = [100, 100, 100, 10000, 100000]
+-    track_seed_tool.covLoc0 = initial_variance_inflation[0] * sigma_loc1 * sigma_loc1
+-    track_seed_tool.covLoc1 = initial_variance_inflation[1] * sigma_loc0 * sigma_loc0
++    # In rotated geometry, seed PlaneSurface has col(0)=+y_F (fine 0.019 mm) and col(1)=+x_F (coarse 0.9 mm).
++    if legacy_swapped_cov_loc:
++        track_seed_tool.covLoc0 = initial_variance_inflation[0] * sigma_loc1 * sigma_loc1
++        track_seed_tool.covLoc1 = initial_variance_inflation[1] * sigma_loc0 * sigma_loc0
++    else:
++        track_seed_tool.covLoc0 = initial_variance_inflation[0] * sigma_loc0 * sigma_loc0
++        track_seed_tool.covLoc1 = initial_variance_inflation[1] * sigma_loc1 * sigma_loc1
+     track_seed_tool.covPhi = initial_variance_inflation[2] * sigma_phi * sigma_phi
+     track_seed_tool.covTheta = initial_variance_inflation[3] * sigma_theta * sigma_theta
+     track_seed_tool.covQOverP = initial_variance_inflation[4] * sigma_qop * sigma_qop
+     track_seed_tool.std_cluster = 0.0231
+     track_seed_tool.TrackCollection = "Segments"
++    track_seed_tool.AbsPdgHypothesis = abs_pdg_hypothesis
+     
+     
+     seed_writer_tool = CompFactory.RootSeedWriterTool()
+@@ -109,7 +112,12 @@ def CKF2Cfg(flags, actsOutputTag, **kwargs):
+     #trajectory_performance_writer_tool.noDiagnostics = kwargs.get("noDiagnostics", True)
+ 
+     ckf = CompFactory.CKF2(**kwargs)
++    ckf.AbsPdgHypothesis = abs_pdg_hypothesis
++    ckf_create_trk = CompFactory.CreateTrkTrackTool(name="ckfCreateTrkTool", AbsPdgHypothesis=abs_pdg_hypothesis)
++    ckf.CreateTrkTrackTool = ckf_create_trk
+     kalman_fitter1 = CompFactory.KalmanFitterTool(name="fitterTool1")
++    kalman_fitter1.AbsPdgHypothesis = abs_pdg_hypothesis
++    kalman_fitter1.CreateTrkTrackTool = CompFactory.CreateTrkTrackTool(name="refitCreateTrkTool", AbsPdgHypothesis=abs_pdg_hypothesis)
+     kalman_fitter1.noDiagnostics = True
+     kalman_fitter1.ActsLogging = "INFO"
+     kalman_fitter1.SummaryWriter = kwargs.get("SummaryWriter", False)
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+index 34bde4b9..74e78973 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -69,6 +69,13 @@ StatusCode CKF2::initialize() {
+     ATH_CHECK(m_alignmentDerivativesWriterTool.retrieve());
+   }
+   ATH_CHECK(detStore()->retrieve(m_idHelper,"FaserSCT_ID"));
++  ATH_CHECK(detStore()->retrieve(m_detManager,"SCT"));
++  if (!m_fastAuditPrefix.value().empty()) {
++    m_fastAudit = std::make_unique<LatestFastValidationAudit>(m_fastAuditPrefix.value());
++    if (!m_fastAudit->good()) return StatusCode::FAILURE;
++    m_fastAudit->idHelper = m_idHelper;
++    m_fastAudit->detMgr = m_detManager;
++  }
+ 
+   // FIXME fix Acts logging level
+   if (m_actsLogging == "VERBOSE") {
+@@ -88,7 +95,8 @@ StatusCode CKF2::initialize() {
+                                   true, true, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger);
+  
+   m_finder = makeTrackFinderFunction(trackingGeometry, magneticField,
+-                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger);
++                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger,
++                                  m_ckfMultipleScattering.value(), m_ckfEnergyLoss.value());
+ 
+   return StatusCode::SUCCESS;
+ }
+@@ -243,9 +251,7 @@ StatusCode CKF2::execute() {
+     m_numberOfFittedTracks += tracksForSeed.size();
+     ATH_MSG_DEBUG("Find " << tracksForSeed.size() << " tracks for this seed");
+     for (auto& track : tracksForSeed) {
+-      // Set the seed number, this number decrease by 1 since the seed number
+-      // has already been updated
+-      seedNumber(track) = nSeed - 1;
++      seedNumber(track) = static_cast<unsigned int>(iseed);
+       auto destProxy = tracks.getTrack(tracks.addTrack());
+       destProxy.copyFrom(track, true);  // make sure we copy track states!
+     }
+@@ -313,18 +319,19 @@ StatusCode CKF2::execute() {
+   }
+   ATH_MSG_DEBUG("There are " << selectedTracks.size() << " selected tracks for this event.");
+ 
+-  std::map<std::size_t, bool> refitStatus; 
++  std::map<std::size_t, bool> refitStatus;
++  std::vector<unsigned int> selectedSeedIndices;
++  std::vector<LatestFastValidationAudit::RefitRecord> refitRecords;
+   for (const auto & track : selectedTracks) {
++    selectedSeedIndices.push_back(seedNumber(track));
+     std::optional<Acts::BoundTrackParameters> fittedParams = std::nullopt;
+ 
+     if(track.hasReferenceSurface()){ 
+       const auto& params = track.parameters();
+-      //const auto& qOp = track.qOverP();
+-      //const auto& charge = track.charge();
+       ATH_MSG_DEBUG("Fitted parameters");
+       ATH_MSG_DEBUG("  params:   " << params.transpose());
+       if(m_addFittedParamsToTrack){
+-        fittedParams = Acts::BoundTrackParameters(track.referenceSurface().getSharedPtr(), track.parameters(), track.covariance(), Acts::ParticleHypothesis::muon()); 
++        fittedParams = Acts::BoundTrackParameters(track.referenceSurface().getSharedPtr(), track.parameters(), track.covariance(), particleHypothesis()); 
+       }
+     } else {
+       ATH_MSG_WARNING("No fitted parameters at target position" << targetZposition);
+@@ -335,7 +342,29 @@ StatusCode CKF2::execute() {
+     //@todo: make the KF refit configurable 
+     std::unique_ptr<Trk::Track> trk2 = m_kalmanFitterTool1->fit(
+       ctx, gctx, trk.get(), Acts::BoundVector::Zero(), m_isMC);
++    LatestFastValidationAudit::RefitRecord rrec{};
+     if (trk2 != nullptr) {
++      const auto& rs = m_kalmanFitterTool1->lastRefitSummary();
++      rrec.ok = rs.ok;
++      rrec.tgtBound = rs.tgtBound;
++      rrec.tgtSigma = rs.tgtSigma;
++      rrec.w0Geo = rs.w0Geo;
++      rrec.w0Bound = rs.w0Bound;
++      rrec.w0Sigma = rs.w0Sigma;
++      if (trk2->fitQuality()) {
++        rrec.chi2 = trk2->fitQuality()->chiSquared();
++        rrec.ndf = trk2->fitQuality()->numberDoF();
++      }
++      if (trk2->trackParameters() && !trk2->trackParameters()->empty()) {
++        const auto* fp = trk2->trackParameters()->front();
++        rrec.pTrk_GeV = fp->momentum().norm() * 1e-3;
++        rrec.qTrk = fp->charge();
++        double rmax = 0.0;
++        for (const auto* qp : *trk2->trackParameters()) {
++          rmax = std::max(rmax, std::hypot(qp->position().y(), qp->position().z()));
++        }
++        rrec.rmax = rmax;
++      }
+       outputTracks->push_back(std::move(trk2));
+       refitStatus[track.index()] = true;
+     } else {
+@@ -343,6 +372,28 @@ StatusCode CKF2::execute() {
+       refitStatus[track.index()] = false;
+       ATH_MSG_WARNING("Re-Fit either not performed or failed.");
+     }
++    refitRecords.push_back(rrec);
++  }
++
++  if (m_fastAudit && Tool) {
++    const TrackerSimDataCollection* simData = nullptr;
++    const McEventCollection* mcEvents = nullptr;
++    const FaserSiHitCollection* siHits = nullptr;
++    ATH_CHECK(evtStore()->retrieve(simData, "SCT_SDO_Map"));
++    ATH_CHECK(evtStore()->retrieve(mcEvents, "TruthEvent"));
++    ATH_CHECK(evtStore()->retrieve(siHits, "SCT_Hits"));
++    const TrackCollection* rawSegs = evtStore()->contains<TrackCollection>("SegmentFit")
++        ? evtStore()->tryConstRetrieve<TrackCollection>("SegmentFit") : nullptr;
++    const TrackCollection* gbSegs = evtStore()->contains<TrackCollection>("Segments")
++        ? evtStore()->tryConstRetrieve<TrackCollection>("Segments") : nullptr;
++    m_fastAudit->recordEvent(
++        m_numberOfEvents - 1,
++        ctx.eventID().run_number(),
++        ctx.eventID().event_number(),
++        gctx, *mcEvents, *siHits, *simData,
++        *m_trackingGeometryTool->getIdentifierMap(),
++        *Tool, targetZposition, m_backwardPropagation.value(),
++        rawSegs, gbSegs, selectedTracks, selectedSeedIndices, refitRecords);
+   }
+ 
+     //write out all acts found tracks for debugging 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+index 1b459587..167111f8 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -2,6 +2,7 @@
+ #define FASERACTSKALMANFILTER_CKF2_H
+ 
+ #include "TrackFitterFunction.h"
++#include "LatestFastValidationAudit.h"
+ #include "TrackFinderFunction.h"
+ 
+ #include "AthenaBaseComps/AthReentrantAlgorithm.h"
+@@ -76,6 +77,16 @@ public:
+   virtual Acts::MagneticFieldContext getMagneticFieldContext(const EventContext& ctx) const;
+ 
+ private:
++  Acts::ParticleHypothesis particleHypothesis() const {
++    if (m_absPdgHypothesis == 11) return Acts::ParticleHypothesis::electron();
++    if (m_absPdgHypothesis == 211) return Acts::ParticleHypothesis::pion();
++    return Acts::ParticleHypothesis::muon();
++  }
++  std::unique_ptr<LatestFastValidationAudit> m_fastAudit;
++  Gaudi::Property<std::string> m_fastAuditPrefix {this, "FastBinaryAuditPrefix", ""};
++  Gaudi::Property<int> m_absPdgHypothesis {this, "AbsPdgHypothesis", 13};
++  Gaudi::Property<bool> m_ckfMultipleScattering {this, "CkfMultipleScattering", true};
++  Gaudi::Property<bool> m_ckfEnergyLoss {this, "CkfEnergyLoss", true};
+   size_t m_numberOfEvents {0};
+   size_t m_numberOfTrackSeeds {0};
+   size_t m_numberOfFittedTracks {0};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+index f5f41847..68308c19 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+@@ -6,57 +6,239 @@
+ #include "TrackerPrepRawData/FaserSCT_Cluster.h"
+ #include "Identifier/Identifier.h"
+ #include "Acts/Geometry/GeometryIdentifier.hpp"
++#include "Acts/Geometry/TrackingGeometry.hpp"
+ #include "Acts/Surfaces/PerigeeSurface.hpp"
++#include "FaserActsGeometry/FASERMagneticFieldWrapper.h"
++#include "GaudiKernel/ThreadLocalContext.h"
+ #include "CircleFit.h"
+ #include "LinearFit.h"
+ #include "TrackingTruthUtils/TrackClassification.h"
++#include <Eigen/Cholesky>
+ #include <array>
+ #include <algorithm>
++#include <cmath>
+ 
+-
+-std::map<Identifier,Index> CircleFitTrackSeedTool::s_indexMap {};
++std::map<Identifier, Index> CircleFitTrackSeedTool::s_indexMap {};
+ std::map<Identifier, const Tracker::FaserSCT_SpacePoint*> CircleFitTrackSeedTool::s_spacePointMap {};
+ 
+ CircleFitTrackSeedTool::CircleFitTrackSeedTool(
+     const std::string& type, const std::string& name, const IInterface* parent)
+     : base_class(type, name, parent) {}
+ 
+-
+ StatusCode CircleFitTrackSeedTool::initialize() {
+-      ATH_CHECK(detStore()->retrieve(m_idHelper, "FaserSCT_ID"));
+-      ATH_CHECK(detStore()->retrieve(m_detManager, "SCT"));
+-      ATH_CHECK(m_trackingGeometryTool.retrieve());
+-      ATH_CHECK(m_trackCollection.initialize());
+-      ATH_CHECK(m_clusterContainerKey.initialize());
+-      ATH_CHECK(m_spacePointContainerKey.initialize());
+-  // ATH_CHECK(m_simDataCollectionKey.initialize());
+-  // ATH_CHECK(m_mcEventCollectionKey.initialize());
++  ATH_CHECK(detStore()->retrieve(m_idHelper, "FaserSCT_ID"));
++  ATH_CHECK(detStore()->retrieve(m_detManager, "SCT"));
++  ATH_CHECK(m_trackingGeometryTool.retrieve());
++  ATH_CHECK(m_fieldCondObjInputKey.initialize());
++  ATH_CHECK(m_trackCollection.initialize());
++  ATH_CHECK(m_clusterContainerKey.initialize());
++  ATH_CHECK(m_spacePointContainerKey.initialize());
+   return StatusCode::SUCCESS;
+ }
+ 
++void CircleFitTrackSeedTool::FieldProfileGrid::eval(
++    double xA, double& jy, double& iy, double& jz, double& iz) const {
++  if (!initialized || Jy.empty()) {
++    jy = iy = jz = iz = 0.0;
++    return;
++  }
++  const double u = (xA - xMin) / dx;
++  if (u <= 0.0) {
++    jy = Jy.front();
++    iy = Iy.front() + jy * (xA - xMin);
++    jz = Jz.front();
++    iz = Iz.front() + jz * (xA - xMin);
++    return;
++  }
++  const size_t maxIdx = Jy.size() - 1;
++  if (u >= static_cast<double>(maxIdx)) {
++    const double xEnd = xMin + dx * static_cast<double>(maxIdx);
++    jy = Jy.back();
++    iy = Iy.back() + jy * (xA - xEnd);
++    jz = Jz.back();
++    iz = Iz.back() + jz * (xA - xEnd);
++    return;
++  }
++  const size_t i0 = static_cast<size_t>(u);
++  const double f = u - static_cast<double>(i0);
++  jy = Jy[i0] * (1.0 - f) + Jy[i0 + 1] * f;
++  iy = Iy[i0] * (1.0 - f) + Iy[i0 + 1] * f;
++  jz = Jz[i0] * (1.0 - f) + Jz[i0 + 1] * f;
++  iz = Iz[i0] * (1.0 - f) + Iz[i0 + 1] * f;
++}
++
++void CircleFitTrackSeedTool::ensureFieldProfile(const EventContext& ctx) {
++  if (m_fieldProfile.initialized) return;
++  SG::ReadCondHandle<FaserFieldCacheCondObj> readHandle{m_fieldCondObjInputKey, ctx};
++  if (!readHandle.isValid()) return;
++  const FaserFieldCacheCondObj* fieldCondObj{*readHandle};
++  Acts::MagneticFieldContext mfCtx(fieldCondObj);
++  FASERMagneticFieldWrapper wrapper;
++  auto cache = wrapper.makeCache(mfCtx);
++
++  const double xMin = -200.0, xMax = 2600.0, dx = 1.0;
++  const size_t nPts = static_cast<size_t>((xMax - xMin) / dx) + 1;
++  m_fieldProfile.xMin = xMin;
++  m_fieldProfile.dx = dx;
++  m_fieldProfile.Jy.assign(nPts, 0.0);
++  m_fieldProfile.Iy.assign(nPts, 0.0);
++  m_fieldProfile.Jz.assign(nPts, 0.0);
++  m_fieldProfile.Iz.assign(nPts, 0.0);
++
++  std::vector<double> ay(nPts, 0.0), az(nPts, 0.0);
++  for (size_t i = 0; i < nPts; ++i) {
++    const double xA = xMin + dx * static_cast<double>(i);
++    auto bRes = wrapper.getField(Acts::Vector3(xA, 0.0, 0.0), cache);
++    if (bRes.ok()) {
++      // du/dx_A = (q/p) * (u x B_A); for u=(1,0,0), (u x B)_y = -B_zA, (u x B)_z = +B_yA
++      ay[i] = -bRes.value().z();
++      az[i] = +bRes.value().y();
++    }
++  }
++  const size_t iZero = static_cast<size_t>((0.0 - xMin) / dx);
++  for (size_t i = iZero + 1; i < nPts; ++i) {
++    m_fieldProfile.Jy[i] = m_fieldProfile.Jy[i - 1] + 0.5 * (ay[i - 1] + ay[i]) * dx;
++    m_fieldProfile.Iy[i] = m_fieldProfile.Iy[i - 1] + 0.5 * (m_fieldProfile.Jy[i - 1] + m_fieldProfile.Jy[i]) * dx;
++    m_fieldProfile.Jz[i] = m_fieldProfile.Jz[i - 1] + 0.5 * (az[i - 1] + az[i]) * dx;
++    m_fieldProfile.Iz[i] = m_fieldProfile.Iz[i - 1] + 0.5 * (m_fieldProfile.Jz[i - 1] + m_fieldProfile.Jz[i]) * dx;
++  }
++  for (size_t i = iZero; i > 0; --i) {
++    m_fieldProfile.Jy[i - 1] = m_fieldProfile.Jy[i] - 0.5 * (ay[i - 1] + ay[i]) * dx;
++    m_fieldProfile.Iy[i - 1] = m_fieldProfile.Iy[i] - 0.5 * (m_fieldProfile.Jy[i - 1] + m_fieldProfile.Jy[i]) * dx;
++    m_fieldProfile.Jz[i - 1] = m_fieldProfile.Jz[i] - 0.5 * (az[i - 1] + az[i]) * dx;
++    m_fieldProfile.Iz[i - 1] = m_fieldProfile.Iz[i] - 0.5 * (m_fieldProfile.Jz[i - 1] + m_fieldProfile.Jz[i]) * dx;
++  }
++  m_fieldProfile.initialized = true;
++}
++
++void CircleFitTrackSeedTool::evaluateStripFieldFit(
++    Seed& seed,
++    const Acts::GeometryContext& gctx,
++    const std::map<Identifier, Acts::GeometryIdentifier>& idMap) const {
++  seed.hasStripFit = false;
++  seed.stripChi2 = std::numeric_limits<double>::quiet_NaN();
++  seed.stripNdf = 0;
++  if (!m_fieldProfile.initialized || seed.clusters.size() < 6 || seed.stations < 2) return;
++  const auto trackingGeometry = m_trackingGeometryTool->trackingGeometry();
++  if (!trackingGeometry) return;
++
++  struct RowObs {
++    Eigen::Matrix<double, 1, 5> h;
++    double b;
++    double w;
++  };
++  std::vector<RowObs> rows;
++  rows.reserve(seed.clusters.size());
++
++  // Map station -> segment approximate ACTS transverse position (y_A = y_F, z_A = -x_F)
++  std::array<Acts::Vector2, 4> stApproxYZ{
++      Acts::Vector2::Zero(), Acts::Vector2::Zero(), Acts::Vector2::Zero(), Acts::Vector2::Zero()};
++  for (const auto& seg : seed.segs) {
++    if (seg.station >= 0 && seg.station < 4) {
++      stApproxYZ[seg.station] = Acts::Vector2(seg.position.y(), -seg.position.x());
++    }
++  }
++
++  Eigen::Matrix<double, 5, 5> AtWA = Eigen::Matrix<double, 5, 5>::Zero();
++  Eigen::Matrix<double, 5, 1> AtWb = Eigen::Matrix<double, 5, 1>::Zero();
++
++  for (const auto* cl : seed.clusters) {
++    if (!cl || !cl->detectorElement()) continue;
++    const Identifier waferId = cl->detectorElement()->identify();
++    auto git = idMap.find(waferId);
++    if (git == idMap.end()) continue;
++    const Acts::Surface* surf = trackingGeometry->findSurface(git->second);
++    if (!surf) continue;
++
++    const auto& tf = surf->transform(gctx);
++    const Acts::Vector3 C = tf.translation();
++    const Acts::Vector3 e0 = tf.rotation().col(0);
++    const Acts::Vector3 e2 = tf.rotation().col(2);
++    const int st = m_idHelper->station(waferId);
++    const Acts::Vector2 yzApprox = (st >= 0 && st < 4) ? stApproxYZ[st] : Acts::Vector2(C.y(), C.z());
++
++    double xW = C.x();
++    if (std::abs(e2.x()) > 0.5) {
++      xW = C.x() - (e2.y() * (yzApprox[0] - C.y()) + e2.z() * (yzApprox[1] - C.z())) / e2.x();
++    }
++    double jy = 0.0, iy = 0.0, jz = 0.0, iz = 0.0;
++    m_fieldProfile.eval(xW, jy, iy, jz, iz);
++
++    Eigen::Matrix<double, 1, 5> h;
++    h << e0.y(), e0.y() * xW, e0.z(), e0.z() * xW, (e0.y() * iy + e0.z() * iz);
++    const double uMeas = cl->localPosition().x();
++    const double constTerm = e0.x() * (xW - C.x()) - e0.y() * C.y() - e0.z() * C.z();
++    const double bVal = uMeas - constTerm;
++    const double msExtra = (st == 2) ? (0.012 * 0.012) : ((st == 3) ? (0.020 * 0.020) : 0.0);
++    const double w = 1.0 / (0.0231 * 0.0231 + msExtra);
++
++    AtWA.noalias() += w * (h.transpose() * h);
++    AtWb.noalias() += w * h.transpose() * bVal;
++    rows.push_back({h, bVal, w});
++  }
++
++  if (rows.size() < 6) return;
++  Eigen::LDLT<Eigen::Matrix<double, 5, 5>> ldlt(AtWA);
++  if (ldlt.info() != Eigen::Success) return;
++  const Eigen::Matrix<double, 5, 1> theta = ldlt.solve(AtWb);
++  if (!theta.allFinite()) return;
++
++  double chi2Sum = 0.0;
++  for (const auto& r : rows) {
++    const double res = (r.h * theta)(0, 0) - r.b;
++    chi2Sum += r.w * res * res;
++  }
++  if (!std::isfinite(chi2Sum)) return;
++
++  seed.hasStripFit = true;
++  seed.stripTheta = theta;
++  seed.stripChi2 = chi2Sum;
++  seed.stripNdf = rows.size() - 5;
++}
++
++bool CircleFitTrackSeedTool::passPreFilter(const std::vector<Segment>& comb) const {
++  if (comb.size() >= 2) {
++    const auto& a = comb[comb.size() - 2];
++    const auto& b = comb[comb.size() - 1];
++    const double dz = b.position.z() - a.position.z();
++    if (std::abs(dz) > 200.0) {
++      const double txChord = (b.position.x() - a.position.x()) / dz;
++      if (std::abs(txChord) > 0.12) return false;
++      if (std::abs(a.momentum.z()) > 1e-6 && std::abs(b.momentum.z()) > 1e-6) {
++        const double txA = a.momentum.x() / a.momentum.z();
++        const double txB = b.momentum.x() / b.momentum.z();
++        if (std::abs(txA - txChord) > 0.045 || std::abs(txB - txChord) > 0.045) return false;
++      }
++    }
++  }
++  if (comb.size() >= 3) {
++    const auto& s0 = comb.front();
++    const auto& s1 = comb[1];
++    const auto& s2 = comb.back();
++    const double dz02 = s2.position.z() - s0.position.z();
++    if (std::abs(dz02) > 500.0) {
++      const double xInterp = s0.position.x() +
++                             (s2.position.x() - s0.position.x()) * (s1.position.z() - s0.position.z()) / dz02;
++      if (std::abs(s1.position.x() - xInterp) > m_preFilterMaxXSagittaMm.value()) return false;
++    }
++  }
++  return true;
++}
+ 
+ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backward) {
++  const EventContext& ctx = Gaudi::Hive::currentContext();
++  ensureFieldProfile(ctx);
++  const auto gctx = m_trackingGeometryTool->getGeometryContext().context();
+ 
+   SG::ReadHandle<Tracker::FaserSCT_ClusterContainer> clusterContainer {m_clusterContainerKey};
+-      ATH_CHECK(clusterContainer.isValid());
++  ATH_CHECK(clusterContainer.isValid());
+ 
+   SG::ReadHandle<FaserSCT_SpacePointContainer> spacePointContainer {m_spacePointContainerKey};
+-      ATH_CHECK(spacePointContainer.isValid());
+-
+-  // SG::ReadHandle<TrackerSimDataCollection> simData {m_simDataCollectionKey};
+-  // ATH_CHECK(simData.isValid());
+-
+-  // SG::ReadHandle<McEventCollection> mcEvents {m_mcEventCollectionKey};
+-  // ATH_CHECK(mcEvents.isValid());
++  ATH_CHECK(spacePointContainer.isValid());
+ 
+   using IdentifierMap = std::map<Identifier, Acts::GeometryIdentifier>;
+   std::shared_ptr<IdentifierMap> identifierMap = m_trackingGeometryTool->getIdentifierMap();
+-  // std::map<int, const HepMC::GenParticle*> particles {};
+-  // for (const HepMC::GenParticle* particle : mcEvents->front()->particle_range()) {
+-  //   particles[particle->barcode()] = particle;
+-  // }
+ 
+-  // std::map<Identifier, const Tracker::FaserSCT_SpacePoint*> s_spacePointMap {};
+   std::vector<const Tracker::FaserSCT_SpacePoint*> spacePoints {};
+   for (const FaserSCT_SpacePointCollection* spacePointCollection : *spacePointContainer) {
+     for (const Tracker::FaserSCT_SpacePoint *spacePoint: *spacePointCollection) {
+@@ -68,7 +250,6 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+     }
+   }
+ 
+-
+   using ThisMeasurement = Acts::Measurement<Acts::BoundIndices, 1>;
+   std::array<Acts::BoundIndices, 1> Indices = {Acts::eBoundLoc0};
+   std::vector<IndexSourceLink> sourceLinks {};
+@@ -77,26 +258,21 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+   std::vector<const Tracker::FaserSCT_Cluster*> used_clusters {};
+   for (const Tracker::FaserSCT_ClusterCollection* clusterCollection : *clusterContainer) {
+     for (const Tracker::FaserSCT_Cluster* cluster : *clusterCollection) {
+-     
+       clusters.push_back(cluster);
+       Identifier id = cluster->detectorElement()->identify();
+-      if (std::find(maskedLayers.begin(), maskedLayers.end(), 6 * m_idHelper->station( id ) + 2 * m_idHelper->layer( id ) + m_idHelper->side( id )) != maskedLayers.end()) {
++      if (std::find(maskedLayers.begin(), maskedLayers.end(),
++                    6 * m_idHelper->station(id) + 2 * m_idHelper->layer(id) + m_idHelper->side(id)) != maskedLayers.end()) {
+         continue;
+       }
+-      
+       used_clusters.push_back(cluster);
+-
+-//      if(m_idHelper->station(id)==0) continue;
+       CircleFitTrackSeedTool::s_indexMap[cluster->identify()] = measurements.size();
+       if (identifierMap->count(id) != 0) {
+         Acts::GeometryIdentifier geoId = identifierMap->at(id);
+         IndexSourceLink sourceLink(geoId, measurements.size(), cluster);
+-        // create measurement
+         const auto& par = cluster->localPosition();
+-	auto cova = cluster->localCovariance();
+         Eigen::Matrix<double, 1, 1> pos {par.x(),};
+         Eigen::Matrix<double, 1, 1> cov {0.0231 * 0.0231,};
+-        Acts::SourceLink sl{sourceLink}; 
++        Acts::SourceLink sl{sourceLink};
+         ThisMeasurement meas(std::move(sl), Indices, pos, cov);
+         sourceLinks.push_back(sourceLink);
+         measurements.emplace_back(std::move(meas));
+@@ -105,64 +281,121 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+   }
+ 
+   SG::ReadHandle<TrackCollection> trackCollection {m_trackCollection};
+-      ATH_CHECK(trackCollection.isValid());
++  ATH_CHECK(trackCollection.isValid());
+ 
+   std::array<std::vector<Segment>, 4> segments {};
+   for (const Trk::Track* track : *trackCollection) {
+     auto s = Segment(track, m_idHelper, maskedLayers);
+-    //remove IFT in seeding
+-    if(m_removeIFT){
+-    if (s.station != -1 &&s.station != 0) segments[s.station].push_back(s);
+-    }
+-    else{
+-    if (s.station != -1) segments[s.station].push_back(s);
++    if (m_removeIFT) {
++      if (s.station != -1 && s.station != 0) segments[s.station].push_back(s);
++    } else {
++      if (s.station != -1) segments[s.station].push_back(s);
+     }
+   }
+ 
+-  std::vector<Segment> combination {};
++  auto buildCombinations = [&](bool usePreFilter, std::vector<Seed>& outSeeds) {
++    std::vector<Segment> combination {};
++    go(segments, combination, outSeeds, 0, 4, backward, usePreFilter);
++    if (outSeeds.size() < 2) {
++      go(segments, combination, outSeeds, 0, 3, backward, usePreFilter);
++    }
++    if (outSeeds.size() < 2) {
++      go(segments, combination, outSeeds, 0, 2, backward, usePreFilter);
++    }
++    if (outSeeds.size() < 2) {
++      go(segments, combination, outSeeds, 0, 1, backward, usePreFilter);
++    }
++  };
++
+   std::vector<Seed> seeds {};
+-  // create seeds from four stations
+-  go(segments, combination, seeds, 0, 4, backward);
+-  if (seeds.size() < 2) {
+-    // create seeds from three stations
+-    go(segments, combination, seeds, 0, 3, backward);
++  buildCombinations(m_seedPreFilter.value(), seeds);
++  if (m_seedPreFilter.value() && seeds.empty()) {
++    buildCombinations(false, seeds);
+   }
+-  // create seeds from two stations
+-  if (seeds.size() < 2) {
+-    go(segments, combination, seeds, 0, 2, backward);
+-  }
+-  if (seeds.size() < 2) {
+-    go(segments, combination, seeds, 0, 1, backward);
++
++  m_rawSeedCount = seeds.size();
++  m_nanChi2RawSeedCount = static_cast<size_t>(std::count_if(
++      seeds.begin(), seeds.end(), [](const Seed &s) { return !std::isfinite(s.chi2); }));
++
++  if (m_seedStripFieldFit.value() || m_seedImprovedDedup.value()) {
++    for (auto& s : seeds) {
++      evaluateStripFieldFit(s, gctx, *identifierMap);
++    }
+   }
+ 
++  auto seedScore = [&](const Seed& s) -> double {
++    if (m_seedStripFieldFit.value() && s.hasStripFit && s.stripNdf > 0) {
++      return s.stripChi2 / static_cast<double>(s.stripNdf);
++    }
++    return s.chi2 / static_cast<double>(
++        std::max(s.positions.size() + s.fakePositions.size() - s.constraints, 1UL));
++  };
++
+   std::list<Seed> allSeeds;
+   for (const Seed &seed : seeds) allSeeds.push_back(seed);
+ 
+-  // allSeeds.sort([](const Seed &left, const Seed &right) {
+-  //   if (left.size > right.size) return true;
+-  //   if (left.size < right.size) return false;
+-  //   if (left.chi2 < right.chi2) return true;
+-  //   else return false;
+-  // });
+-  allSeeds.sort([](const Seed &left, const Seed &right) {
++  allSeeds.sort([&](const Seed &left, const Seed &right) {
+     if (left.stations > right.stations) return true;
+     if (left.stations < right.stations) return false;
+-    if (left.chi2/std::max(left.positions.size() + left.fakePositions.size() - left.constraints, 1UL) < right.chi2/std::max(right.positions.size() + right.fakePositions.size() - right.constraints, 1UL)) return true;
+-    else return false;
++    const double lndf = seedScore(left);
++    const double rndf = seedScore(right);
++    if (m_fixGetYNaN.value() || m_seedStripFieldFit.value() || m_seedImprovedDedup.value()) {
++      const bool lf = std::isfinite(lndf), rf = std::isfinite(rndf);
++      if (lf != rf) return lf;
++      if (!lf) return false;
++    }
++    return lndf < rndf;
+   });
+ 
++  auto s23Mask = [](const Seed& s) {
++    ClusterSet mask(s.clusterSet.size());
++    for (const auto& seg : s.segs) {
++      if (seg.station == 2 || seg.station == 3) {
++        mask |= seg.clusterSet;
++      }
++    }
++    return mask;
++  };
++
+   std::vector<Seed> selectedSeeds {};
++  ClusterSet usedUnion(measurements.size());
+   while (not allSeeds.empty()) {
+     Seed selected = allSeeds.front();
++    if (m_seedImprovedDedup.value() || m_seedStripFieldFit.value()) {
++      const double sc = seedScore(selected);
++      if (!selectedSeeds.empty() && (!std::isfinite(sc) || sc > m_seedMaxReducedChi2.value())) {
++        allSeeds.pop_front();
++        continue;
++      }
++    }
+     selectedSeeds.push_back(selected);
+-    // allSeeds.remove_if([&](const Seed &p) {
+-    //   return ((p.clusterSet & selected.clusterSet).count() == p.clusterSet.count());
+-    // });
++    const ClusterSet selS23 = s23Mask(selected);
++    if (usedUnion.size() == selected.clusterSet.size()) {
++      usedUnion |= selected.clusterSet;
++    }
+     allSeeds.remove_if([&](const Seed &p) {
+-      return (p.size < 10) || ((p.clusterSet & selected.clusterSet).count() > 6);
++      if (p.size < 10) return true;
++      if ((p.clusterSet & selected.clusterSet).count() > 6) return true;
++      if (m_seedImprovedDedup.value()) {
++        if (usedUnion.size() == p.clusterSet.size() &&
++            (p.clusterSet & usedUnion).count() > 6) {
++          return true;
++        }
++        if ((s23Mask(p) & selS23).count() >= 4) {
++          return true;
++        }
++      }
++      return false;
+     });
+   }
+ 
++  // Always compute diagnostic strip-fit chi2 on selectedSeeds if not already computed
++  for (auto& s : selectedSeeds) {
++    if (!s.hasStripFit) {
++      evaluateStripFieldFit(s, gctx, *identifierMap);
++    }
++  }
++
+   Acts::BoundSquareMatrix cov = Acts::BoundSquareMatrix::Zero();
+   cov(Acts::eBoundLoc0, Acts::eBoundLoc0) = m_covLoc0;
+   cov(Acts::eBoundLoc1, Acts::eBoundLoc1) = m_covLoc1;
+@@ -170,7 +403,6 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+   cov(Acts::eBoundTheta, Acts::eBoundTheta) = m_covTheta;
+   cov(Acts::eBoundQOverP, Acts::eBoundQOverP) = m_covQOverP;
+   cov(Acts::eBoundTime, Acts::eBoundTime) = m_covTime;
+-
+   m_cov = cov;
+ 
+   double origin;
+@@ -184,20 +416,42 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+     origin = 2470;
+   }
+   m_targetZPosition = origin;
++
++  if (m_seedStripFieldFit.value() && m_fieldProfile.initialized) {
++    double jyO = 0.0, iyO = 0.0, jzO = 0.0, izO = 0.0;
++    m_fieldProfile.eval(origin, jyO, iyO, jzO, izO);
++    for (auto& s : selectedSeeds) {
++      if (!s.hasStripFit) continue;
++      const double y0 = s.stripTheta[0], ty = s.stripTheta[1];
++      const double z0 = s.stripTheta[2], tz = s.stripTheta[3];
++      const double qop = s.stripTheta[4];
++      if (!std::isfinite(qop) || std::abs(qop) < 1e-9) continue;
++      const double yOrig = y0 + ty * origin + qop * iyO;
++      const double zOrig = z0 + tz * origin + qop * izO;
++      const double dydx = ty + qop * jyO;
++      const double dzdx = tz + qop * jzO;
++      const Acts::Vector3 dirA = Acts::Vector3(1.0, dydx, dzdx).normalized();
++      s.stripBoundAtOrigin = Acts::BoundVector::Zero();
++      s.stripBoundAtOrigin[Acts::eBoundLoc0] = yOrig;
++      s.stripBoundAtOrigin[Acts::eBoundLoc1] = -zOrig;
++      s.stripBoundAtOrigin[Acts::eBoundPhi] = Acts::VectorHelpers::phi(dirA);
++      s.stripBoundAtOrigin[Acts::eBoundTheta] = Acts::VectorHelpers::theta(dirA);
++      s.stripBoundAtOrigin[Acts::eBoundQOverP] = qop;
++      s.stripBoundAtOrigin[Acts::eBoundTime] = 0.0;
++      s.momentum = 1.0 / std::abs(qop);
++      s.charge = (qop >= 0.0) ? 1.0 : -1.0;
++      s.useStripParams = true;
++    }
++  }
++
+   std::vector<Acts::BoundTrackParameters> initParams {};
+-  ATH_MSG_DEBUG("Sorted seed properties:");
+   for (const Seed &seed : selectedSeeds) {
+-    ATH_MSG_DEBUG("seed size: " << seed.size << ", chi2: " << seed.chi2);
+-    //TODO: pt-dependent p resolution?
+-    //cov(Acts::eBoundQOverP, Acts::eBoundQOverP) = 10. / (seed.momentum * seed.momentum);
+     initParams.push_back(seed.get_params(origin, cov, backward));
+   }
+   m_seeds = std::make_shared<std::vector<Seed>>(selectedSeeds);
+   m_initialTrackParameters = std::make_shared<std::vector<Acts::BoundTrackParameters>>(initParams);
+   m_sourceLinks = std::make_shared<std::vector<IndexSourceLink>>(sourceLinks);
+-  // m_idLinks = std::make_shared<IdentifierLink>(identifierLinkMap);
+   m_measurements = std::make_shared<std::vector<Measurement>>(measurements);
+-  //@todo make sure this is correct 
+   m_initialSurface = Acts::Surface::makeShared<Acts::PlaneSurface>(
+       Acts::Vector3 {0, 0, origin}, Acts::Vector3{0, 0, -1});
+   m_clusters = std::make_shared<std::vector<const Tracker::FaserSCT_Cluster*>>(clusters);
+@@ -208,42 +462,45 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+   return StatusCode::SUCCESS;
+ }
+ 
+-
+ StatusCode CircleFitTrackSeedTool::finalize() {
+   return StatusCode::SUCCESS;
+ }
+ 
+-
+-void CircleFitTrackSeedTool::go(const std::array<std::vector<Segment>, 4> &v,
+-                                std::vector<Segment> &combination,
+-                                std::vector<Seed> &seeds,
+-                                int offset, int k,
+-                                bool backward) {
++void CircleFitTrackSeedTool::go(
++    const std::array<std::vector<Segment>, 4> &v,
++    std::vector<Segment> &combination,
++    std::vector<Seed> &seeds,
++    int offset, int k,
++    bool backward,
++    bool applyPreFilter) {
+   if (k == 0) {
+-    seeds.push_back(Seed(combination, backward));
++    seeds.push_back(Seed(combination, backward, m_seedBField.value(),
++                         m_fixGetYNaN.value(), m_useLocalTangent.value(),
++                         m_absPdgHypothesis.value()));
+     return;
+   }
+   for (std::size_t i = offset; i < v.size() + 1 - k; ++i) {
+     for (const auto& ve : v[i]) {
+       combination.push_back(ve);
+-      go(v, combination, seeds, i+1, k-1, backward);
++      if (!applyPreFilter || passPreFilter(combination)) {
++        go(v, combination, seeds, i + 1, k - 1, backward, applyPreFilter);
++      }
+       combination.pop_back();
+     }
+   }
+ }
+ 
+-CircleFitTrackSeedTool::Segment::Segment(const Trk::Track* track, const FaserSCT_ID *idHelper, const std::vector<int> &maskedLayers) :
++CircleFitTrackSeedTool::Segment::Segment(
++    const Trk::Track* track, const FaserSCT_ID *idHelper, const std::vector<int> &maskedLayers) :
+     clusterSet(CircleFitTrackSeedTool::s_indexMap.size()) {
+   for (const Trk::TrackStateOnSurface* trackState : *(track->trackStateOnSurfaces())) {
+     auto clusterOnTrack = dynamic_cast<const Tracker::FaserSCT_ClusterOnTrack*> (trackState->measurementOnTrack());
+     if (clusterOnTrack) {
+-      //get measurements of per segment****
+       Measurements.push_back(trackState->measurementOnTrack());
+-
+       const Tracker::FaserSCT_Cluster* cluster = clusterOnTrack->prepRawData();
+       Identifier id = cluster->identify();
+-      
+-      if (std::find(maskedLayers.begin(), maskedLayers.end(), 6 * idHelper->station( id ) + 2 * idHelper->layer( id )+ idHelper->side( id )) != maskedLayers.end()) {
++      if (std::find(maskedLayers.begin(), maskedLayers.end(),
++                    6 * idHelper->station(id) + 2 * idHelper->layer(id) + idHelper->side(id)) != maskedLayers.end()) {
+         continue;
+       }
+       clusters.push_back(cluster);
+@@ -254,15 +511,14 @@ CircleFitTrackSeedTool::Segment::Segment(const Trk::Track* track, const FaserSCT
+         }
+       }
+       station = idHelper->station(id);
+-      //if(station==0)continue;
+       clusterSet.set(CircleFitTrackSeedTool::s_indexMap.at(id));
+     }
+-    for(size_t i=1; i<track->trackParameters()->size(); i++){
++    for (size_t i = 1; i < track->trackParameters()->size(); i++) {
+       clPositions.push_back(track->trackParameters()->at(i)->position());
+       clMomentum.push_back(track->trackParameters()->at(i)->momentum());
+     }
+   }
+-  
++
+   auto fitParameters = track->trackParameters()->front();
+   position = fitParameters->position();
+   momentum = fitParameters->momentum();
+@@ -270,22 +526,27 @@ CircleFitTrackSeedTool::Segment::Segment(const Trk::Track* track, const FaserSCT
+   fakePositions.push_back(position);
+   fakePositions.push_back(position - 30 * momentum.normalized());
+   fakePositions.push_back(position + 30 * momentum.normalized());
+-  
+ }
+ 
+-CircleFitTrackSeedTool::Seed::Seed(const std::vector<Segment> &segments, bool backward) :
+-    clusterSet(CircleFitTrackSeedTool::s_indexMap.size()) {
++CircleFitTrackSeedTool::Seed::Seed(
++    const std::vector<Segment> &segments,
++    bool backward,
++    double bFieldTesla,
++    bool fixGetYNaN,
++    bool useLocalTangent,
++    int absPdgHypothesis)
++    : clusterSet(CircleFitTrackSeedTool::s_indexMap.size()),
++      m_fixGetYNaN(fixGetYNaN),
++      m_useLocalTangent(useLocalTangent),
++      m_absPdgHypothesis(absPdgHypothesis) {
+   for (const Segment &seg : segments) {
+-    segs.push_back(seg);//get the segments of one Seed*********************************
++    segs.push_back(seg);
+     clusters.insert(clusters.end(), seg.clusters.begin(), seg.clusters.end());
+-    //get measurements of every Seed**********
+     Measurements.insert(Measurements.end(), seg.Measurements.begin(), seg.Measurements.end());
+     spacePoints.insert(spacePoints.end(), seg.spacePoints.begin(), seg.spacePoints.end());
+     clPositions.insert(clPositions.end(), seg.clPositions.begin(), seg.clPositions.end());
+     clMomentum.insert(clMomentum.end(), seg.clMomentum.begin(), seg.clMomentum.end());
+     positions.push_back(seg.position);
+-    
+-    // TODO use reconstruct space points instead of fake positions
+     fakePositions.insert(fakePositions.end(), seg.fakePositions.begin(), seg.fakePositions.end());
+     for (size_t i = 0; i < seg.clusterSet.size(); ++i) {
+       if (seg.clusterSet[i]) clusterSet.set(i);
+@@ -295,14 +556,14 @@ CircleFitTrackSeedTool::Seed::Seed(const std::vector<Segment> &segments, bool ba
+   auto minCluster = std::min_element(
+       clusters.begin(), clusters.end(), [](const Tracker::FaserSCT_Cluster *lhs, const Tracker::FaserSCT_Cluster *rhs) {
+         return lhs->globalPosition().z() < rhs->globalPosition().z();
+-      } );
++      });
+   minZ = (*minCluster)->globalPosition().z();
+ 
+   if ((segments.size() > 1) && (!backward)) {
+     direction = positions[1] - positions[0];
+   } else if ((segments.size() > 1) && (backward)) {
+-    size_t size = segments.size();
+-    direction = positions[size-1] - positions[size-2];
++    size_t sz = segments.size();
++    direction = positions[sz - 1] - positions[sz - 2];
+   } else {
+     direction = segments[0].momentum;
+   }
+@@ -314,8 +575,13 @@ CircleFitTrackSeedTool::Seed::Seed(const std::vector<Segment> &segments, bool ba
+   linearFit(pointsZX);
+ 
+   if (segments.size() > 1) {
+-    fakeFit();
++    fakeFit(bFieldTesla);
+     constraints = 5;
++    if (m_useLocalTangent && !positions.empty()) {
++      const double zRef = !backward ? positions.front().z() : positions.back().z();
++      const double yRef = !backward ? positions.front().y() : positions.back().y();
++      direction = localTangentAtZ(zRef, yRef);
++    }
+   } else {
+     momentum = 9999999.;
+     charge = 1;
+@@ -327,11 +593,27 @@ CircleFitTrackSeedTool::Seed::Seed(const std::vector<Segment> &segments, bool ba
+   stations = segments.size();
+ }
+ 
++Acts::Vector3 CircleFitTrackSeedTool::Seed::localTangentAtZ(double zEval, double refY) const {
++  if (positions.size() > 1 && std::isfinite(r) && r > 0.0 && std::isfinite(c1)) {
++    const double dz = zEval - cx;
++    const double rad = r * r - dz * dz;
++    if (rad > 0.0) {
++      const double sqt = std::sqrt(rad);
++      const double y1 = cy - sqt, y2 = cy + sqt;
++      const double yEval = std::abs(y1 - refY) < std::abs(y2 - refY) ? y1 : y2;
++      if (std::abs(yEval - cy) > 1e-9) {
++        const double dydz = -dz / (yEval - cy);
++        return Acts::Vector3(c1, dydz, 1.0);
++      }
++    }
++  }
++  return direction;
++}
+ 
+-void CircleFitTrackSeedTool::Seed::fit() {
++void CircleFitTrackSeedTool::Seed::fit(double B) {
+   CircleFit::CircleData circleData(positions);
+   CircleFit::Circle circle = CircleFit::circleFit(circleData);
+-  momentum = circle.r > 0 ? circle.r * 0.001 * 0.3 * 0.55 : 9999999.;
++  momentum = circle.r > 0 ? circle.r * 0.001 * 0.3 * B : 9999999.;
+   charge = circle.cy < 0 ? 1 : -1;
+ }
+ 
+@@ -347,65 +629,95 @@ void CircleFitTrackSeedTool::Seed::fakeFit(double B) {
+ 
+ void CircleFitTrackSeedTool::Seed::linearFit(const std::vector<Acts::Vector2> &points) {
+   auto [origin, dir] = LinearFit::linearFit(points);
+-  c1 = dir[1]/dir[0];
++  c1 = dir[1] / dir[0];
+   c0 = origin[1] - origin[0] * c1;
+ }
+ 
+-
+-double CircleFitTrackSeedTool::Seed::getY(double z) {
+-  double sqt = std::sqrt(-cx*cx + 2*cx*z + r*r - z*z);
+-  return abs(cy - sqt) < abs(cy + sqt) ? cy - sqt : cy + sqt;
++double CircleFitTrackSeedTool::Seed::getY(double z) const {
++  const double rawRad = -cx * cx + 2 * cx * z + r * r - z * z;
++  if (!m_fixGetYNaN) {
++    const double sqt = std::sqrt(rawRad);
++    return std::abs(cy - sqt) < std::abs(cy + sqt) ? cy - sqt : cy + sqt;
++  }
++  const double sqt = (rawRad > 0.0 && std::isfinite(rawRad)) ? std::sqrt(rawRad) : 0.0;
++  return std::abs(cy - sqt) < std::abs(cy + sqt) ? cy - sqt : cy + sqt;
+ }
+ 
+-
+-double CircleFitTrackSeedTool::Seed::getX(double z) {
++double CircleFitTrackSeedTool::Seed::getX(double z) const {
+   return c0 + z * c1;
+ }
+ 
+ void CircleFitTrackSeedTool::Seed::getChi2() {
++  if (m_fixGetYNaN && (!std::isfinite(r) || r <= 0.0 || !std::isfinite(cx) || !std::isfinite(cy))) {
++    chi2 = 1e30;
++    return;
++  }
+   chi2 = 0;
+   for (const Acts::Vector3 &pos : fakePositions) {
+     m_dy = pos.y() - getY(pos.z());
+     chi2 += (m_dy * m_dy) / (m_sigma_y * m_sigma_y);
++    if (m_fixGetYNaN) {
++      const double dzOut = std::abs(pos.z() - cx) - r;
++      if (dzOut > 0.0) {
++        chi2 += (dzOut * dzOut) / (m_sigma_y * m_sigma_y);
++      }
++    }
+   }
+ 
+   for (const Acts::Vector3 &pos : fakePositions) {
+     m_dx = pos.x() - getX(pos.z());
+     chi2 += (m_dx * m_dx) / (m_sigma_x * m_sigma_x);
+   }
++  if (m_fixGetYNaN && !std::isfinite(chi2)) {
++    chi2 = 1e30;
++  }
+ }
+ 
+-Acts::BoundTrackParameters CircleFitTrackSeedTool::Seed::get_params(double origin, Acts::BoundSquareMatrix cov, bool backward) const {
+- // double theta = Acts::VectorHelpers::theta(direction);
+- // double phi = Acts::VectorHelpers::phi(direction);
++Acts::BoundTrackParameters CircleFitTrackSeedTool::Seed::get_params(
++    double origin, Acts::BoundSquareMatrix cov, bool backward) const {
++  Acts::ParticleHypothesis particleHypo = Acts::ParticleHypothesis::muon();
++  if (m_absPdgHypothesis == 11) particleHypo = Acts::ParticleHypothesis::electron();
++  else if (m_absPdgHypothesis == 211) particleHypo = Acts::ParticleHypothesis::pion();
+ 
+-  Acts::Vector3 pos(0,0,0);
+-  if (!backward) {
+-    pos = positions[0] - (positions[0].z() - origin)/direction.z() * direction;
+-  } else {
+-    size_t size = positions.size();
+-    pos = positions[size-1] + (origin - positions[size-1].z())/direction.z() * direction;
+-  }
+-  //Acts::Vector3 direct(0,0,-1);
+-  //if geometry rotation
+   Acts::RotationMatrix3 rot = Acts::RotationMatrix3::Identity();
+   rot.col(0) = Acts::Vector3(0, 0, -1);
+   rot.col(1) = Acts::Vector3(0, 1, 0);
+   rot.col(2) = Acts::Vector3(1, 0, 0);
+   Acts::Transform3 trafo(rot);
++
+   Acts::RotationMatrix3 rotation = Acts::RotationMatrix3::Identity();
+   rotation.col(0) = Acts::Vector3(0, 1, 0);
+   rotation.col(1) = Acts::Vector3(0, 0, -1);
+   rotation.col(2) = Acts::Vector3(-1, 0, 0);
++
++  if (useStripParams) {
++    Acts::Translation3 transStrip(origin, 0., 0.);
++    auto refPlaneStrip = Acts::Surface::makeShared<Acts::PlaneSurface>(Acts::Transform3(transStrip * rotation));
++    return Acts::BoundTrackParameters(refPlaneStrip, stripBoundAtOrigin, cov, particleHypo);
++  }
++
++  Acts::Vector3 effDir = direction;
++  if (m_useLocalTangent && positions.size() > 1) {
++    const double refY = !backward ? positions.front().y() : positions.back().y();
++    effDir = localTangentAtZ(origin, refY);
++  }
++
++  Acts::Vector3 pos(0, 0, 0);
++  if (!backward) {
++    pos = positions[0] - (positions[0].z() - origin) / effDir.z() * effDir;
++  } else {
++    size_t sz = positions.size();
++    pos = positions[sz - 1] + (origin - positions[sz - 1].z()) / effDir.z() * effDir;
++  }
++
+   Acts::Translation3 trans(pos.z(), 0., 0.);
+-  Acts::Transform3 traf(trans*rotation);
+-  double theta = Acts::VectorHelpers::theta(trafo*direction);
+-  double phi = Acts::VectorHelpers::phi(trafo*direction);
++  Acts::Transform3 traf(trans * rotation);
++  double theta = Acts::VectorHelpers::theta(trafo * effDir);
++  double phi = Acts::VectorHelpers::phi(trafo * effDir);
+ 
+-//  Acts::Vector3 direct(-1,0,0);
+-  auto refPlane = Acts::Surface::makeShared<Acts::PlaneSurface>(traf);; 
++  auto refPlane = Acts::Surface::makeShared<Acts::PlaneSurface>(traf);
+   Acts::GeometryContext gctx;
+-  auto lpResult = refPlane->globalToLocal(gctx, trafo*pos);
++  auto lpResult = refPlane->globalToLocal(gctx, trafo * pos);
+   if (not lpResult.ok()) {
+     throw std::runtime_error("globalToLocal transformation failed. This should not happen");
+   }
+@@ -416,12 +728,7 @@ Acts::BoundTrackParameters CircleFitTrackSeedTool::Seed::get_params(double origi
+   params[Acts::eBoundTime] = 0;
+   params[Acts::eBoundPhi] = phi;
+   params[Acts::eBoundTheta] = theta;
+-  //params[Acts::eBoundQOverP] = particleHypothesis.qOverP(p, charge);
+-
+-  params[Acts::eBoundQOverP] = charge/(momentum);
++  params[Acts::eBoundQOverP] = charge / (momentum);
+ 
+-  
+- //@todo make the particle hypothesis configurable
+-  return Acts::BoundTrackParameters(refPlane, params, cov, Acts::ParticleHypothesis::muon()); 
++  return Acts::BoundTrackParameters(refPlane, params, cov, particleHypo);
+ }
+-
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+index 1cb601c0..51c4accf 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+@@ -7,6 +7,8 @@
+ #include "Gaudi/Property.h"
+ #include "GaudiKernel/IInterface.h"
+ #include "GaudiKernel/StatusCode.h"
++#include "StoreGate/ReadCondHandleKey.h"
++#include "MagFieldConditions/FaserFieldCacheCondObj.h"
+ 
+ #include "FaserActsGeometryInterfaces/IFaserActsTrackingGeometryTool.h"
+ #include "FaserActsToolInterfaces/ITrackSeedTool.h"
+@@ -15,9 +17,8 @@
+ #include "TrkRIO_OnTrack/RIO_OnTrack.h"
+ #include "TrkSurfaces/Surface.h"
+ 
+-// #include "TrackerSimData/TrackerSimDataCollection.h"
+-// #include "GeneratorObjects/McEventCollection.h"
+ #include <array>
++#include <limits>
+ #include <memory>
+ #include <string>
+ #include <vector>
+@@ -35,8 +36,7 @@ public:
+   virtual StatusCode initialize() override;
+   virtual StatusCode finalize() override;
+   virtual StatusCode run(std::vector<int> maskedLayers = {}, bool backward=false) override;
+-  
+-  
++
+   const std::shared_ptr<std::vector<Acts::BoundTrackParameters>> initialTrackParameters() const override;
+   const std::shared_ptr<const Acts::Surface> initialSurface() const override;
+   const std::shared_ptr<std::vector<IndexSourceLink>> sourceLinks() const override;
+@@ -49,7 +49,6 @@ public:
+   Acts::BoundSquareMatrix covBound() const;
+   const std::shared_ptr<std::vector<const Tracker::FaserSCT_Cluster*>> used_clusters() const;
+ 
+-
+   struct Segment {
+   public:
+     Segment(const Trk::Track* track, const FaserSCT_ID *idHelper, const std::vector<int> &maskedLayers = {});
+@@ -66,45 +65,79 @@ public:
+   };
+ 
+   struct Seed {
+-  public:	  
+-    Seed(const std::vector<Segment> &segments, bool backward=false);
++  public:
++    Seed(const std::vector<Segment> &segments,
++         bool backward=false,
++         double bFieldTesla=0.473662,
++         bool fixGetYNaN=true,
++         bool useLocalTangent=true,
++         int absPdgHypothesis=13);
+ 
+     ClusterSet clusterSet;
+     std::vector<const Tracker::FaserSCT_Cluster*> clusters;
+-    std::vector<Segment> segs;//get segments of Seed
++    std::vector<Segment> segs;
+     std::vector<const Tracker::FaserSCT_SpacePoint*> spacePoints;
+     std::vector<const Trk::MeasurementBase*> Measurements;
+-    std::vector<Acts::Vector3> positions;//only the center of every station
++    std::vector<Acts::Vector3> positions;
+     std::vector<Acts::Vector3> fakePositions;
+     std::vector<Acts::Vector3> clPositions;
+     std::vector<Acts::Vector3> clMomentum;
+ 
+-    double c0, c1, cx, cy, r, chi2, momentum, charge, minZ;
+-    Acts::Vector3 direction;
+-    size_t size, stations, constraints;
++    double c0{0}, c1{0}, cx{0}, cy{0}, r{0}, chi2{0}, momentum{0}, charge{1}, minZ{0};
++    Acts::Vector3 direction{0, 0, 1};
++    size_t size{0}, stations{0}, constraints{5};
++
++    bool m_fixGetYNaN{true};
++    bool m_useLocalTangent{true};
++    int m_absPdgHypothesis{13};
++
++    // Multi-wafer 2-dipole field-integral strip fit results (Check 2)
++    bool hasStripFit{false};
++    bool useStripParams{false};
++    double stripChi2{std::numeric_limits<double>::quiet_NaN()};
++    size_t stripNdf{0};
++    Eigen::Matrix<double, 5, 1> stripTheta{Eigen::Matrix<double, 5, 1>::Zero()};
++    Acts::BoundVector stripBoundAtOrigin{Acts::BoundVector::Zero()};
++
++    Acts::Vector3 localTangentAtZ(double zEval, double refY) const;
+     Acts::BoundTrackParameters get_params(double origin, Acts::BoundSquareMatrix cov, bool backward=false) const;
+ 
+   private:
+     void getChi2();
+-    double getX(double z);
+-    double getY(double z);
+-    void fit();
+-    void fakeFit(double B=0.55);
++    double getX(double z) const;
++    double getY(double z) const;
++    void fit(double B=0.473662);
++    void fakeFit(double B=0.473662);
+     void linearFit(const std::vector<Acts::Vector2> &points);
+-    double m_dx, m_dy;
++    double m_dx{0}, m_dy{0};
+     double m_MeV2GeV = 1e-3;
+     double m_sigma_x = 0.8;
+     double m_sigma_y = 0.016;
+   };
+-  const std::shared_ptr<std::vector<CircleFitTrackSeedTool::Seed>> seeds() const;
+-
+ 
++  const std::shared_ptr<std::vector<CircleFitTrackSeedTool::Seed>> seeds() const;
++  size_t rawSeedCombinationCount() const { return m_rawSeedCount; }
++  size_t nanChi2RawSeedCount() const { return m_nanChi2RawSeedCount; }
++  double seedBFieldTesla() const { return m_seedBField.value(); }
++
++  struct FieldProfileGrid {
++    bool initialized = false;
++    double xMin = -200.0;
++    double dx = 1.0;
++    std::vector<double> Jy;
++    std::vector<double> Iy;
++    std::vector<double> Jz;
++    std::vector<double> Iz;
++    void eval(double xA, double& jy, double& iy, double& jz, double& iz) const;
++  };
+ 
+ private:
+- 
+-
++  void ensureFieldProfile(const EventContext& ctx);
++  void evaluateStripFieldFit(Seed& seed, const Acts::GeometryContext& gctx,
++                             const std::map<Identifier, Acts::GeometryIdentifier>& idMap) const;
++  bool passPreFilter(const std::vector<Segment>& comb) const;
+   void go(const std::array<std::vector<Segment>, 4> &v, std::vector<Segment> &combination,
+-          std::vector<Seed> &seeds, int offset, int k, bool backward=false);
++          std::vector<Seed> &seeds, int offset, int k, bool backward=false, bool applyPreFilter=false);
+ 
+   static std::map<Identifier, Index> s_indexMap;
+   static std::map<Identifier, const Tracker::FaserSCT_SpacePoint*> s_spacePointMap;
+@@ -118,8 +151,11 @@ private:
+   std::shared_ptr<std::vector<const Tracker::FaserSCT_Cluster*>> m_used_clusters {};
+   std::shared_ptr<std::vector<std::array<std::vector<const Tracker::FaserSCT_Cluster*>, 3>>> m_seedClusters {};
+   std::shared_ptr<std::vector<const Tracker::FaserSCT_SpacePoint*>> m_spacePoints {};
+- 
++
+   std::shared_ptr<std::vector<Seed>> m_seeds {};
++  size_t m_rawSeedCount {0};
++  size_t m_nanChi2RawSeedCount {0};
++  FieldProfileGrid m_fieldProfile {};
+ 
+   double m_targetZPosition {0};
+   Acts::BoundSquareMatrix m_cov;
+@@ -128,12 +164,12 @@ private:
+   const TrackerDD::SCT_DetectorManager* m_detManager {nullptr};
+ 
+   ToolHandle<IFaserActsTrackingGeometryTool> m_trackingGeometryTool { this, "TrackingGeometryTool", "FaserActsTrackingGeometryTool"};
++  SG::ReadCondHandleKey<FaserFieldCacheCondObj> m_fieldCondObjInputKey {this, "FaserFieldCacheCondObj", "fieldCondObj", "Magnetic field conditions key"};
+   SG::ReadHandleKey<TrackCollection> m_trackCollection { this, "TrackCollection", "SegmentFit", "Input track collection name" };
+   SG::ReadHandleKey<Tracker::FaserSCT_ClusterContainer> m_clusterContainerKey { this, "ClusterContainer", "SCT_ClusterContainer"};
+   SG::ReadHandleKey<FaserSCT_SpacePointContainer> m_spacePointContainerKey { this, "SpacePoints", "SCT_SpacePointContainer"};
+ 
+   Gaudi::Property<double> m_std_cluster {this, "std_cluster", 0.04};
+-  // covariance of the initial parameters
+   Gaudi::Property<double> m_covLoc0 {this, "covLoc0", 1};
+   Gaudi::Property<double> m_covLoc1 {this, "covLoc1", 1};
+   Gaudi::Property<double> m_covPhi {this, "covPhi", 1};
+@@ -141,10 +177,22 @@ private:
+   Gaudi::Property<double> m_covQOverP {this, "covQOverP", 1};
+   Gaudi::Property<double> m_covTime {this, "covTime", 1};
+   Gaudi::Property<bool> m_removeIFT{this, "removeIFT", false};
+-};
+ 
++  // Core fixes (default enabled in the fixed worktree; configurable for step-by-step ablation)
++  Gaudi::Property<double> m_seedBField{this, "SeedBFieldTesla", 0.473662};
++  Gaudi::Property<bool> m_fixGetYNaN{this, "FixGetYNaN", true};
++  Gaudi::Property<bool> m_useLocalTangent{this, "UseLocalTangent", true};
++
++  // Exploratory checks (default disabled / standard muon hypothesis unless explicitly toggled)
++  Gaudi::Property<int> m_absPdgHypothesis{this, "AbsPdgHypothesis", 13};
++  Gaudi::Property<bool> m_seedPreFilter{this, "SeedPreFilter", false};
++  Gaudi::Property<double> m_preFilterMaxXSagittaMm{this, "PreFilterMaxXSagittaMm", 5.0};
++  Gaudi::Property<bool> m_seedImprovedDedup{this, "SeedImprovedDedup", false};
++  Gaudi::Property<bool> m_seedStripFieldFit{this, "SeedStripFieldFit", false};
++  Gaudi::Property<double> m_seedMaxReducedChi2{this, "SeedMaxReducedChi2", 35.0};
++};
+ 
+-inline const std::shared_ptr<std::vector<CircleFitTrackSeedTool::Seed>> 
++inline const std::shared_ptr<std::vector<CircleFitTrackSeedTool::Seed>>
+ CircleFitTrackSeedTool::seeds() const {
+   return m_seeds;
+ }
+@@ -202,5 +250,4 @@ inline Acts::BoundSquareMatrix CircleFitTrackSeedTool::covBound() const {
+   return m_cov;
+ }
+ 
+-
+ #endif  // FASERACTSKALMANFILTER_CIRCLEFITTRACKSEEDTOOL_H
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
+index 93307aa3..298f5fb4 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.cxx
+@@ -28,22 +28,22 @@ CreateTrkTrackTool::createTrack(const Acts::GeometryContext &gctx, const CreateT
+       std::bitset<Trk::TrackStateOnSurface::NumberOfTrackStateOnSurfaceTypes> typePattern;
+       std::unique_ptr<Trk::TrackParameters> parm;
+ 
++      const auto actsHypo = particleHypothesis();
+       if (flag.test(Acts::TrackStateFlag::HoleFlag)) {
+-        //todo: make the particle hypothesis configurable
+         const Acts::BoundTrackParameters actsParam(state.referenceSurface().getSharedPtr(),
+-                                                   state.predicted(), state.predictedCovariance(), Acts::ParticleHypothesis::muon());
++                                                   state.predicted(), state.predictedCovariance(), actsHypo);
+         parm = std::move(ConvertActsTrackParameterToATLAS(actsParam, gctx));
+         typePattern.set(Trk::TrackStateOnSurface::Hole);
+       }
+       else if (flag.test(Acts::TrackStateFlag::OutlierFlag)) {
+         const Acts::BoundTrackParameters actsParam(state.referenceSurface().getSharedPtr(),
+-                                                   state.filtered(), state.filteredCovariance(), Acts::ParticleHypothesis::muon());
++                                                   state.filtered(), state.filteredCovariance(), actsHypo);
+         parm = std::move(ConvertActsTrackParameterToATLAS(actsParam, gctx));
+         typePattern.set(Trk::TrackStateOnSurface::Outlier);
+       }
+       else {
+         const Acts::BoundTrackParameters actsParam(state.referenceSurface().getSharedPtr(),
+-                                                   state.smoothed(), state.smoothedCovariance(), Acts::ParticleHypothesis::muon());
++                                                   state.smoothed(), state.smoothedCovariance(), actsHypo);
+         parm = std::move(ConvertActsTrackParameterToATLAS(actsParam, gctx));
+         typePattern.set(Trk::TrackStateOnSurface::Measurement);
+       }
+@@ -93,7 +93,7 @@ CreateTrkTrackTool::createTrack(const Acts::GeometryContext &gctx, const CreateT
+   }
+ 
+   std::unique_ptr<Trk::FitQuality> q = std::make_unique<Trk::FitQuality>(track.chi2(), static_cast<double>(track.nMeasurements() - 5));
+-  Trk::TrackInfo newInfo(Trk::TrackInfo::TrackFitter::KalmanFitter, Trk::ParticleHypothesis::muon);
++  Trk::TrackInfo newInfo(Trk::TrackInfo::TrackFitter::KalmanFitter, trkParticleHypothesis());
+   std::unique_ptr<DataVector<const Trk::TrackStateOnSurface>> sink(finalTrajectory);
+   Trk::Track* tmpTrack = new Trk::Track(newInfo, std::move(sink), std::move(q));
+   newtrack = std::unique_ptr<Trk::Track>(tmpTrack);
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
+index 2bbc72b6..44c1bcf1 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CreateTrkTrackTool.h
+@@ -29,7 +29,18 @@ public:
+   std::unique_ptr<Trk::Track> createTrack(const Acts::GeometryContext &gctx, const TrackContainer::TrackProxy &track, const std::optional<Acts::BoundTrackParameters>& fittedParams = std::nullopt, bool backwardPropagation=false) const;
+   std::unique_ptr<Trk::TrackParameters> ConvertActsTrackParameterToATLAS(const Acts::BoundTrackParameters &actsParameter, const Acts::GeometryContext& gctx) const;
+ private:
++  Acts::ParticleHypothesis particleHypothesis() const {
++    if (m_absPdgHypothesis == 11) return Acts::ParticleHypothesis::electron();
++    if (m_absPdgHypothesis == 211) return Acts::ParticleHypothesis::pion();
++    return Acts::ParticleHypothesis::muon();
++  }
++  Trk::ParticleHypothesis trkParticleHypothesis() const {
++    if (m_absPdgHypothesis == 11) return Trk::ParticleHypothesis::electron;
++    if (m_absPdgHypothesis == 211) return Trk::ParticleHypothesis::pion;
++    return Trk::ParticleHypothesis::muon;
++  }
+   const FaserSCT_ID* m_idHelper {nullptr};
++  Gaudi::Property<int> m_absPdgHypothesis {this, "AbsPdgHypothesis", 13};
+ };
+ 
+ #endif //FASERACTSKALMANFILTER_CREATETRKTRACKTOOL_H
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+index 45ed8905..1b51714f 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.cxx
+@@ -122,7 +122,7 @@ KalmanFitterTool::getUnbiasedResidual(const EventContext &ctx, const Acts::Geome
+ 	  Acts::BoundTrackParameters parameter(
+ 	  state.referenceSurface().getSharedPtr(),
+ 	  state.smoothed(),
+-	  state.smoothedCovariance(), Acts::ParticleHypothesis::muon());
++	  state.smoothedCovariance(), particleHypothesis());
+ 	  // auto covariance = state.smoothedCovariance();
+ 	  auto H = state.effectiveProjector();
+ 	  auto residual = state.effectiveCalibrated() - H * state.smoothed();
+@@ -219,7 +219,7 @@ KalmanFitterTool::getUnbiasedResidual(const EventContext &ctx, const Acts::Geome
+           Acts::BoundTrackParameters parameter(
+           state.referenceSurface().getSharedPtr(),
+           state.smoothed(),
+-          state.smoothedCovariance(), Acts::ParticleHypothesis::muon());
++          state.smoothedCovariance(), particleHypothesis());
+           // auto covariance = state.smoothedCovariance();
+           auto H = state.effectiveProjector();
+           auto residual = state.effectiveCalibrated() - H * state.smoothed();
+@@ -318,7 +318,7 @@ KalmanFitterTool::getUnbiasedResidual(const EventContext &ctx, const Acts::Geome
+           Acts::BoundTrackParameters parameter(
+           state.referenceSurface().getSharedPtr(),
+           state.smoothed(),
+-          state.smoothedCovariance(), Acts::ParticleHypothesis::muon());
++          state.smoothedCovariance(), particleHypothesis());
+           // auto covariance = state.smoothedCovariance();
+           auto H = state.effectiveProjector();
+           auto residual = state.effectiveCalibrated() - H * state.smoothed();
+@@ -344,6 +344,7 @@ std::unique_ptr<Trk::Track>
+ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx,
+                       Trk::Track* inputTrack, const Acts::BoundVector& inputVector,
+                       bool isMC) const {
++  m_lastRefitSummary = LastRefitSummary{};
+   std::unique_ptr<Trk::Track> newTrack = nullptr;
+ 
+   if (!inputTrack->measurementsOnTrack() || inputTrack->measurementsOnTrack()->size() < m_minMeasurements) {
+@@ -420,25 +421,27 @@ KalmanFitterTool::fit(const EventContext &ctx, const Acts::GeometryContext &gctx
+ 
+   if (result.ok()) {
+     const auto& track = result.value();
+-    //if (track.hasReferenceSurface()) {
+-      //const auto& params = track.fittedParameters.value();
+-      //ATH_MSG_DEBUG("ReFitted parameters");
+-      //ATH_MSG_DEBUG("  params:   " << params.parameters().transpose());
+-      //ATH_MSG_DEBUG("  position: " << params.position(gctx).transpose());
+-      //ATH_MSG_DEBUG("  momentum: " << params.momentum().transpose());
+-      //ATH_MSG_DEBUG("  charge:   " << params.charge());
+-      //using IndexedParams = std::unordered_map<size_t, Acts::BoundTrackParameters>;
+-      //IndexedParams indexedParams;
+-      //indexedParams.emplace(fitOutput.lastMeasurementIndex, std::move(params));
+-      //std::vector<size_t> trackTips;
+-      //trackTips.reserve(1);
+-      //trackTips.emplace_back(fitOutput.lastMeasurementIndex);
+-      //myTrajectories.emplace_back(std::move(fitOutput.fittedStates),
+-      //                            std::move(trackTips),
+-      //                            std::move(indexedParams));
+-    //} else {
+-    //  ATH_MSG_DEBUG("No fitted parameters for track");
+-    //}
++    m_lastRefitSummary.ok = true;
++    const double qnan = std::numeric_limits<double>::quiet_NaN();
++    if (track.hasReferenceSurface()) {
++      m_lastRefitSummary.tgtBound = track.parameters();
++      const auto& tcov = track.covariance();
++      for (int k = 0; k < 6; ++k) {
++        m_lastRefitSummary.tgtSigma[k] = (tcov(k, k) > 0.0) ? std::sqrt(tcov(k, k)) : qnan;
++      }
++    }
++    for (const auto& st : track.trackStatesReversed()) {
++      if (st.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag) &&
++          st.hasUncalibratedSourceLink() && st.hasSmoothed()) {
++        // trackStatesReversed goes S3 -> S1, so keeping the latest overwrite yields the first forward wafer S1L0
++        m_lastRefitSummary.w0Geo = st.referenceSurface().geometryId().value();
++        m_lastRefitSummary.w0Bound = st.smoothed();
++        const auto& scov = st.smoothedCovariance();
++        for (int k = 0; k < 6; ++k) {
++          m_lastRefitSummary.w0Sigma[k] = (scov(k, k) > 0.0) ? std::sqrt(scov(k, k)) : qnan;
++        }
++      }
++    }
+     newTrack = std::move(m_createTrkTrackTool->createTrack(gctx, track));
+   } else {
+     ATH_MSG_WARNING("Fit failed for parameters starting at " << trackParameters.position(gctx).transpose() <<" and " << actsSls.size()  <<" measurements with error" << result.error());
+@@ -637,5 +640,5 @@ Acts::RotationMatrix3 rot = Acts::RotationMatrix3::Identity();
+     cov(i,i) = m_seedCovarianceScale * cov(i,i);
+   }
+ 
+-  return Acts::BoundTrackParameters(pSurface, params, cov, Acts::ParticleHypothesis::muon());
++  return Acts::BoundTrackParameters(pSurface, params, cov, particleHypothesis());
+ }
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+index b6203fcc..7c1ebc8d 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/KalmanFitterTool.h
+@@ -68,7 +68,24 @@ public:
+                                   const Acts::BoundVector& inputVector ,
+                                   bool isMC, double origin, std::vector<const Tracker::FaserSCT_Cluster*>& clus,const Acts::BoundTrackParameters ini_Param) const;
+ 
++  struct LastRefitSummary {
++    bool ok = false;
++    Acts::BoundVector tgtBound = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++    Acts::BoundVector tgtSigma = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++    uint64_t w0Geo = 0;
++    Acts::BoundVector w0Bound = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++    Acts::BoundVector w0Sigma = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++  };
++  const LastRefitSummary& lastRefitSummary() const { return m_lastRefitSummary; }
++
+ private:
++  Acts::ParticleHypothesis particleHypothesis() const {
++    if (m_absPdgHypothesis == 11) return Acts::ParticleHypothesis::electron();
++    if (m_absPdgHypothesis == 211) return Acts::ParticleHypothesis::pion();
++    return Acts::ParticleHypothesis::muon();
++  }
++  mutable LastRefitSummary m_lastRefitSummary{};
++  Gaudi::Property<int> m_absPdgHypothesis {this, "AbsPdgHypothesis", 13};
+   const FaserSCT_ID* m_idHelper {nullptr};
+   std::tuple<std::vector<IndexSourceLink>, std::vector<Measurement>>
+   getMeasurementsFromTrack(Trk::Track *track) const;
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/LatestFastValidationAudit.h b/Tracking/Acts/FaserActsKalmanFilter/src/LatestFastValidationAudit.h
+new file mode 100644
+index 00000000..4b3b48fa
+--- /dev/null
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/LatestFastValidationAudit.h
+@@ -0,0 +1,899 @@
++// Fast binary C++ validation observer for multi-sample Calypso seed, CKF, and refit studies.
++#ifndef FASER_LATEST_FAST_VALIDATION_AUDIT_H
++#define FASER_LATEST_FAST_VALIDATION_AUDIT_H
++
++#include "CircleFitTrackSeedTool.h"
++#include "KalmanFitterTool.h"
++#include "TrackingTruthUtils/TrackClassification.h"
++#include "GeneratorObjects/McEventCollection.h"
++#include "AtlasHepMC/GenParticle.h"
++#include "AtlasHepMC/GenVertex.h"
++#include "HepMC3/Units.h"
++#include "TrackerSimEvent/FaserSiHitCollection.h"
++#include "TrackerReadoutGeometry/SCT_DetectorManager.h"
++#include "TrackerReadoutGeometry/SiDetectorElement.h"
++#include "TrackerIdentifier/FaserSCT_ID.h"
++#include "ActsInterop/IndexSourceLink.h"
++#include "Acts/EventData/TrackParameters.hpp"
++#include "TrkTrack/Track.h"
++#include "TrkTrack/TrackCollection.h"
++
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstdint>
++#include <fstream>
++#include <limits>
++#include <map>
++#include <set>
++#include <string>
++#include <unordered_map>
++#include <vector>
++
++class LatestFastValidationAudit {
++ public:
++  static constexpr size_t kEventCols = 16;
++  static constexpr size_t kSignalCols = 38;
++  static constexpr size_t kSeedCols = 34;
++  static constexpr size_t kTrackCols = 78;
++
++  std::ofstream evOut, sigOut, seedOut, trkOut;
++  const FaserSCT_ID* idHelper = nullptr;
++  const TrackerDD::SCT_DetectorManager* detMgr = nullptr;
++
++  explicit LatestFastValidationAudit(const std::string& prefix) {
++    evOut.open(prefix + "_events.bin", std::ios::binary | std::ios::trunc);
++    sigOut.open(prefix + "_signals.bin", std::ios::binary | std::ios::trunc);
++    seedOut.open(prefix + "_seeds.bin", std::ios::binary | std::ios::trunc);
++    trkOut.open(prefix + "_tracks.bin", std::ios::binary | std::ios::trunc);
++    std::ofstream schema(prefix + "_schema.json", std::ios::trunc);
++    schema << "{\n"
++           << "  \"event_cols\": [\"entry\",\"run\",\"event\",\"n_signal\",\"n_fiducial\","
++              "\"raw_s1\",\"raw_s2\",\"raw_s3\",\"gb_s1\",\"gb_s2\",\"gb_s3\","
++              "\"raw_comb\",\"raw_nan_chi2\",\"n_seeds\",\"n_seeds_nan_chi2\",\"n_tracks\"],\n"
++           << "  \"signal_cols\": [\"entry\",\"barcode\",\"pdg\",\"charge\",\"status\",\"fiducial\","
++              "\"hits_s0\",\"hits_s1\",\"hits_s2\",\"hits_s3\",\"r_vtx_mm\",\"r_max_s123_mm\","
++              "\"vx_F\",\"vy_F\",\"vz_F\",\"tx_F\",\"ty_F\","
++              "\"p_prod_GeV\",\"p_st1_GeV\",\"p_pre_s2_GeV\",\"p_min_trk_GeV\","
++              "\"s1_hit_valid\",\"s1_geo_id\",\"s1_loc0\",\"s1_loc1\",\"s1_phi_A\",\"s1_theta_A\","
++              "\"n_seed_match\",\"best_seed_purity\",\"best_seed_p_GeV\","
++              "\"n_ckf_match\",\"best_ckf_purity\",\"best_ckf_p_GeV\",\"best_ckf_q\",\"best_ckf_chi2\",\"best_ckf_ndf\","
++              "\"best_refit_ok\",\"best_refit_p_GeV\"],\n"
++           << "  \"seed_cols\": [\"entry\",\"iseed\",\"stations\",\"n_clusters\",\"chi2\",\"red_chi2\","
++              "\"chi2_strip\",\"ndf_strip\",\"chi2_is_nan\",\"min_radicand\",\"r_mm\","
++              "\"p_seed_GeV\",\"q_seed\",\"loc0\",\"loc1\",\"phi_A\",\"theta_A\","
++              "\"max_shared_prev\",\"shared_union_prev\",\"shared_s23_prev\","
++              "\"all_same_bc\",\"opp_primary_mix\",\"maj_bc\",\"purity\","
++              "\"truth_pdg\",\"truth_q\",\"p_prod_GeV\",\"p_st1_GeV\",\"p_pre_s2_GeV\","
++              "\"seed_truth_valid\",\"t_loc0\",\"t_loc1\",\"t_phi_A\",\"t_theta_A\"],\n"
++           << "  \"track_cols\": [\"entry\",\"itrk\",\"iseed\",\"n_meas\",\"holes\",\"outliers\","
++              "\"chi2_ckf\",\"ndf_ckf\",\"rmax_ckf\",\"refit_ok\",\"chi2_refit\",\"ndf_refit\",\"rmax_refit\","
++              "\"seed_maj_bc\",\"trk_maj_bc\",\"trk_purity\",\"truth_pdg\",\"truth_q\","
++              "\"p_prod_GeV\",\"p_st1_GeV\",\"p_pre_s2_GeV\",\"p_min_trk_GeV\","
++              "\"ckf_tgt_loc0\",\"ckf_tgt_loc1\",\"ckf_tgt_phi\",\"ckf_tgt_theta\",\"ckf_tgt_qop\","
++              "\"ckf_tgt_s0\",\"ckf_tgt_s1\",\"ckf_tgt_s2\",\"ckf_tgt_s3\",\"ckf_tgt_s4\","
++              "\"ref_tgt_loc0\",\"ref_tgt_loc1\",\"ref_tgt_phi\",\"ref_tgt_theta\",\"ref_tgt_qop\","
++              "\"ref_tgt_s0\",\"ref_tgt_s1\",\"ref_tgt_s2\",\"ref_tgt_s3\",\"ref_tgt_s4\","
++              "\"ckf_w0_geo\",\"ckf_w0_loc0\",\"ckf_w0_loc1\",\"ckf_w0_phi\",\"ckf_w0_theta\",\"ckf_w0_qop\","
++              "\"ckf_w0_s0\",\"ckf_w0_s1\",\"ckf_w0_s2\",\"ckf_w0_s3\",\"ckf_w0_s4\","
++              "\"ref_w0_geo\",\"ref_w0_loc0\",\"ref_w0_loc1\",\"ref_w0_phi\",\"ref_w0_theta\",\"ref_w0_qop\","
++              "\"ref_w0_s0\",\"ref_w0_s1\",\"ref_w0_s2\",\"ref_w0_s3\",\"ref_w0_s4\","
++              "\"hit_w0_valid\",\"hit_w0_loc0\",\"hit_w0_loc1\",\"hit_w0_phi\",\"hit_w0_theta\","
++              "\"seed_qop\",\"s1_last_flt_qop\",\"s2_first_prt_qop\",\"s2_first_flt_qop\",\"s2_second_prt_qop\","
++              "\"s2_first_smt_qop\",\"s3_first_flt_qop\",\"s3_last_smt_qop\",\"s2_first_pull\"]\n"
++           << "}\n";
++  }
++
++  bool good() const {
++    return evOut.good() && sigOut.good() && seedOut.good() && trkOut.good();
++  }
++
++  static double pdgCharge(int pdg) {
++    const int a = std::abs(pdg);
++    if (a == 11 || a == 13 || a == 15) return pdg > 0 ? -1.0 : 1.0;
++    if (a == 211 || a == 321 || a == 2212) return pdg > 0 ? 1.0 : -1.0;
++    return 0.0;
++  }
++
++  static bool isChargedSignalPdg(int pdg) {
++    const int a = std::abs(pdg);
++    return a == 11 || a == 13 || a == 211 || a == 321 || a == 2212;
++  }
++
++  struct WaferHitTruth {
++    Acts::Vector3 posF = Acts::Vector3::Zero();
++    Acts::Vector3 dirF = Acts::Vector3::Zero();
++    int count = 0;
++  };
++
++  struct TruthSummary {
++    int primaryBc = 0;
++    int pdg = 0;
++    int status = 0;
++    bool isPrimarySignal = false;
++    double charge = 0.0;
++    Acts::Vector3 vtxF = Acts::Vector3::Zero();
++    Acts::Vector3 momF_GeV = Acts::Vector3::Zero();
++    double pProd_GeV = std::numeric_limits<double>::quiet_NaN();
++    double pSt1_GeV = std::numeric_limits<double>::quiet_NaN();
++    double pPreS2_GeV = std::numeric_limits<double>::quiet_NaN();
++    double pMinTrk_GeV = std::numeric_limits<double>::quiet_NaN();
++    std::array<int, 4> stHitCounts{0, 0, 0, 0};
++    std::array<Acts::Vector3, 4> stPosSum{
++        Acts::Vector3::Zero(), Acts::Vector3::Zero(), Acts::Vector3::Zero(), Acts::Vector3::Zero()};
++    bool fiducial = false;
++    double rVtx = 0.0;
++    double rMaxS123 = 0.0;
++    std::map<Identifier, WaferHitTruth> waferHits;
++  };
++
++  struct RefitRecord {
++    bool ok = false;
++    double chi2 = std::numeric_limits<double>::quiet_NaN();
++    double ndf = std::numeric_limits<double>::quiet_NaN();
++    double rmax = std::numeric_limits<double>::quiet_NaN();
++    double pTrk_GeV = std::numeric_limits<double>::quiet_NaN();
++    double qTrk = std::numeric_limits<double>::quiet_NaN();
++    Acts::BoundVector tgtBound = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++    Acts::BoundVector tgtSigma = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++    uint64_t w0Geo = 0;
++    Acts::BoundVector w0Bound = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++    Acts::BoundVector w0Sigma = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++  };
++
++  template <size_t N>
++  static void writeRow(std::ofstream& s, const std::array<double, N>& row) {
++    s.write(reinterpret_cast<const char*>(row.data()), sizeof(double) * N);
++  }
++
++  void countSegmentsByStation(const TrackCollection* col, std::array<int, 4>& counts) const {
++    counts = {0, 0, 0, 0};
++    if (!col || !idHelper) return;
++    for (const Trk::Track* trk : *col) {
++      if (!trk || !trk->trackStateOnSurfaces()) continue;
++      for (const Trk::TrackStateOnSurface* tsos : *(trk->trackStateOnSurfaces())) {
++        const auto* cot = dynamic_cast<const Tracker::FaserSCT_ClusterOnTrack*>(tsos->measurementOnTrack());
++        if (cot) {
++          const int st = idHelper->station(cot->identify());
++          if (st >= 0 && st < 4) ++counts[st];
++          break;
++        }
++      }
++    }
++  }
++
++  void recordEvent(
++      uint64_t sourceEntry,
++      uint64_t runNo,
++      uint64_t eventNo,
++      const Acts::GeometryContext& gctx,
++      const McEventCollection& mcEvents,
++      const FaserSiHitCollection& siHits,
++      const TrackerSimDataCollection& simData,
++      const std::map<Identifier, Acts::GeometryIdentifier>& idMap,
++      const CircleFitTrackSeedTool& seedTool,
++      double seedOriginZ,
++      bool backward,
++      const TrackCollection* rawSegs,
++      const TrackCollection* gbSegs,
++      const FaserActsTrackContainer& selectedTracks,
++      const std::vector<unsigned int>& selectedSeedIndices,
++      const std::vector<RefitRecord>& refitRecords) {
++    const double qnan = std::numeric_limits<double>::quiet_NaN();
++    Acts::RotationMatrix3 rotF2A = Acts::RotationMatrix3::Identity();
++    rotF2A.col(0) = Acts::Vector3(0, 0, -1);
++    rotF2A.col(1) = Acts::Vector3(0, 1, 0);
++    rotF2A.col(2) = Acts::Vector3(1, 0, 0);
++
++    Acts::RotationMatrix3 seedPlaneRot = Acts::RotationMatrix3::Identity();
++    seedPlaneRot.col(0) = Acts::Vector3(0, 1, 0);
++    seedPlaneRot.col(1) = Acts::Vector3(0, 0, -1);
++    seedPlaneRot.col(2) = Acts::Vector3(-1, 0, 0);
++
++    // 1. Build primary + Geant4 neutral-decay / spectrometer-hit truth table
++    std::set<int> siHitBaseBcs;
++    for (const auto& hit : siHits) {
++      if (hit.getStation() >= 1 && hit.getStation() <= 3 && hit.trackNumber() > 0) {
++        siHitBaseBcs.insert(hit.trackNumber() % 1000000);
++      }
++    }
++
++    bool hasGenChargedPrimary = false;
++    bool hasNeutralPrimaryDecay = false;
++    for (const auto* mc : mcEvents) {
++      if (!mc) continue;
++      for (const auto& p : mc->particles()) {
++        if (!p) continue;
++        const int bc = HepMC::barcode(p);
++        if (bc <= 0 || !isChargedSignalPdg(p->pdg_id())) continue;
++        if (bc < 200000 && p->status() == 1) {
++          hasGenChargedPrimary = true;
++        } else if (bc >= 200000 && bc < 1000000 && p->production_vertex()) {
++          for (const auto& inP : p->production_vertex()->particles_in()) {
++            if (inP && HepMC::barcode(inP) > 0 && (HepMC::barcode(inP) % 1000000) < 200000 &&
++                pdgCharge(inP->pdg_id()) == 0.0) {
++              hasNeutralPrimaryDecay = true;
++              break;
++            }
++          }
++        }
++      }
++    }
++
++    std::unordered_map<int, TruthSummary> primaries;
++    std::unordered_map<int, int> anyBcToPrimary;
++    struct ContNode {
++      double z_mm;
++      double p_GeV;
++    };
++    std::unordered_map<int, std::vector<ContNode>> contChains;
++
++    for (const auto* mc : mcEvents) {
++      if (!mc) continue;
++      const double pscale = (mc->momentum_unit() == HepMC3::Units::GEV) ? 1.0 : 1e-3;
++      const double xscale = (mc->length_unit() == HepMC3::Units::CM) ? 10.0 : 1.0;
++      for (const auto& p : mc->particles()) {
++        if (!p) continue;
++        const int bc = HepMC::barcode(p);
++        const int pdg = p->pdg_id();
++        if (bc <= 0 || !isChargedSignalPdg(pdg)) continue;
++        const int baseBc = bc % 1000000;
++        const Acts::Vector3 momGeV(p->momentum().px() * pscale,
++                                   p->momentum().py() * pscale,
++                                   p->momentum().pz() * pscale);
++        const double pMag = momGeV.norm();
++        Acts::Vector3 vtxMm = Acts::Vector3::Constant(qnan);
++        bool fromNeutralPrimary = false;
++        if (p->production_vertex()) {
++          const auto v = p->production_vertex()->position();
++          vtxMm = Acts::Vector3(v.x() * xscale, v.y() * xscale, v.z() * xscale);
++          for (const auto& inP : p->production_vertex()->particles_in()) {
++            if (inP && HepMC::barcode(inP) > 0 && (HepMC::barcode(inP) % 1000000) < 200000 &&
++                pdgCharge(inP->pdg_id()) == 0.0) {
++              fromNeutralPrimary = true;
++              break;
++            }
++          }
++        }
++        if (bc < 1000000) {
++          const bool keepTruth = (bc < 200000) || fromNeutralPrimary || (siHitBaseBcs.count(bc) > 0);
++          if (!keepTruth) continue;
++          bool isSig = false;
++          if (hasGenChargedPrimary) {
++            isSig = (bc < 200000 && p->status() == 1);
++          } else if (hasNeutralPrimaryDecay) {
++            isSig = fromNeutralPrimary && std::isfinite(vtxMm.z()) && (vtxMm.z() < 50.0);
++          } else {
++            isSig = std::isfinite(vtxMm.z()) && (vtxMm.z() < 0.0) && (pMag >= 5.0) && (siHitBaseBcs.count(bc) > 0);
++          }
++          TruthSummary& ts = primaries[bc];
++          ts.primaryBc = bc;
++          ts.pdg = pdg;
++          ts.status = p->status();
++          ts.isPrimarySignal = isSig;
++          ts.charge = pdgCharge(pdg);
++          ts.vtxF = vtxMm;
++          ts.momF_GeV = momGeV;
++          ts.pProd_GeV = pMag;
++          anyBcToPrimary[bc] = bc;
++          if (std::isfinite(vtxMm.z())) {
++            contChains[bc].push_back({vtxMm.z(), pMag});
++          }
++          // Walk explicit HepMC end_vertex same-PDG continuation daughters if present
++          auto cur = p;
++          std::set<int> visited{bc};
++          while (cur && cur->end_vertex()) {
++            const auto ev = cur->end_vertex();
++            const double ez = ev->position().z() * xscale;
++            decltype(cur) nextP = nullptr;
++            double bestP = -1.0;
++            for (const auto& outP : ev->particles_out()) {
++              if (outP && outP->pdg_id() == pdg) {
++                const double op = Acts::Vector3(outP->momentum().px(), outP->momentum().py(), outP->momentum().pz()).norm() * pscale;
++                if (op > bestP) {
++                  bestP = op;
++                  nextP = outP;
++                }
++              }
++            }
++            if (!nextP) break;
++            const int nbc = HepMC::barcode(nextP);
++            if (visited.count(nbc)) break;
++            visited.insert(nbc);
++            anyBcToPrimary[nbc] = bc;
++            contChains[bc].push_back({ez, bestP});
++            cur = nextP;
++          }
++        } else if (baseBc > 0) {
++          // Athena Geant4 barcode convention k*1000000 + base_barcode
++          auto it = primaries.find(baseBc);
++          if (it != primaries.end() && it->second.pdg == pdg) {
++            anyBcToPrimary[bc] = baseBc;
++            if (std::isfinite(vtxMm.z())) {
++              contChains[baseBc].push_back({vtxMm.z(), pMag});
++            }
++          }
++        }
++      }
++    }
++
++    // Also index any non-signal secondary particles referenced by hits/SDO
++    std::unordered_map<int, std::pair<int, double>> allParticlesPdgP;
++    for (const auto* mc : mcEvents) {
++      if (!mc) continue;
++      const double pscale = (mc->momentum_unit() == HepMC3::Units::GEV) ? 1.0 : 1e-3;
++      for (const auto& p : mc->particles()) {
++        if (!p) continue;
++        const int bc = HepMC::barcode(p);
++        const double pMag = Acts::Vector3(p->momentum().px(), p->momentum().py(), p->momentum().pz()).norm() * pscale;
++        allParticlesPdgP[bc] = {p->pdg_id(), pMag};
++      }
++    }
++
++    // 2. Accumulate SiHits per primary signal particle and per wafer
++    std::map<uint64_t, const TrackerDD::SiDetectorElement*> geoToElem;
++    if (detMgr) {
++      for (const auto* elem : *detMgr->getDetectorElementCollection()) {
++        if (!elem) continue;
++        auto it = idMap.find(elem->identify());
++        if (it != idMap.end()) {
++          geoToElem[it->second.value()] = elem;
++        }
++      }
++    }
++
++    for (const auto& hit : siHits) {
++      const int rawBc = hit.trackNumber();
++      auto mapIt = anyBcToPrimary.find(rawBc);
++      const int pbc = (mapIt != anyBcToPrimary.end()) ? mapIt->second : rawBc;
++      auto pit = primaries.find(pbc);
++      if (pit == primaries.end()) continue;
++      const int st = hit.getStation();
++      if (st < 0 || st >= 4 || !detMgr || !idHelper) continue;
++      const Identifier waferId = idHelper->wafer_id(
++          st, hit.getPlane(), hit.getRow(), hit.getModule(), hit.getSensor());
++      const auto* elem = detMgr->getDetectorElement(waferId);
++      if (!elem) continue;
++      const auto ls = hit.localStartPosition(), le = hit.localEndPosition();
++      const Acts::Vector3 pStart(ls.x(), ls.y(), ls.z());
++      const Acts::Vector3 pEnd(le.x(), le.y(), le.z());
++      const Acts::Vector3 gPosF = elem->transformHit() * (0.5 * (pStart + pEnd));
++      const Acts::Vector3 gDirF = (elem->transformHit().rotation() * (pEnd - pStart)).normalized();
++      pit->second.stHitCounts[st] += 1;
++      pit->second.stPosSum[st] += gPosF;
++      auto& wh = pit->second.waferHits[waferId];
++      wh.posF += gPosF;
++      wh.dirF += gDirF;
++      wh.count += 1;
++    }
++
++    // Finalize continuation momentum bounds for ALL tracked particles and fiducial flags for primary signals
++    size_t nSignal = 0, nFiducial = 0;
++    for (auto& kv : primaries) {
++      auto& ts = kv.second;
++      auto& nodes = contChains[ts.primaryBc];
++      std::sort(nodes.begin(), nodes.end(), [](const auto& a, const auto& b) { return a.z_mm < b.z_mm; });
++      double pSt1 = ts.pProd_GeV;
++      double pPreS2 = ts.pProd_GeV;
++      double pMinTrk = ts.pProd_GeV;
++      for (const auto& nd : nodes) {
++        if (nd.z_mm <= 20.0) pSt1 = std::min(pSt1, nd.p_GeV);
++        if (nd.z_mm <= 1200.0) pPreS2 = std::min(pPreS2, nd.p_GeV);
++        if (nd.z_mm <= 2500.0) pMinTrk = std::min(pMinTrk, nd.p_GeV);
++      }
++      ts.pSt1_GeV = pSt1;
++      ts.pPreS2_GeV = pPreS2;
++      ts.pMinTrk_GeV = pMinTrk;
++
++      ts.rVtx = std::isfinite(ts.vtxF.x()) ? std::hypot(ts.vtxF.x(), ts.vtxF.y()) : 9999.0;
++      bool allSt = (ts.stHitCounts[1] > 0 && ts.stHitCounts[2] > 0 && ts.stHitCounts[3] > 0);
++      double rMax = 0.0;
++      for (int s = 1; s <= 3; ++s) {
++        if (ts.stHitCounts[s] > 0) {
++          const Acts::Vector3 avg = ts.stPosSum[s] / static_cast<double>(ts.stHitCounts[s]);
++          rMax = std::max(rMax, std::hypot(avg.x(), avg.y()));
++        } else {
++          rMax = 9999.0;
++        }
++      }
++      ts.rMaxS123 = rMax;
++      const int hits123 = ts.stHitCounts[1] + ts.stHitCounts[2] + ts.stHitCounts[3];
++      ts.fiducial = ts.isPrimarySignal && (ts.rVtx < 100.0 && allSt && rMax < 100.0 && hits123 >= 18);
++      if (ts.isPrimarySignal) {
++        ++nSignal;
++        if (ts.fiducial) ++nFiducial;
++      }
++    }
++
++    auto resolvePrimaryBc = [&](int rawBc) -> int {
++      auto it = anyBcToPrimary.find(rawBc);
++      if (it != anyBcToPrimary.end()) return it->second;
++      const int base = rawBc % 1000000;
++      if (rawBc > 0 && primaries.count(base)) return base;
++      return rawBc;
++    };
++
++    auto matchClusters = [&](const std::vector<const Tracker::FaserSCT_Cluster*>& clusters,
++                             int& majBc, double& purity) {
++      majBc = 0;
++      purity = 0.0;
++      if (clusters.empty()) return;
++      std::vector<ParticleHitCount> hc;
++      identifyContributingParticles(simData, clusters, hc);
++      std::unordered_map<int, size_t> mergedCounts;
++      for (const auto& c : hc) {
++        mergedCounts[resolvePrimaryBc(c.particleId)] += c.hitCount;
++      }
++      size_t bestHits = 0;
++      for (const auto& kv : mergedCounts) {
++        if (kv.second > bestHits || (kv.second == bestHits && (majBc == 0 || kv.first < majBc))) {
++          bestHits = kv.second;
++          majBc = kv.first;
++        }
++      }
++      purity = static_cast<double>(bestHits) / static_cast<double>(clusters.size());
++    };
++
++    auto waferTruthOnSurface = [&](const TruthSummary& ts, const Acts::Surface& surf,
++                                   Identifier waferId, double& loc0, double& loc1,
++                                   double& phiA, double& thetaA) -> bool {
++      auto it = ts.waferHits.find(waferId);
++      if (it == ts.waferHits.end() || it->second.count <= 0) return false;
++      const Acts::Vector3 posF = it->second.posF / static_cast<double>(it->second.count);
++      const Acts::Vector3 dirF = it->second.dirF.normalized();
++      const Acts::Vector3 posA = rotF2A * posF;
++      const Acts::Vector3 dirA = (rotF2A * dirF).normalized();
++      auto lp = surf.globalToLocal(gctx, posA, dirA);
++      if (lp.ok()) {
++        loc0 = lp.value()[0];
++        loc1 = lp.value()[1];
++      } else {
++        const Acts::Vector3 rel = posA - surf.center(gctx);
++        loc0 = rel.dot(surf.transform(gctx).rotation().col(0));
++        loc1 = rel.dot(surf.transform(gctx).rotation().col(1));
++      }
++      phiA = Acts::VectorHelpers::phi(dirA);
++      thetaA = Acts::VectorHelpers::theta(dirA);
++      return true;
++    };
++
++    // Track per-signal matching stats
++    struct SigMatchAcc {
++      int nSeed = 0;
++      double bestSeedPurity = 0.0;
++      double bestSeedP = std::numeric_limits<double>::quiet_NaN();
++      int nCkf = 0;
++      size_t bestMeas = 0;
++      double bestChi2 = 1e30;
++      double bestCkfPurity = 0.0;
++      double bestCkfP = std::numeric_limits<double>::quiet_NaN();
++      double bestCkfQ = std::numeric_limits<double>::quiet_NaN();
++      double bestCkfChi2 = std::numeric_limits<double>::quiet_NaN();
++      double bestCkfNdf = std::numeric_limits<double>::quiet_NaN();
++      double bestRefitOk = 0.0;
++      double bestRefitP = std::numeric_limits<double>::quiet_NaN();
++    };
++    std::unordered_map<int, SigMatchAcc> sigMatches;
++
++    // 3. Record selected seeds
++    const auto& seeds = *seedTool.seeds();
++    const auto& initParams = *seedTool.initialTrackParameters();
++    size_t nSeedsNan = 0;
++    ClusterSet unionPrev(seeds.empty() ? 0 : seeds.front().clusterSet.size());
++    std::vector<ClusterSet> prevS23Sets;
++
++    auto buildS23Mask = [&](const CircleFitTrackSeedTool::Seed& s) {
++      ClusterSet mask(s.clusterSet.size());
++      for (const auto& seg : s.segs) {
++        if (seg.station == 2 || seg.station == 3) {
++          mask |= seg.clusterSet;
++        }
++      }
++      return mask;
++    };
++
++    for (size_t iseed = 0; iseed < seeds.size(); ++iseed) {
++      const auto& s = seeds[iseed];
++      if (!std::isfinite(s.chi2)) ++nSeedsNan;
++      int maxSharedPrev = 0;
++      for (size_t j = 0; j < iseed; ++j) {
++        if (s.clusterSet.size() == seeds[j].clusterSet.size()) {
++          maxSharedPrev = std::max(maxSharedPrev, static_cast<int>((s.clusterSet & seeds[j].clusterSet).count()));
++        }
++      }
++      int sharedUnionPrev = (unionPrev.size() == s.clusterSet.size())
++                                ? static_cast<int>((s.clusterSet & unionPrev).count())
++                                : 0;
++      ClusterSet s23 = buildS23Mask(s);
++      int maxSharedS23Prev = 0;
++      for (const auto& ps23 : prevS23Sets) {
++        if (ps23.size() == s23.size()) {
++          maxSharedS23Prev = std::max(maxSharedS23Prev, static_cast<int>((s23 & ps23).count()));
++        }
++      }
++      if (unionPrev.size() == s.clusterSet.size()) unionPrev |= s.clusterSet;
++      prevS23Sets.push_back(std::move(s23));
++
++      double minRad = std::numeric_limits<double>::infinity();
++      for (const auto& pos : s.fakePositions) {
++        const double dz = pos.z() - s.cx;
++        minRad = std::min(minRad, s.r * s.r - dz * dz);
++      }
++
++      // Segment barcode composition
++      std::set<int> segPrimaryBcs;
++      bool hasPlusPrimary = false, hasMinusPrimary = false;
++      for (const auto& seg : s.segs) {
++        int sbc = 0;
++        double spur = 0.0;
++        matchClusters(seg.clusters, sbc, spur);
++        if (sbc > 0) segPrimaryBcs.insert(sbc);
++        auto pit = primaries.find(sbc);
++        if (pit != primaries.end() && pit->second.isPrimarySignal) {
++          if (pit->second.charge > 0) hasPlusPrimary = true;
++          if (pit->second.charge < 0) hasMinusPrimary = true;
++        }
++      }
++      const double allSameBc = (s.segs.size() >= 2 && segPrimaryBcs.size() == 1) ? 1.0 : 0.0;
++      const double oppPrimaryMix = (hasPlusPrimary && hasMinusPrimary) ? 1.0 : 0.0;
++
++      int majBc = 0;
++      double purity = 0.0;
++      matchClusters(s.clusters, majBc, purity);
++
++      double tPdg = qnan, tQ = qnan, pProd = qnan, pSt1 = qnan, pPreS2 = qnan;
++      double seedTruthValid = 0.0, tLoc0 = qnan, tLoc1 = qnan, tPhiA = qnan, tThetaA = qnan;
++      auto pit = primaries.find(majBc);
++      if (pit != primaries.end()) {
++        const auto& ts = pit->second;
++        tPdg = ts.pdg;
++        tQ = ts.charge;
++        pProd = ts.pProd_GeV;
++        pSt1 = ts.pSt1_GeV;
++        pPreS2 = ts.pPreS2_GeV;
++        // Local linear truth projection from first Station 1 SiHit to z_F = seedOriginZ (field-free ~10 mm air)
++        Acts::Vector3 hitPosF = Acts::Vector3::Zero(), hitDirF = Acts::Vector3::Zero();
++        int nS1WaferHits = 0;
++        double minHitZ = 1e30;
++        for (const auto& wh : ts.waferHits) {
++          if (idHelper->station(wh.first) == 1 && wh.second.count > 0) {
++            const Acts::Vector3 wp = wh.second.posF / static_cast<double>(wh.second.count);
++            if (wp.z() < minHitZ) {
++              minHitZ = wp.z();
++              hitPosF = wp;
++              hitDirF = wh.second.dirF.normalized();
++              nS1WaferHits = wh.second.count;
++            }
++          }
++        }
++        if (nS1WaferHits > 0 && std::abs(hitDirF.z()) > 1e-6) {
++          const Acts::Vector3 extrapF = hitPosF - ((hitPosF.z() - seedOriginZ) / hitDirF.z()) * hitDirF;
++          const Acts::Vector3 extrapA = rotF2A * extrapF;
++          const Acts::Vector3 dirA = (rotF2A * hitDirF).normalized();
++          tLoc0 = extrapA.y();
++          tLoc1 = -extrapA.z();
++          tPhiA = Acts::VectorHelpers::phi(dirA);
++          tThetaA = Acts::VectorHelpers::theta(dirA);
++          seedTruthValid = 1.0;
++        }
++        if (purity >= 0.7) {
++          auto& sm = sigMatches[majBc];
++          sm.nSeed += 1;
++          if (purity > sm.bestSeedPurity) {
++            sm.bestSeedPurity = purity;
++            sm.bestSeedP = (iseed < initParams.size()) ? initParams[iseed].absoluteMomentum() : s.momentum;
++          }
++        }
++      } else if (allParticlesPdgP.count(majBc)) {
++        tPdg = allParticlesPdgP[majBc].first;
++        tQ = pdgCharge(static_cast<int>(tPdg));
++        pProd = allParticlesPdgP[majBc].second;
++      }
++
++      const auto bp = (iseed < initParams.size())
++                          ? initParams[iseed].parameters()
++                          : s.get_params(seedOriginZ, seedTool.covBound(), backward).parameters();
++      const double pSeed = (std::abs(bp[4]) > 0.0) ? (1.0 / std::abs(bp[4])) : s.momentum;
++      const double qSeed = (bp[4] >= 0.0) ? 1.0 : -1.0;
++      const double redChi2 = s.chi2 / static_cast<double>(
++          std::max(s.positions.size() + s.fakePositions.size() - s.constraints, 1UL));
++
++      std::array<double, kSeedCols> row{
++          static_cast<double>(sourceEntry),
++          static_cast<double>(iseed),
++          static_cast<double>(s.stations),
++          static_cast<double>(s.clusters.size()),
++          s.chi2,
++          redChi2,
++          s.stripChi2,
++          static_cast<double>(s.stripNdf),
++          std::isnan(s.chi2) ? 1.0 : 0.0,
++          minRad,
++          s.r,
++          pSeed,
++          qSeed,
++          bp[0], bp[1], bp[2], bp[3],
++          static_cast<double>(maxSharedPrev),
++          static_cast<double>(sharedUnionPrev),
++          static_cast<double>(maxSharedS23Prev),
++          allSameBc,
++          oppPrimaryMix,
++          static_cast<double>(majBc),
++          purity,
++          tPdg, tQ, pProd, pSt1, pPreS2,
++          seedTruthValid, tLoc0, tLoc1, tPhiA, tThetaA};
++      writeRow(seedOut, row);
++    }
++
++    // 4. Record selected CKF & post-refit tracks
++    size_t itrk = 0;
++    for (const auto& trk : selectedTracks) {
++      const unsigned int iseed = (itrk < selectedSeedIndices.size()) ? selectedSeedIndices[itrk] : 0U;
++      const RefitRecord ref = (itrk < refitRecords.size()) ? refitRecords[itrk] : RefitRecord{};
++
++      // Collect states in forward propagation order (trackStatesReversed is tip->stem = S3->S1)
++      struct MeasStateInfo {
++        int station = -1;
++        uint64_t geoId = 0;
++        Identifier waferId{};
++        const Acts::Surface* surf = nullptr;
++        double prtQop = std::numeric_limits<double>::quiet_NaN();
++        double fltQop = std::numeric_limits<double>::quiet_NaN();
++        double smtQop = std::numeric_limits<double>::quiet_NaN();
++        double pull = std::numeric_limits<double>::quiet_NaN();
++        Acts::BoundVector smtBound = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++        Acts::BoundVector smtSigma = Acts::BoundVector::Constant(std::numeric_limits<double>::quiet_NaN());
++      };
++      std::vector<MeasStateInfo> fwdStates;
++      std::vector<const Tracker::FaserSCT_Cluster*> trkClusters;
++      double rmaxCkf = 0.0;
++
++      for (const auto& st : trk.trackStatesReversed()) {
++        if (!st.typeFlags().test(Acts::TrackStateFlag::MeasurementFlag) || !st.hasUncalibratedSourceLink()) {
++          continue;
++        }
++        const auto sl = st.getUncalibratedSourceLink().template get<IndexSourceLink>();
++        const auto* cl = sl.hit();
++        trkClusters.push_back(cl);
++        if (st.hasSmoothed()) {
++          const auto sv = st.smoothed();
++          const Acts::Vector3 dirA(std::cos(sv[2]) * std::sin(sv[3]),
++                                   std::sin(sv[2]) * std::sin(sv[3]),
++                                   std::cos(sv[3]));
++          const Acts::Vector3 posA = st.referenceSurface().localToGlobal(gctx, sv.template head<2>(), dirA);
++          rmaxCkf = std::max(rmaxCkf, std::hypot(posA.y(), posA.z()));
++        }
++        MeasStateInfo msi;
++        const Identifier cid = cl->identify();
++        msi.station = idHelper->station(cid);
++        msi.waferId = idHelper->wafer_id(cid);
++        msi.geoId = st.referenceSurface().geometryId().value();
++        msi.surf = &st.referenceSurface();
++        if (st.hasPredicted()) msi.prtQop = st.predicted()[4];
++        if (st.hasFiltered()) msi.fltQop = st.filtered()[4];
++        if (st.hasSmoothed()) {
++          msi.smtQop = st.smoothed()[4];
++          msi.smtBound = st.smoothed();
++          const auto& scov = st.smoothedCovariance();
++          for (int k = 0; k < 6; ++k) {
++            msi.smtSigma[k] = (scov(k, k) > 0.0) ? std::sqrt(scov(k, k)) : qnan;
++          }
++        }
++        if (st.hasPredicted() && st.hasCalibrated()) {
++          const auto H = st.effectiveProjector();
++          const double res = st.effectiveCalibrated()[0] - (H * st.predicted())[0];
++          const double var = (H * st.predictedCovariance() * H.transpose())(0, 0) +
++                             st.effectiveCalibratedCovariance()(0, 0);
++          if (var > 0.0) msi.pull = res / std::sqrt(var);
++        }
++        fwdStates.push_back(msi);
++      }
++      std::reverse(fwdStates.begin(), fwdStates.end());
++
++      int trkMajBc = 0;
++      double trkPurity = 0.0;
++      matchClusters(trkClusters, trkMajBc, trkPurity);
++
++      int seedMajBc = 0;
++      double seedPurTmp = 0.0;
++      if (iseed < seeds.size()) {
++        matchClusters(seeds[iseed].clusters, seedMajBc, seedPurTmp);
++      }
++
++      double tPdg = qnan, tQ = qnan, pProd = qnan, pSt1 = qnan, pPreS2 = qnan, pMinTrk = qnan;
++      double hitW0Valid = 0.0, hitW0Loc0 = qnan, hitW0Loc1 = qnan, hitW0Phi = qnan, hitW0Theta = qnan;
++
++      auto pit = primaries.find(trkMajBc);
++      if (pit != primaries.end()) {
++        const auto& ts = pit->second;
++        tPdg = ts.pdg;
++        tQ = ts.charge;
++        pProd = ts.pProd_GeV;
++        pSt1 = ts.pSt1_GeV;
++        pPreS2 = ts.pPreS2_GeV;
++        pMinTrk = ts.pMinTrk_GeV;
++        if (!fwdStates.empty() && fwdStates.front().surf) {
++          if (waferTruthOnSurface(ts, *fwdStates.front().surf, fwdStates.front().waferId,
++                                  hitW0Loc0, hitW0Loc1, hitW0Phi, hitW0Theta)) {
++            hitW0Valid = 1.0;
++          }
++        }
++        if (trkPurity >= 0.7) {
++          auto& sm = sigMatches[trkMajBc];
++          sm.nCkf += 1;
++          const size_t nM = trk.nMeasurements();
++          const double c2 = trk.chi2();
++          if (nM > sm.bestMeas || (nM == sm.bestMeas && c2 < sm.bestChi2)) {
++            sm.bestMeas = nM;
++            sm.bestChi2 = c2;
++            sm.bestCkfPurity = trkPurity;
++            const double qopCkf = trk.hasReferenceSurface() ? trk.parameters()[4]
++                                  : (!fwdStates.empty() ? fwdStates.front().smtQop : qnan);
++            sm.bestCkfP = (std::isfinite(qopCkf) && std::abs(qopCkf) > 0.0) ? (1.0 / std::abs(qopCkf)) : qnan;
++            sm.bestCkfQ = std::isfinite(qopCkf) ? (qopCkf >= 0.0 ? 1.0 : -1.0) : qnan;
++            sm.bestCkfChi2 = c2;
++            sm.bestCkfNdf = static_cast<double>(trk.nDoF());
++            sm.bestRefitOk = ref.ok ? 1.0 : 0.0;
++            sm.bestRefitP = ref.ok ? ref.pTrk_GeV : sm.bestCkfP;
++          }
++        }
++      } else if (allParticlesPdgP.count(trkMajBc)) {
++        tPdg = allParticlesPdgP[trkMajBc].first;
++        tQ = pdgCharge(static_cast<int>(tPdg));
++        pProd = allParticlesPdgP[trkMajBc].second;
++      }
++
++      Acts::BoundVector ckfTgt = Acts::BoundVector::Constant(qnan);
++      Acts::BoundVector ckfTgtS = Acts::BoundVector::Constant(qnan);
++      if (trk.hasReferenceSurface()) {
++        ckfTgt = trk.parameters();
++        const auto& cov = trk.covariance();
++        for (int k = 0; k < 5; ++k) ckfTgtS[k] = (cov(k, k) > 0.0) ? std::sqrt(cov(k, k)) : qnan;
++      }
++
++      uint64_t ckfW0Geo = 0;
++      Acts::BoundVector ckfW0 = Acts::BoundVector::Constant(qnan);
++      Acts::BoundVector ckfW0S = Acts::BoundVector::Constant(qnan);
++      if (!fwdStates.empty()) {
++        ckfW0Geo = fwdStates.front().geoId;
++        ckfW0 = fwdStates.front().smtBound;
++        ckfW0S = fwdStates.front().smtSigma;
++      }
++
++      double seedQop = (iseed < initParams.size()) ? initParams[iseed].parameters()[4] : qnan;
++      double s1LastFlt = qnan, s2FirstPrt = qnan, s2FirstFlt = qnan, s2SecondPrt = qnan;
++      double s2FirstSmt = qnan, s3FirstFlt = qnan, s3LastSmt = qnan, s2FirstPull = qnan;
++      int s2Count = 0;
++      for (const auto& ms : fwdStates) {
++        if (ms.station == 1) {
++          s1LastFlt = ms.fltQop;
++        } else if (ms.station == 2) {
++          if (s2Count == 0) {
++            s2FirstPrt = ms.prtQop;
++            s2FirstFlt = ms.fltQop;
++            s2FirstSmt = ms.smtQop;
++            s2FirstPull = ms.pull;
++          } else if (s2Count == 1) {
++            s2SecondPrt = ms.prtQop;
++          }
++          ++s2Count;
++        } else if (ms.station == 3) {
++          if (!std::isfinite(s3FirstFlt)) s3FirstFlt = ms.fltQop;
++          s3LastSmt = ms.smtQop;
++        }
++      }
++
++      std::array<double, kTrackCols> row{
++          static_cast<double>(sourceEntry),
++          static_cast<double>(itrk),
++          static_cast<double>(iseed),
++          static_cast<double>(trk.nMeasurements()),
++          static_cast<double>(trk.nHoles()),
++          static_cast<double>(trk.nOutliers()),
++          trk.chi2(),
++          static_cast<double>(trk.nDoF()),
++          rmaxCkf,
++          ref.ok ? 1.0 : 0.0,
++          ref.chi2,
++          ref.ndf,
++          ref.rmax,
++          static_cast<double>(seedMajBc),
++          static_cast<double>(trkMajBc),
++          trkPurity,
++          tPdg, tQ, pProd, pSt1, pPreS2, pMinTrk,
++          ckfTgt[0], ckfTgt[1], ckfTgt[2], ckfTgt[3], ckfTgt[4],
++          ckfTgtS[0], ckfTgtS[1], ckfTgtS[2], ckfTgtS[3], ckfTgtS[4],
++          ref.tgtBound[0], ref.tgtBound[1], ref.tgtBound[2], ref.tgtBound[3], ref.tgtBound[4],
++          ref.tgtSigma[0], ref.tgtSigma[1], ref.tgtSigma[2], ref.tgtSigma[3], ref.tgtSigma[4],
++          static_cast<double>(ckfW0Geo),
++          ckfW0[0], ckfW0[1], ckfW0[2], ckfW0[3], ckfW0[4],
++          ckfW0S[0], ckfW0S[1], ckfW0S[2], ckfW0S[3], ckfW0S[4],
++          static_cast<double>(ref.w0Geo),
++          ref.w0Bound[0], ref.w0Bound[1], ref.w0Bound[2], ref.w0Bound[3], ref.w0Bound[4],
++          ref.w0Sigma[0], ref.w0Sigma[1], ref.w0Sigma[2], ref.w0Sigma[3], ref.w0Sigma[4],
++          hitW0Valid, hitW0Loc0, hitW0Loc1, hitW0Phi, hitW0Theta,
++          seedQop, s1LastFlt, s2FirstPrt, s2FirstFlt, s2SecondPrt,
++          s2FirstSmt, s3FirstFlt, s3LastSmt, s2FirstPull};
++      writeRow(trkOut, row);
++      ++itrk;
++    }
++
++    // 5. Record primary signal truth denominator rows
++    std::vector<int> sortedBcs;
++    sortedBcs.reserve(primaries.size());
++    for (const auto& kv : primaries) sortedBcs.push_back(kv.first);
++    std::sort(sortedBcs.begin(), sortedBcs.end());
++
++    for (int bc : sortedBcs) {
++      const auto& ts = primaries[bc];
++      if (!ts.isPrimarySignal) continue;
++      const auto sm = sigMatches[bc];
++
++      double s1HitValid = 0.0, s1Geo = 0.0, s1L0 = qnan, s1L1 = qnan, s1Phi = qnan, s1Theta = qnan;
++      // Find earliest wafer hit in Station 1 for standalone signal truth reference
++      double minZ = 1e30;
++      for (const auto& wh : ts.waferHits) {
++        if (idHelper->station(wh.first) == 1 && wh.second.count > 0) {
++          const Acts::Vector3 wp = wh.second.posF / static_cast<double>(wh.second.count);
++          if (wp.z() < minZ) {
++            minZ = wp.z();
++            auto git = idMap.find(wh.first);
++            if (git != idMap.end()) s1Geo = static_cast<double>(git->second.value());
++            const Acts::Vector3 dirA = (rotF2A * wh.second.dirF.normalized()).normalized();
++            const Acts::Vector3 posA = rotF2A * wp;
++            s1L0 = posA.y();
++            s1L1 = -posA.z();
++            s1Phi = Acts::VectorHelpers::phi(dirA);
++            s1Theta = Acts::VectorHelpers::theta(dirA);
++            s1HitValid = 1.0;
++          }
++        }
++      }
++
++      const double txF = (std::abs(ts.momF_GeV.z()) > 1e-9) ? (ts.momF_GeV.x() / ts.momF_GeV.z()) : qnan;
++      const double tyF = (std::abs(ts.momF_GeV.z()) > 1e-9) ? (ts.momF_GeV.y() / ts.momF_GeV.z()) : qnan;
++      std::array<double, kSignalCols> srow{
++          static_cast<double>(sourceEntry),
++          static_cast<double>(bc),
++          static_cast<double>(ts.pdg),
++          ts.charge,
++          static_cast<double>(ts.status),
++          ts.fiducial ? 1.0 : 0.0,
++          static_cast<double>(ts.stHitCounts[0]),
++          static_cast<double>(ts.stHitCounts[1]),
++          static_cast<double>(ts.stHitCounts[2]),
++          static_cast<double>(ts.stHitCounts[3]),
++          ts.rVtx,
++          ts.rMaxS123,
++          ts.vtxF.x(), ts.vtxF.y(), ts.vtxF.z(),
++          txF, tyF,
++          ts.pProd_GeV, ts.pSt1_GeV, ts.pPreS2_GeV, ts.pMinTrk_GeV,
++          s1HitValid, s1Geo, s1L0, s1L1, s1Phi, s1Theta,
++          static_cast<double>(sm.nSeed), sm.bestSeedPurity, sm.bestSeedP,
++          static_cast<double>(sm.nCkf), sm.bestCkfPurity, sm.bestCkfP, sm.bestCkfQ, sm.bestCkfChi2, sm.bestCkfNdf,
++          sm.bestRefitOk, sm.bestRefitP};
++      writeRow(sigOut, srow);
++    }
++
++    // 6. Record event summary row
++    std::array<int, 4> rawC{0, 0, 0, 0}, gbC{0, 0, 0, 0};
++    countSegmentsByStation(rawSegs, rawC);
++    countSegmentsByStation(gbSegs, gbC);
++    std::array<double, kEventCols> erow{
++        static_cast<double>(sourceEntry),
++        static_cast<double>(runNo),
++        static_cast<double>(eventNo),
++        static_cast<double>(nSignal),
++        static_cast<double>(nFiducial),
++        static_cast<double>(rawC[1]), static_cast<double>(rawC[2]), static_cast<double>(rawC[3]),
++        static_cast<double>(gbC[1]), static_cast<double>(gbC[2]), static_cast<double>(gbC[3]),
++        static_cast<double>(seedTool.rawSeedCombinationCount()),
++        static_cast<double>(seedTool.nanChi2RawSeedCount()),
++        static_cast<double>(seeds.size()),
++        static_cast<double>(nSeedsNan),
++        static_cast<double>(selectedTracks.size())};
++    writeRow(evOut, erow);
++  }
++};
++
++#endif  // FASER_LATEST_FAST_VALIDATION_AUDIT_H
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/RootSeedWriteTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/RootSeedWriteTool.cxx
+index 98445d6f..218ce2f0 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/RootSeedWriteTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/RootSeedWriteTool.cxx
+@@ -1008,8 +1008,11 @@ std::optional<const Acts::BoundTrackParameters> RootSeedWriterTool::extrapolateT
+   auto mo = trafo * Acts::Vector3(momentum.x(), momentum.y(), momentum.z());
+   params[Acts::eBoundPhi] = phi(mo.normalized());
+   params[Acts::eBoundTheta] = theta(mo.normalized());;
+-  // FIXME get charge of HepMC::GenParticle, the following does not work, e.g. for pions
+-  double charge = particle->pdg_id() > 0 ? -1 : 1;
++  const int pdg = particle->pdg_id();
++  const int absPdg = std::abs(pdg);
++  double charge = (absPdg == 211 || absPdg == 321 || absPdg == 2212)
++                      ? (pdg > 0 ? 1.0 : -1.0)
++                      : (pdg > 0 ? -1.0 : 1.0);
+   double MeV2GeV = 1e-3;
+   params[Acts::eBoundQOverP] = charge / (momentum.rho() * MeV2GeV);
+   params[Acts::eBoundTime] = vertex.t();
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+index cbdfef9c..99e3d006 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+@@ -7,6 +7,8 @@ struct TrackFinderFunctionImpl
+   Acts::GainMatrixSmoother kfSmoother;
+   
+   CKF trackFinder;
++  bool multipleScattering = true;
++  bool energyLoss = true;
+ 
+   TrackFinderFunctionImpl(CKF &&f) : trackFinder(std::move(f)) {} 
+   
+@@ -38,6 +40,8 @@ struct TrackFinderFunctionImpl
+     //todo: make this configurable
+     ckfOptions.smoothingTargetSurfaceStrategy =
+         Acts::CombinatorialKalmanFilterTargetSurfaceStrategy::first;
++    ckfOptions.multipleScattering = multipleScattering;
++    ckfOptions.energyLoss = energyLoss;
+ 
+     return ckfOptions; 
+   }
+@@ -60,7 +64,7 @@ std::shared_ptr<TrackFinderFunction> makeTrackFinderFunction(
+     std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+     std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+     bool resolvePassive, bool resolveMaterial, bool resolveSensitive, 
+-    const Acts::Logger& logger) {
++    const Acts::Logger& logger, bool multipleScattering, bool energyLoss) {
+   Stepper stepper(std::move(magneticField));
+   Navigator::Config cfg{std::move(trackingGeometry)};
+   cfg.resolvePassive = resolvePassive; 
+@@ -72,6 +76,9 @@ std::shared_ptr<TrackFinderFunction> makeTrackFinderFunction(
+   CKF trackFinder(std::move(propagator), logger.cloneWithSuffix("Finder"));
+ 
+   // build the track finder functions. owns the track finder object.
+-  return std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  auto fn = std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  fn->multipleScattering = multipleScattering;
++  fn->energyLoss = energyLoss;
++  return fn;
+ }
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+index 6d1416d0..7b1f5380 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+@@ -60,7 +60,7 @@ class TrackFinderFunction {
+   std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+   std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+   bool resolvePassive, bool resolveMaterial, bool resolveSensitive,
+-  const Acts::Logger& logger);
++  const Acts::Logger& logger, bool multipleScattering=true, bool energyLoss=true);
+ 
+ 
+ //}  // namespace
