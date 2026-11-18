@@ -1,0 +1,304 @@
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+index 34bde4b9..c0778c23 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.cxx
+@@ -69,6 +69,26 @@ StatusCode CKF2::initialize() {
+     ATH_CHECK(m_alignmentDerivativesWriterTool.retrieve());
+   }
+   ATH_CHECK(detStore()->retrieve(m_idHelper,"FaserSCT_ID"));
++  ATH_CHECK(detStore()->retrieve(m_detManager,"SCT"));
++
++  if (!m_momentumAuditFile.value().empty()) {
++    m_momentumAudit = std::make_unique<LatestSeedAndStateAudit>(m_momentumAuditFile, true);
++    if (!m_momentumAudit->out) return StatusCode::FAILURE;
++    m_momentumAudit->idHelper = m_idHelper;
++    m_momentumAudit->collection = m_trackCollection.key();
++  }
++  if (!m_momentumSeedOverride.value().empty()) {
++    std::ifstream input(m_momentumSeedOverride.value());
++    if (!input) return StatusCode::FAILURE;
++    size_t entry;
++    int seed;
++    while (input >> entry >> seed) {
++      Acts::BoundVector mean;
++      for (int i = 0; i < 6; ++i) input >> mean[i];
++      if (!input) return StatusCode::FAILURE;
++      m_momentumOverrides[{entry, seed}] = mean;
++    }
++  }
+ 
+   // FIXME fix Acts logging level
+   if (m_actsLogging == "VERBOSE") {
+@@ -88,7 +108,8 @@ StatusCode CKF2::initialize() {
+                                   true, true, reverseFilteringMomThreshold, Acts::FreeToBoundCorrection(false), *m_logger);
+  
+   m_finder = makeTrackFinderFunction(trackingGeometry, magneticField,
+-                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger);
++                                  m_resolvePassive, m_resolveMaterial, m_resolveSensitive, *m_logger,
++                                  m_momentumScattering, m_momentumEnergyLoss);
+ 
+   return StatusCode::SUCCESS;
+ }
+@@ -139,6 +160,21 @@ StatusCode CKF2::execute() {
+   std::shared_ptr<std::vector<std::array<std::vector<const Tracker::FaserSCT_Cluster*>, 3>>> seedClusters = m_trackSeedTool->seedClusters();
+ 
+   TrackInfo::nClusters = sourceLinks->size();
++  if (m_momentumAudit) {
++    m_momentumAudit->sourceEntry = m_numberOfEvents - 1;
++    m_momentumAudit->run = ctx.eventID().run_number();
++    m_momentumAudit->event = ctx.eventID().event_number();
++    const TrackerSimDataCollection* simData = nullptr;
++    const McEventCollection* truthEvents = nullptr;
++    const FaserSiHitCollection* truthHits = nullptr;
++    ATH_CHECK(evtStore()->retrieve(simData, "SCT_SDO_Map"));
++    ATH_CHECK(evtStore()->retrieve(truthEvents, "TruthEvent"));
++    ATH_CHECK(evtStore()->retrieve(truthHits, "SCT_Hits"));
++    m_momentumAudit->simData = simData;
++    m_momentumAudit->begin("event");
++    m_momentumAudit->end();
++    m_momentumAudit->truth(*truthEvents, *truthHits, m_detManager);
++  }
+ 
+ 
+   CircleFitTrackSeedTool* Tool = dynamic_cast<CircleFitTrackSeedTool*>(m_trackSeedTool.get());
+@@ -148,6 +184,14 @@ StatusCode CKF2::execute() {
+     double seedTargetZPosition = Tool->targetZPosition();
+     Acts::BoundSquareMatrix seedCov = Tool->covBound();
+ 
++    if (m_momentumAudit) {
++      const TrackCollection* rawSegs = evtStore()->contains<TrackCollection>("SegmentFit")
++          ? evtStore()->tryConstRetrieve<TrackCollection>("SegmentFit") : nullptr;
++      const TrackCollection* gbSegs = evtStore()->contains<TrackCollection>("Segments")
++          ? evtStore()->tryConstRetrieve<TrackCollection>("Segments") : nullptr;
++      m_momentumAudit->seedForensics(*Tool, seedTargetZPosition, rawSegs, gbSegs);
++    }
++
+     if (m_seedWriter && !m_noDiagnostics) {
+       ATH_CHECK(m_seedWriterTool->write(gctx, seedTargetZPosition, seedCov, *selectedseeds, *used_clusters, m_isMC, m_backwardPropagation));
+     }
+@@ -210,6 +254,7 @@ StatusCode CKF2::execute() {
+   
+   Acts::PropagatorPlainOptions pOptions;
+   pOptions.maxSteps = m_maxSteps;
++  if (m_momentumMaxStep > 0) pOptions.maxStepSize = m_momentumMaxStep;
+   if (m_backwardPropagation) {
+     pOptions.direction = Acts::Direction::Backward;
+   } else {
+@@ -232,7 +277,22 @@ StatusCode CKF2::execute() {
+     // Clear trackContainerTemp and trackStateContainerTemp
+     tracksTemp.clear();
+ 
+-    auto result = (*m_finder)((*initialParameters).at(iseed), options, calibrator, slAccessor, Acts::MeasurementSelector(measurementSelectorCfg), tracksTemp);
++    auto initial = initialParameters->at(iseed);
++    if (m_momentumAudit) {
++      m_momentumAudit->parameters("seed_original", gctx, initial, iseed, -1, Tool->seeds()->at(iseed).clusters);
++    }
++    auto override = m_momentumOverrides.find({m_numberOfEvents - 1, iseed});
++    if (override != m_momentumOverrides.end()) {
++      auto mean = initial.parameters();
++      if (m_momentumSeedMode == "qop") mean[4] = override->second[4];
++      else mean = override->second;
++      initial = Acts::BoundTrackParameters(initial.referenceSurface().getSharedPtr(), mean,
++                                           initial.covariance(), initial.particleHypothesis());
++    }
++    if (m_momentumAudit) {
++      m_momentumAudit->parameters("seed", gctx, initial, iseed, -1, Tool->seeds()->at(iseed).clusters);
++    }
++    auto result = (*m_finder)(initial, options, calibrator, slAccessor, Acts::MeasurementSelector(measurementSelectorCfg), tracksTemp);
+    
+     if (!result.ok()) {
+       ATH_MSG_WARNING("Track finding failed for seed " << iseed << " with error" << result.error());
+@@ -245,7 +305,7 @@ StatusCode CKF2::execute() {
+     for (auto& track : tracksForSeed) {
+       // Set the seed number, this number decrease by 1 since the seed number
+       // has already been updated
+-      seedNumber(track) = nSeed - 1;
++      seedNumber(track) = iseed; // Read-only provenance; old nSeed never incremented.
+       auto destProxy = tracks.getTrack(tracks.addTrack());
+       destProxy.copyFrom(track, true);  // make sure we copy track states!
+     }
+@@ -284,6 +344,9 @@ StatusCode CKF2::execute() {
+       }
+     }
+     
++    if (m_momentumAudit) {
++      m_momentumAudit->track("selected", gctx, destProxy, seedNumber(destProxy), destProxy.index());
++    }
+     if(not allTracks.empty()){ 
+       allTracks.remove_if([&](const TrackInfo &p) {
+         return ((p.nMeasurements <= 12) || ((p.clusterSet & selected.clusterSet).count() > 6));
+@@ -343,6 +406,9 @@ StatusCode CKF2::execute() {
+       refitStatus[track.index()] = false;
+       ATH_MSG_WARNING("Re-Fit either not performed or failed.");
+     }
++    if (m_momentumAudit) {
++      m_momentumAudit->trk("final_trk", outputTracks->back(), seedNumber(track), track.index(), refitStatus[track.index()] ? 1 : 0);
++    }
+   }
+ 
+     //write out all acts found tracks for debugging 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+index 1b459587..cce92ad6 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CKF2.h
+@@ -2,6 +2,7 @@
+ #define FASERACTSKALMANFILTER_CKF2_H
+ 
+ #include "TrackFitterFunction.h"
++#include "LatestSeedAndStateAudit.h"
+ #include "TrackFinderFunction.h"
+ 
+ #include "AthenaBaseComps/AthReentrantAlgorithm.h"
+@@ -76,6 +77,14 @@ public:
+   virtual Acts::MagneticFieldContext getMagneticFieldContext(const EventContext& ctx) const;
+ 
+ private:
++  std::unique_ptr<LatestSeedAndStateAudit> m_momentumAudit;
++  Gaudi::Property<std::string> m_momentumAuditFile {this, "MomentumAuditFile", ""};
++  Gaudi::Property<bool> m_momentumScattering {this, "MomentumScattering", true};
++  Gaudi::Property<bool> m_momentumEnergyLoss {this, "MomentumEnergyLoss", true};
++  Gaudi::Property<double> m_momentumMaxStep {this, "MomentumMaxStepSize", 0.};
++  Gaudi::Property<std::string> m_momentumSeedOverride {this, "MomentumSeedOverride", ""};
++  Gaudi::Property<std::string> m_momentumSeedMode {this, "MomentumSeedOverrideMode", "qop"};
++  std::map<std::pair<size_t, int>, Acts::BoundVector> m_momentumOverrides;
+   size_t m_numberOfEvents {0};
+   size_t m_numberOfTrackSeeds {0};
+   size_t m_numberOfFittedTracks {0};
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+index f5f41847..7570d393 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.cxx
+@@ -135,6 +135,10 @@ StatusCode CircleFitTrackSeedTool::run(std::vector<int> maskedLayers, bool backw
+     go(segments, combination, seeds, 0, 1, backward);
+   }
+ 
++  m_rawSeedCount = seeds.size();
++  m_nanChi2RawSeedCount = static_cast<size_t>(std::count_if(
++      seeds.begin(), seeds.end(), [](const Seed &s) { return !std::isfinite(s.chi2); }));
++
+   std::list<Seed> allSeeds;
+   for (const Seed &seed : seeds) allSeeds.push_back(seed);
+ 
+@@ -220,7 +224,7 @@ void CircleFitTrackSeedTool::go(const std::array<std::vector<Segment>, 4> &v,
+                                 int offset, int k,
+                                 bool backward) {
+   if (k == 0) {
+-    seeds.push_back(Seed(combination, backward));
++    seeds.push_back(Seed(combination, backward, m_seedBField.value()));
+     return;
+   }
+   for (std::size_t i = offset; i < v.size() + 1 - k; ++i) {
+@@ -273,7 +277,7 @@ CircleFitTrackSeedTool::Segment::Segment(const Trk::Track* track, const FaserSCT
+   
+ }
+ 
+-CircleFitTrackSeedTool::Seed::Seed(const std::vector<Segment> &segments, bool backward) :
++CircleFitTrackSeedTool::Seed::Seed(const std::vector<Segment> &segments, bool backward, double bFieldTesla) :
+     clusterSet(CircleFitTrackSeedTool::s_indexMap.size()) {
+   for (const Segment &seg : segments) {
+     segs.push_back(seg);//get the segments of one Seed*********************************
+@@ -314,7 +318,7 @@ CircleFitTrackSeedTool::Seed::Seed(const std::vector<Segment> &segments, bool ba
+   linearFit(pointsZX);
+ 
+   if (segments.size() > 1) {
+-    fakeFit();
++    fakeFit(bFieldTesla);
+     constraints = 5;
+   } else {
+     momentum = 9999999.;
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+index 1cb601c0..7758607c 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/CircleFitTrackSeedTool.h
+@@ -67,7 +67,7 @@ public:
+ 
+   struct Seed {
+   public:	  
+-    Seed(const std::vector<Segment> &segments, bool backward=false);
++    Seed(const std::vector<Segment> &segments, bool backward=false, double bFieldTesla=0.55);
+ 
+     ClusterSet clusterSet;
+     std::vector<const Tracker::FaserSCT_Cluster*> clusters;
+@@ -97,8 +97,9 @@ public:
+     double m_sigma_y = 0.016;
+   };
+   const std::shared_ptr<std::vector<CircleFitTrackSeedTool::Seed>> seeds() const;
+-
+-
++  size_t rawSeedCombinationCount() const { return m_rawSeedCount; }
++  size_t nanChi2RawSeedCount() const { return m_nanChi2RawSeedCount; }
++  double seedBFieldTesla() const { return m_seedBField.value(); }
+ 
+ private:
+  
+@@ -120,6 +121,8 @@ private:
+   std::shared_ptr<std::vector<const Tracker::FaserSCT_SpacePoint*>> m_spacePoints {};
+  
+   std::shared_ptr<std::vector<Seed>> m_seeds {};
++  size_t m_rawSeedCount {0};
++  size_t m_nanChi2RawSeedCount {0};
+ 
+   double m_targetZPosition {0};
+   Acts::BoundSquareMatrix m_cov;
+@@ -141,6 +144,7 @@ private:
+   Gaudi::Property<double> m_covQOverP {this, "covQOverP", 1};
+   Gaudi::Property<double> m_covTime {this, "covTime", 1};
+   Gaudi::Property<bool> m_removeIFT{this, "removeIFT", false};
++  Gaudi::Property<double> m_seedBField{this, "SeedBFieldTesla", 0.55};
+ };
+ 
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+index cbdfef9c..bb425002 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.cxx
+@@ -7,6 +7,7 @@ struct TrackFinderFunctionImpl
+   Acts::GainMatrixSmoother kfSmoother;
+   
+   CKF trackFinder;
++  bool scattering=true, energyLoss=true;
+ 
+   TrackFinderFunctionImpl(CKF &&f) : trackFinder(std::move(f)) {} 
+   
+@@ -39,6 +40,8 @@ struct TrackFinderFunctionImpl
+     ckfOptions.smoothingTargetSurfaceStrategy =
+         Acts::CombinatorialKalmanFilterTargetSurfaceStrategy::first;
+ 
++    ckfOptions.multipleScattering = scattering;
++    ckfOptions.energyLoss = energyLoss;
+     return ckfOptions; 
+   }
+ 
+@@ -60,7 +63,7 @@ std::shared_ptr<TrackFinderFunction> makeTrackFinderFunction(
+     std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+     std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+     bool resolvePassive, bool resolveMaterial, bool resolveSensitive, 
+-    const Acts::Logger& logger) {
++    const Acts::Logger& logger, bool scattering, bool energyLoss) {
+   Stepper stepper(std::move(magneticField));
+   Navigator::Config cfg{std::move(trackingGeometry)};
+   cfg.resolvePassive = resolvePassive; 
+@@ -72,6 +75,9 @@ std::shared_ptr<TrackFinderFunction> makeTrackFinderFunction(
+   CKF trackFinder(std::move(propagator), logger.cloneWithSuffix("Finder"));
+ 
+   // build the track finder functions. owns the track finder object.
+-  return std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  auto result = std::make_shared<TrackFinderFunctionImpl>(std::move(trackFinder));
++  result->scattering = scattering;
++  result->energyLoss = energyLoss;
++  return result;
+ }
+ 
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+index 6d1416d0..a965f4c1 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
++++ b/Tracking/Acts/FaserActsKalmanFilter/src/TrackFinderFunction.h
+@@ -60,7 +60,7 @@ class TrackFinderFunction {
+   std::shared_ptr<const Acts::TrackingGeometry> trackingGeometry,
+   std::shared_ptr<const Acts::MagneticFieldProvider> magneticField,
+   bool resolvePassive, bool resolveMaterial, bool resolveSensitive,
+-  const Acts::Logger& logger);
++  const Acts::Logger& logger, bool scattering=true, bool energyLoss=true);
+ 
+ 
+ //}  // namespace

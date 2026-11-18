@@ -10,6 +10,8 @@
 
 2026-11-16 的 latest follow-up 见[第二站与seed左偏溯源](../workbook/2026-11-16_stage04_latest_momentum_origin.md)：使用用户指定 `geoRotation_calypso_latest` 和其自带 row-major 材料，区分S2两个sensor的状态，按transport/update计账，开展原生seed均值/先验控制、seed gate消融与真实完整磁场的native CircleFit closure。下一轮生产候选须用未按truth seed-p筛选的独立样本检验，不能以good-seed条件曲线变窄代替动量标定与效率验收。
 
+2026-11-18 的深度源码审计与 C++ 单因素实验见[latest源码审计与18晶圆因果解耦](../workbook/2026-11-18_stage04_latest_momentum_deep_dive.md)：在全20文件（及排除file0标定后的19个独立文件）完成52,338条seed的`−1.0`尖峰互斥归因、旋转seed平面`covLoc0/covLoc1`轴互换与`covQOverP` 100倍膨胀的18晶圆面逐面演化、C++ `SeedBFieldTesla = 0.473662`双向配对/门限闭合，以及无门限总体电子轫致辐射分层与`KalmanFitterTool1` refit对比。
+
 1. 在原版配置保留 generator-referenced residual，复现报告 p24 的 seed 与 p16–18 的 per-layer predicted/filtered/smoothed 图，同时记录 event/track/state、单位与 truth 来源。
 2. 逐事件核对 `p=1/|κ|`、Cartesian norm、truth charge/barcode 和 reference surface。检查无匹配 truth、0/负占位 p、q/p=0、invalid state、histogram under/overflow；有效正 p 的 `δp≥−1`，若小于 −1 则先查定义、单位或无效数据。
 3. 增加同面 truth residual；将生产点→sensor 的真实 ΔE 与 reco−local-truth 分别画出。states writer 当前用 HepMC p，需要 S01 确认真值可用性；没有局部 p 的真实样本只报告 generator-relative 观察，另用 G4 audit 样本做物理归因。
