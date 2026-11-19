@@ -6,7 +6,8 @@
 - **工作树源码与提交**：`/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1`（分支 `fix/latest-seed-and-momentum-v1`，提交 `7729ddf043fa4efdaaedbb224db67c46f1c4dfd5`）
 - **可复用补丁**：[0051_ntupledumper_waveform_reduced_charge_2022_2026_mc.patch](file:///eos/home-x/xcheng/FASER/geoRotation_test/patches/0051_ntupledumper_waveform_reduced_charge_2022_2026_mc.patch)
 - **编译产物（Overlay）**：`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1_clean/`
-- **Fig. 13 风格时间差完整图集**：[timing_study_fig13_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/timing_study_fig13_report.pdf)（索引：[figure_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/figure_index.json)）
+- **严格仿 Fig. 13 全年份时间差图集（11 页，PNG + 单图 PDF + 汇总 PDF）**：[fig13_all_timing_diffs_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_all_timing_diffs_report.pdf)（索引：[figure_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/figure_index.json)）
+- **多面板诊断辅助图集（6 页）**：[timing_study_fig13_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/timing_study_fig13_report.pdf)（索引：[figure_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/figure_index.json)）
 - **端到端验证完整图集**：[validation_v2_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/validation_v2_report.pdf)（索引：[figure_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/figure_index.json)）
 
 ---
@@ -71,7 +72,7 @@
 
 ### 3.1 2022–2026 真实数据与 MC24 站点时间差测量（4,040 万 `GoodTracks` 穿行 Muon，Fig. 13 协议）
 
-使用多核 ROOT `RDataFrame` 脚本 [waveform_timing_study.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/analysis/waveform_timing_study.py)（22 并发进程，耗时 `212.3 s`），在 [datasets.json](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/faser_filelists/datasets.json) 对应的官方 2022–2026 PHYS 文件及 MC24 上严格执行 [FASER_DQ_RDF.py](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/FASER_DQ_RDF.py) 选择：
+使用多核 ROOT `RDataFrame` 脚本 [waveform_timing_study.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/analysis/waveform_timing_study.py)（22 并发进程，原生 `[-60, 60]` ns 分箱、重跑耗时 `174.0 s`），在 [datasets.json](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/faser_filelists/datasets.json) 对应的官方 2022–2026 PHYS 文件及 MC24 上严格执行 [FASER_DQ_RDF.py](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/FASER_DQ_RDF.py) 选择：
 - 年度 GRL `GoodTimes && !ExcludedTimes`（2022–2024 v8，2025–2026 v10）
 - `(Timing0..3_status & 4) == 0`、`distanceToCollidingBCID == 0`、`(TAP & 4) != 0`
 - `GoodTracks`：`Track_nLayers >= 7 && (Track_Chi2/Track_nDoF) < 25 && (Track_nDoF+5) >= 12 && Track_pz0 > 20000 && RemoveDuplicates(Track_p0)`，`NGoodTracks >= 1`
@@ -97,19 +98,48 @@
 > 1. **2025 `p0013` vs `p0014` 差异**：所有 `p0013` 生产 run（`19415, 19524, 19866, 19923, 19970, 20081`）均出现 `Preshower0 GFIT_FAILED` 达 **`84.4%–92.0%`** 且残余 `PS Dig1 - VN` 跳至 `30–33 ns`；而在同一 run 区间内经 **`p0014`** 重建的 `19336, 19878, 20012` 及全部后续 `p0014` run（`20170–20610`），`PS0 GFIT_FAILED` 降至 **`0.4%–0.7%`** 且 `PS Dig1 - VN` 稳定回归 **`13.24–13.31 ns`**，`PS Dig2` 在全部 `p0013/p0014` run 中始终稳定于 `17.1–17.4 ns`。
 > 2. **2026 `Preshower3` 有效率变化**：runs `22132–22404` 及 `23176–23241` 中 `PS3_ok ≈ 29.4%`、`PS Dig2 - Dig1 = +4.00..+4.42 ns`（与 2025 `p0014` 完全一致）；runs `22408–23172` 中 `PS3_ok` 降至 `1.2%`（仅 `ch 24` 活跃），`PS Dig2 - Dig1` 同步平移 `~0.6 ns` 至 `+3.20..+3.50 ns`，均值对应 Python 预设 `data_2026: PreshowerDig2ExtraOffset = 3.64 ns`。
 
-#### Fig. 13 风格时间差分布主图（完整 6 图见 [timing_study_fig13_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/timing_study_fig13_report.pdf)）
+#### 施加 Python 预设后的全时期对齐闭合残差（对应 `fig13_10` 与 `fig13_11`）
 
-![Veto St2 - VetoNu Fig. 13 Style All Periods](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig01_veto2_vetonu_fig13_all_periods.png)
+将最终 Python 预设（`data_default: 33.165 / 53.625 / 0.0`、`data_caloNu: 35.783 / 53.512 / 0.0`、`data_2025: 33.165 / 13.27 / 3.97`、`data_2026: 33.165 / 13.27 / 3.64`、`mc: 27.21 / 51.41 / 0.0`）与 `status & 512` 的 `+16.0 ns` 校正逐事件作用于上述 4,040 万真实 muon 与 48.2 万 MC24 muon 后，全部真实数据时期（2022–2026）及两套 MC24 几何的 `Veto2` 与 `Preshower`（含 4-PMT Dig1/Dig2 对齐）残差均严格收敛至 `0.0 ns`（最大偏差 `≤ 0.15 ns`）；GENIE 中微子 MC 因 VetoNu 仅由反向背散射迟到粒子触发，残差按物理预期呈 `-3.2..-6.5 ns` 负偏移：
 
-![2024 CaloNu status==512 Decomposition](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig02_caloNu_status512_decomposition.png)
+| 时期 / 样本 | 生效 Python Preset | `(t_Veto2 - t_VetoNu) - Δt_preset` 峰值 / 核心均值±σ [ns] | `(t_Preshower - t_VetoNu) - Δt_preset` 峰值 / 核心均值±σ [ns] |
+| --- | --- | ---: | ---: |
+| **2022 Data** | `data_default` | `-0.084` (`-0.150 ± 0.554`) | `-0.140` (`-0.163 ± 0.567`) |
+| **2023 Data** | `data_default` | `-0.081` (`-0.146 ± 0.556`) | `-0.114` (`-0.145 ± 0.566`) |
+| **2024 pre-CaloNu** | `data_default` | `+0.015` (`-0.059 ± 0.559`) | `-0.013` (`-0.048 ± 0.543`) |
+| **2024 early-CaloNu** | `data_default` | `-0.002` (`-0.084 ± 0.559`) | `-0.040` (`-0.076 ± 0.541`) |
+| **2024 during-CaloNu** | `data_caloNu` | `+0.087` (`+0.015 ± 0.559`) | `+0.081` (`+0.042 ± 0.542`) |
+| **2024 post-CaloNu** | `data_default` | `+0.015` (`-0.061 ± 0.558`) | `-0.006` (`-0.043 ± 0.542`) |
+| **2025 Data** | `data_2025` | `+0.040` (`-0.030 ± 0.555`) | `+0.059` (`+0.109 ± 1.227`) |
+| **2026 Data** | `data_2026` | `+0.063` (`-0.004 ± 0.556`) | `+0.042` (`+0.146 ± 1.092`) |
+| **MC24 Muon FaserNu** | `mc` | `+0.044` (`+0.017 ± 0.115`) | `-0.052` (`-0.055 ± 0.263`) |
+| **MC24 Muon CaloNu** | `mc` | `+0.036` (`+0.010 ± 0.140`) | `-0.049` (`-0.052 ± 0.263`) |
 
-![Preshower Dig1 - VetoNu All Periods](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig03_preshower_dig1_vetonu_all_periods.png)
+#### 严格仿 Fig. 13 风格的全年份时间差分布图集（共 11 图，完整汇总见 [fig13_all_timing_diffs_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_all_timing_diffs_report.pdf)，脚本 [plot_fig13_all_timing_diffs.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/analysis/plot_fig13_all_timing_diffs.py)）
 
-![2025-2026 Preshower Dig2 Extra Offset and 4-PMT Alignment](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig04_preshower_dig2_extra_offset_2025_2026.png)
+全套图严格复现 [Electronic_2D_measurement_internal_note-6.pdf](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/docs/Electronic_2D_measurement_internal_note-6.pdf) 第 22 页 Fig. 13 的单图布局、官方 FASER logo、`FASER Internal` 标识、四边内向主/次刻度、浅灰实线网格、`[-60, 60]` ns `1.0 ns` 分箱面积归一化（`Normalized`）及年份配色命名（并附 `fig13_03` 局部放大与 6 页多面板诊断汇总 [timing_study_fig13_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/timing_study_fig13_report.pdf)）：
 
-![Station Localtime vs Triggertime Evolution](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig05_station_localtime_and_triggertime_evolution.png)
+![Fig. 13-01: All years Veto St2 - VetoNu (+16 ns corrected)](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_01_veto2_vetonu_all_years.png)
 
-![Per-Run Stability Timeline 2022-2026](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig06_per_run_stability_timeline_2022_2026.png)
+![Fig. 13-02: All years Veto St2 - VetoNu raw (before +16 ns fix)](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_02_veto2_vetonu_raw_uncorrected.png)
+
+![Fig. 13-04: All years Preshower Dig1 - VetoNu](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_04_preshower_dig1_vetonu_all_years.png)
+
+![Fig. 13-05: 2025-2026 Preshower Dig1 vs Dig2 - VetoNu](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_05_preshower_dig2_vs_dig1_vetonu_2025_2026.png)
+
+![Fig. 13-06: 2025-2026 Preshower Dig2 - Dig1 direct offset](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_06_preshower_dig2_minus_dig1_2025_2026.png)
+
+![Fig. 13-07: 2025-2026 Preshower 4-PMT alignment effect](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_07_preshower_4pmt_dig2_alignment_effect.png)
+
+![Fig. 13-08: All years Timing - VetoNu control](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_08_timing_vetonu_all_years.png)
+
+![Fig. 13-09: All years Veto St1 - VetoNu (+16 ns corrected)](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_09_veto1_vetonu_all_years.png)
+
+![Fig. 13-10: All years Veto St2 post-preset alignment closure](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_10_veto2_after_preset_alignment.png)
+
+![Fig. 13-11: All years Preshower post-preset alignment closure](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_11_preshower_after_preset_alignment.png)
+
+> 注：内部笔记 Fig. 13 图注文字称 CaloNu 期间“FASERν veto 更换了数字化仪”，但由 `fig13_08`（`t_Timing - t_νveto` 全数据时期平直）与 `fig13_04`（`t_Preshower(Dig1) - t_νveto` 在 2024 CaloNu 期间平直）对比 `fig13_01`、`fig13_09`（`Veto2` 与 `Veto1` 同步跳变 `+2.7..+2.8 ns` 且出现 `22.3%` 的 `status == 512` 事例）可直接证明：**实际迁移至 Digitizer 2（`ch 20–23`）的是 Veto St1/St2，而 VetoNu 始终留在 Digitizer 1（`ch 4, 5`）**。局部放大图见 [fig13_03_veto2_vetonu_zoom.png](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_03_veto2_vetonu_zoom.png)。
 
 ---
 
@@ -170,6 +200,7 @@
   ```bash
   source /afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/setup.sh
   python3 /eos/home-x/xcheng/FASER/geoRotation_test/analysis/waveform_timing_study.py --workers 22 --files-per-run 2 --runs-per-period 12
+  python3 /eos/home-x/xcheng/FASER/geoRotation_test/analysis/plot_fig13_all_timing_diffs.py
   python3 /eos/home-x/xcheng/FASER/geoRotation_test/analysis/plot_waveform_timing_fig13.py
   ```
 - **端到端验证与绘图**（自动清理临时 `.root` 输出）：

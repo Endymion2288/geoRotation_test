@@ -35,27 +35,31 @@ DEFAULT_OUT_DIR = Path(
 )
 
 # Histogram specifications: (nbins, xmin, xmax)
+# All Fig. 13 timing-difference histograms natively span [-60, 60] ns with 0.2 ns bins
+# (rebin x5 -> exact 1.0 ns bins matching Electronic_2D_measurement_internal_note-6.pdf Fig. 13).
 HIST_SPECS: Dict[str, Tuple[int, float, float]] = {
-    # Main Fig. 13 style distributions (0.2 ns bin width)
-    "veto2_vetonu_raw": (500, -20.0, 80.0),
-    "veto2_vetonu_corr": (500, -20.0, 80.0),
-    "veto2_vetonu_s0": (500, -20.0, 80.0),
-    "veto2_vetonu_s512_raw": (500, -20.0, 80.0),
-    "veto2_vetonu_s512_corr": (500, -20.0, 80.0),
-    "ps_dig1_vetonu": (500, -20.0, 80.0),
-    "ps_dig2_vetonu_raw": (500, -20.0, 80.0),
-    "ps_dig2_vetonu_corr": (500, -20.0, 80.0),
-    "ps_dig2_minus_dig1_raw": (400, -30.0, 50.0),
-    "ps_dig2_minus_dig1_corr": (400, -30.0, 50.0),
-    "ps_all_vetonu_raw": (500, -20.0, 80.0),
-    "ps_all_vetonu_corr16": (500, -20.0, 80.0),
-    "ps_all_vetonu_aligned": (500, -20.0, 80.0),
-    "timing_vetonu": (500, -20.0, 80.0),
-    "veto1_vetonu": (500, -20.0, 80.0),
+    "veto2_vetonu_raw": (600, -60.0, 60.0),
+    "veto2_vetonu_corr": (600, -60.0, 60.0),
+    "veto2_vetonu_s0": (600, -60.0, 60.0),
+    "veto2_vetonu_s512_raw": (600, -60.0, 60.0),
+    "veto2_vetonu_s512_corr": (600, -60.0, 60.0),
+    "ps_dig1_vetonu": (600, -60.0, 60.0),
+    "ps_dig2_vetonu_raw": (600, -60.0, 60.0),
+    "ps_dig2_vetonu_corr": (600, -60.0, 60.0),
+    "ps_dig2_minus_dig1_raw": (600, -60.0, 60.0),
+    "ps_dig2_minus_dig1_corr": (600, -60.0, 60.0),
+    "ps_all_vetonu_raw": (600, -60.0, 60.0),
+    "ps_all_vetonu_corr16": (600, -60.0, 60.0),
+    "ps_all_vetonu_aligned": (600, -60.0, 60.0),
+    "timing_vetonu": (600, -60.0, 60.0),
+    "veto1_vetonu": (600, -60.0, 60.0),
+    # Post-preset-alignment residuals (centered at 0 ns across all periods & MC)
+    "veto2_vetonu_preset_resid": (600, -60.0, 60.0),
+    "ps_all_vetonu_preset_resid": (600, -60.0, 60.0),
     # Triggertime differences (to compare against COOL TriggerOffset)
-    "veto2_vetonu_trig": (400, -40.0, 40.0),
-    "ps_dig1_vetonu_trig": (400, -40.0, 40.0),
-    "ps_dig2_vetonu_trig": (400, -40.0, 40.0),
+    "veto2_vetonu_trig": (600, -60.0, 60.0),
+    "ps_dig1_vetonu_trig": (600, -60.0, 60.0),
+    "ps_dig2_vetonu_trig": (600, -60.0, 60.0),
     # Absolute localtimes (wide 100..900 ns covers 2022/MC ~800 ns and 2023-2026 ~150-240 ns)
     "vetonu_localtime": (800, 100.0, 900.0),
     "veto2_localtime_corr": (800, 100.0, 900.0),
@@ -63,6 +67,23 @@ HIST_SPECS: Dict[str, Tuple[int, float, float]] = {
     "ps_dig2_localtime_corr": (800, 100.0, 900.0),
     # Fallback-relevant Preshower2/3 charge distribution
     "ps_dig2_raw_charge": (200, 0.0, 40.0),
+}
+
+# Exact Python preset values from NtupleDumperConfig.REDUCED_CHARGE_TIMING_PRESETS
+PERIOD_PRESET_OFFSETS: Dict[str, Tuple[float, float, float]] = {
+    "2022": (33.165, 53.625, 0.0),
+    "2023": (33.165, 53.625, 0.0),
+    "2024_preCaloNu": (33.165, 53.625, 0.0),
+    "2024_earlyCaloNu": (33.165, 53.625, 0.0),
+    "2024_duringCaloNu": (35.783, 53.512, 0.0),
+    "2024_postCaloNu": (33.165, 53.625, 0.0),
+    "2025": (33.165, 13.27, 3.97),
+    "2026": (33.165, 13.27, 3.64),
+    "MC24_Muon_FaserNu": (27.21, 51.41, 0.0),
+    "MC24_Muon_CaloNu": (27.21, 51.41, 0.0),
+    "MC24_Genie_22_23": (27.21, 51.41, 0.0),
+    "MC24_Genie_24_FaserNu": (27.21, 51.41, 0.0),
+    "MC24_Genie_24_CaloNu": (27.21, 51.41, 0.0),
 }
 
 CPP_HELPER_CODE = r"""
@@ -460,8 +481,11 @@ def process_one_task(task: dict) -> dict:
             "0.0f, 1U, 0.0f, 40.0, true, false, false)",
         )
 
+    preset_v2, preset_ps, preset_dig2 = PERIOD_PRESET_OFFSETS.get(period, (33.165, 53.625, 0.0))
+
     df = df.Define("dt_v2_vn_raw", "diff_valid(t_v2_raw, t_vn)")
     df = df.Define("dt_v2_vn_corr", "diff_valid(t_v2_corr, t_vn)")
+    df = df.Define("dt_v2_vn_resid", f"diff_valid(t_v2_corr - {preset_v2}, t_vn)")
     df = df.Define("dt_v2_vn_s0", "diff_valid(t_v2_s0, t_vn)")
     df = df.Define("dt_v2_vn_s512_raw", "diff_valid(t_v2_s512_raw, t_vn)")
     df = df.Define("dt_v2_vn_s512_corr", "diff_valid(t_v2_s512_corr, t_vn)")
@@ -491,7 +515,7 @@ def process_one_task(task: dict) -> dict:
         df = df.Define("dt_ps2_ps1_raw", "diff_valid(t_ps_dig2_raw, t_ps_dig1)")
         df = df.Define("dt_ps2_ps1_corr", "diff_valid(t_ps_dig2_corr, t_ps_dig1)")
         df = df.Define("lt_ps2", "std::isnan(t_ps_dig2_corr) ? -9999.0 : t_ps_dig2_corr")
-        # Combined 4-PMT Preshower mean (matching NtupleDumperAlg behavior: status & ~512 == 0)
+        # Combined 4-PMT Preshower mean using exact Python preset Dig2 extra offset
         df = df.Define(
             "t_ps_all_raw",
             "mean4_local(Preshower0_localtime, Preshower0_status, Preshower0_raw_charge, 2.5, "
@@ -511,15 +535,18 @@ def process_one_task(task: dict) -> dict:
             "mean4_local(Preshower0_localtime, Preshower0_status, Preshower0_raw_charge, 2.5, "
             "Preshower1_localtime, Preshower1_status, Preshower1_raw_charge, 2.5, "
             "Preshower2_localtime, Preshower2_status, Preshower2_raw_charge, 0.0, "
-            "Preshower3_localtime, Preshower3_status, Preshower3_raw_charge, 0.0, true, 4.0)",
+            f"Preshower3_localtime, Preshower3_status, Preshower3_raw_charge, 0.0, true, {preset_dig2})",
         )
         df = df.Define("dt_psall_vn_raw", "diff_valid(t_ps_all_raw, t_vn)")
         df = df.Define("dt_psall_vn_corr16", "diff_valid(t_ps_all_corr16, t_vn)")
         df = df.Define("dt_psall_vn_aligned", "diff_valid(t_ps_all_aligned, t_vn)")
+        df = df.Define("dt_psall_vn_resid", f"diff_valid(t_ps_all_aligned - {preset_ps}, t_vn)")
         df = df.Define(
             "ps2_valid_q",
             "(Preshower2_status == 0U || Preshower2_status == 512U) ? Preshower2_raw_charge : -9999.0f",
         )
+    else:
+        df = df.Define("dt_psall_vn_resid", f"diff_valid(t_ps_dig1 - {preset_ps}, t_vn)")
 
     if has_triggertime:
         df = df.Define(
@@ -555,10 +582,12 @@ def process_one_task(task: dict) -> dict:
 
     book("veto2_vetonu_raw", "dt_v2_vn_raw")
     book("veto2_vetonu_corr", "dt_v2_vn_corr")
+    book("veto2_vetonu_preset_resid", "dt_v2_vn_resid")
     book("veto2_vetonu_s0", "dt_v2_vn_s0")
     book("veto2_vetonu_s512_raw", "dt_v2_vn_s512_raw")
     book("veto2_vetonu_s512_corr", "dt_v2_vn_s512_corr")
     book("ps_dig1_vetonu", "dt_ps1_vn")
+    book("ps_all_vetonu_preset_resid", "dt_psall_vn_resid")
     book("timing_vetonu", "dt_tim_vn")
     book("veto1_vetonu", "dt_v1_vn")
     book("vetonu_localtime", "lt_vn")
