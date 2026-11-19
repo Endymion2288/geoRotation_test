@@ -1,170 +1,208 @@
-# 阶段报告：在 `geoRotation_calypso_latest_fix_v1` 中合并 2022–2026 数据及 MC 的 Waveform Reduced VetoNu Charge 处理程序
+# 阶段报告：`geoRotation_calypso_latest_fix_v1` 中 2022–2026 数据及 MC 的 Waveform Reduced VetoNu Charge 移植、去硬编码重构与 Fig. 13 真实数据时间差研究
 
 - **日期**：2026-11-19
-- **主机与环境**：`lxplus901.cern.ch`，Athena `24.0.41`（`x86_64-el9-gcc13-opt`）
+- **主机与环境**：`lxplus901.cern.ch`（28 cores），Athena `24.0.41`（`x86_64-el9-gcc13-opt`）与 LCG_107（ROOT RDataFrame）
 - **基线源码（未改动）**：`/eos/home-x/xcheng/FASER/geoRotation_calypso_latest`，HEAD `7fd40df8cd3b60e81b4095a4f84310c4a54700a0`
-- **工作树源码与提交**：`/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1`（分支 `fix/latest-seed-and-momentum-v1`，提交 `a4ecefeaa151040f57aa20be041133bb3c1f0e16`）
+- **工作树源码与提交**：`/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1`（分支 `fix/latest-seed-and-momentum-v1`，提交 `7729ddf043fa4efdaaedbb224db67c46f1c4dfd5`）
 - **可复用补丁**：[0051_ntupledumper_waveform_reduced_charge_2022_2026_mc.patch](file:///eos/home-x/xcheng/FASER/geoRotation_test/patches/0051_ntupledumper_waveform_reduced_charge_2022_2026_mc.patch)
-- **编译产物（Overlay）**：`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1/`
-- **完整图集与汇报 PDF**：[waveform_reduced_charge_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/figures/waveform_reduced_charge_report.pdf)（索引：[figures_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/figures/figures_index.json)）
+- **编译产物（Overlay）**：`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1_clean/`
+- **Fig. 13 风格时间差完整图集**：[timing_study_fig13_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/timing_study_fig13_report.pdf)（索引：[figure_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/figure_index.json)）
+- **端到端验证完整图集**：[validation_v2_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/validation_v2_report.pdf)（索引：[figure_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/figure_index.json)）
 
 ---
 
 ## 1. 阶段目标
 
-参考 `/eos/home-x/xcheng/FASER/El9CalypsoForWaveForm`（`MyWaveformTimeRangeAlg.cxx`、`MyWaveformTimeRangeConfig.py`、`submit_waveform_time_range_cfg.py`）、通道映射文档 `/eos/home-x/xcheng/FASER/nu_muAnalysis/docs/FASER_CaloScintillator.pdf` 与 COOL 数据库 `CABP200.db`/`ALLP200.db`，在 `geoRotation_calypso_latest_fix_v1` 的 `PhysicsAnalysis/NtupleDumper` 中完成正确、通用的 waveform 与 reduced VetoNu charge 处理程序移植与升级，实现以下验收目标：
+在 `geoRotation_calypso_latest_fix_v1` 的 `PhysicsAnalysis/NtupleDumper` 中正确移植并验证适用于 2022–2026 数据与 MC 的 waveform 及 reduced VetoNu charge 计算，同时满足以下架构与物理验收目标：
 
-1. `NtupleDumperAlg.h` 以 `official/master` 版本为基准（保留 `geoRotation_calypso_latest` 已有且 `NtupleDumperAlg.cxx` 依赖的 `m_rotatedPhysicalAngles` 开关）。
-2. 正确处理第 2 数字化仪（Digitizer 2）的 `TIMING_SHIFTED` 状态位（bit 9 = `512`）及 `+16.0 ns` localtime 校正，并覆盖 2022–2026 全部 Veto St2（`ch 6, 7, 22, 23`）与 Preshower（`ch 12, 13, 24, 25`）通道。
-3. 在 2022、2023、2024（pre-CaloNu / 早期 CaloNu `15821–15844` / CaloNu `15845–16927` / post-CaloNu）、2025、2026 真实数据及 MC 上直接测量穿行 muon 峰值时间差，实现按 `(isMC, run_number, cable_map)` 自动解析且支持命令行/属性显式覆盖。
-4. 修复原 `NtupleDumperAlg.cxx` 中除 `status==512` 之外的全部已知程序缺陷（`VetoNu` 容器索引越界与通道错位、空 `wave_vector()` 归零、CaloNu blinding 硬编码旧通道等）。
-5. 使用真实编译后的 Calypso `faser_ntuple_maker.py` 在 2022–2026 全部关键时期及 MC 上完成端到端运行验证，并与 Ben Wilson 的 5 套参考目录（`/eos/user/b/bewilson/El9CalypsoForWaveForm/`）进行逐事件数值交叉核对。
+1. **彻底消除 C++ 硬编码 run 编号**：严格遵循 Calypso（`NtupleDumperAlg`）与 `/eos/home-x/xcheng/FASER/El9CalypsoForWaveForm`（`MyWaveformTimeRangeAlg`、`MyWaveformTimeRangeConfig.py`）的代码风格。C++ 算法仅依据 `xAOD::WaveformStatus` 状态位（`TIMING_SHIFTED = 512`、`SECONDARY = 2`）和 `IWaveformCableMappingTool`（`m_wave_map`）工作，**不包含任何按 run 编号分支的逻辑**；所有随时期或 MC 变化的站点时间差参数均放在易于维护的 Python 配置与命令行接口（`NtupleDumperConfig.py`、`faser_ntuple_maker.py`）中传入。
+2. **阐明各站点时间差偏移的物理与硬件根源**：仿照 [Electronic_2D_measurement_internal_note-6.pdf](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/docs/Electronic_2D_measurement_internal_note-6.pdf) 第 22 页 Fig. 13，在 [FASER_DQ_RDF.py](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/FASER_DQ_RDF.py) 定义的精确 `GoodTracks` 与 Data Quality 选择下，扫描 2022–2026 全时期官方 PHYS 数据及 MC24，绘制 `Veto2 - VetoNu`、`Preshower (Dig1) - VetoNu`、`Preshower (Dig2) - VetoNu`、`Preshower (Dig2 - Dig1)` 及 `Timing / Veto1 - VetoNu` 分布，用真实数据定量说明为什么需要 `VetoVetoNuTimeDifference`、`PreshowerVetoNuTimeDifference` 和 `PreshowerDig2ExtraOffset`。
+3. **在官方默认通量 GENIE 中微子 MC 与 2022–2026 真实数据上端到端闭合验证**：
+   - 使用 [FASER_FaserMC.pdf](file:///eos/home-x/xcheng/FASER/nu_muAnalysis/docs/FASER_FaserMC.pdf) 中 **Genie Neutrino Samples** 三个章节的全部 9 个 **default flux prediction** run（`2022/23 Crossing angle distribution`：`200082/200083/200089`；`2024 Crossing angle distribution, FaserNu geometry`：`200093/200094/200100`；`2024 Crossing angle distribution, CaloNu geometry`：`200139/200140/200146`）以及穿行 muon MC（`100044`）。
+   - 在 2022、2023、2024（pre-CaloNu / early-CaloNu / during-CaloNu / post-CaloNu）、2025、2026 真实 xAOD 上运行编译后的 `faser_ntuple_maker.py`，并与 Ben Wilson 的 5 套参考目录（`/eos/user/b/bewilson/El9CalypsoForWaveForm/`）逐事件对标。
 
 ---
 
 ## 2. 工作内容
 
-### 2.1 原 `NtupleDumper` 缺陷审计（基线 `7fd40df8`）
+### 2.1 为什么存在 `VetoVetoNuTimeDifference`、`PreshowerVetoNuTimeDifference` 与 `PreshowerDig2ExtraOffset`（物理、硬件与波形重建机制）
 
-1. **`get_mean_scintillator_time()` 丢弃 Digitizer 2 `TIMING_SHIFTED (512)` 击中且缺少 `+16.0 ns` 修正**（原 `NtupleDumperAlg.cxx:2638`）：原条件 `hit->hit_status() == 0` 拒绝全部 `status == 512` 击中。根据 `WaveformReconstructionTool.cxx:111-114,331-345,446-448`，Digitizer 2 在 `trigger_offset >= 1` 时将采集窗口前移 8 个采样点（`16 ns`）并置位 `xAOD::WaveformStatus::TIMING_SHIFTED`（bit 9 = `512`），`trigger_time`/`bcid_time` 已扣减 `-16 ns`，而 `localtime()` 保留原始窗口时间。因此必须以 `(status & ~512U) == 0U` 筛选好击中，并在 `status & 512U` 时执行 `t += 16.0`。
-2. **`VetoNu` 循环用容器下标 `idx` 直接索引固定数组 `m_vetonu_reduced_charge[2]` 与 `good_vetoNu_hit[2]`**（原 `NtupleDumperAlg.cxx:1618-1642`）：xAOD 扫描证实 2022–2026 与 MC 中每 40,000 事例存在 `140–956` 个事例满足 `VetoNuWaveformHits->size() >= 3`（含 secondary hit）。原代码以 `idx = 0..size()-1` 越界访问 `bool[2]` 与 `float[2]`（紧邻成员 `m_clock_phase`），且在通道乱序时将 `VetoNu0`/`VetoNu1` 对调。
-3. **空 `wave_vector()` 保护缺失**（原 `NtupleDumperAlg.cxx:1630`）：若某 VetoNu hit 未保存原始波形（`WaveformCleanupTool` prescale 或 `WAVEFORM_MISSING`），原代码先置零再跳过空循环，将缺失波形误判为 `0 pC` 中微子信号候选。
-4. **单一硬编码时间差在 2024 CaloNu 与 2025–2026 严重失配**（原 `faser_ntuple_maker.py:384-386`）：对所有数据统一硬编码 `VetoVetoNuTimeDifference=33.165 ns`、`PreshowerVetoNuTimeDifference=53.625 ns`。
-   - 2024 CaloNu（`15845–16927`）Veto St2 迁至 Dig2 `ch 22, 23` 后实测 `Veto2 - VetoNu = 35.79–35.87 ns`（偏置 `+2.62 ns`）。
-   - 2025–2026（`run >= 18194`）Preshower 升级为上下 4 PMT（Dig1 `ch 12, 13` + Dig2 `ch 24, 25`）且硬件触发偏移由 `+18 ns` 调整至 `-40/-42 ns`，实测 `Preshower - VetoNu` 骤降约 `40 ns` 至 `13.28 ns`（Dig1）与 `17.25 ns`（Dig2）！沿用 `53.625 ns` 会使 Preshower fallback 积分截止时间提前约 `40 ns`，将 **88–97% 的穿行 muon 电荷截断为 `< 40 pC` 假中微子事例**。
-5. **缺少诊断分支与容器有效性检查**：原代码未检查 `vetoContainer.isValid()`/`preshowerContainer.isValid()`，且未输出 `fallback_mode`、`reduced_charge_valid` 与 `expected_localtime`。
-6. **Blinding 逻辑硬编码旧 Veto 通道**（原 `NtupleDumperAlg.cxx:1550`）：硬编码 `ch 4,5,6,7,14`，在 2024 CaloNu 期间 `ch 6,7,14` 实为 CaloNu 而非 Veto（`ch 20,21,22,23`）。
+逐行审计 [WaveformReconstructionTool.cxx](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest/Waveform/WaveRecTools/src/WaveformReconstructionTool.cxx)、[WaveformDigitisationTool.cxx](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest/Waveform/WaveDigiTools/src/WaveformDigitisationTool.cxx)、[RawWaveformDecoderTool.cxx](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest/Waveform/WaveEventCnv/WaveByteStream/src/RawWaveformDecoderTool.cxx) 及 COOL SQLite 数据库 `CABP200.db` / `ALLP200.db` 后，完整机理如下：
 
-### 2.2 硬件通道与时间差全景核查（2022–2026 数据 + MC）
+1. **为什么 `reduced_charge` 必须在 `localtime` 坐标系下使用站点时间差（而非 `triggertime`）**：
+   - 原始采样波形 `hit->time_vector()` 存储的是 500 MHz 数字化仪原始采样时刻 $t_i = 2i\ \mathrm{ns}$（`WaveformReconstructionTool.cxx:416`）；Crystal Ball 拟合得到的 40% 恒比定时 `hit->localtime()` 同样处于原始采样时刻坐标系，**并未扣除** COOL 数据库 `/WAVE/DAQ/TimingOffset` 中的 `TriggerOffset` 或第 2 数字化仪的 `-16 ns` 偏移（`WaveformReconstructionTool.cxx:331-345` 仅在计算 `trigger_time` 和 `bcid_time` 时扣除 `TriggerOffset + digi_offset`）。
+   - 同时，MC 中不填 `triggertime`/`bcidtime`（`NtupleDumperAlg.cxx:255` 跳过 `if (!isMC)`），且真实数据中 `/WAVE/DAQ/TimingOffset` 仅用于粗略对准重建窗口（例如 2025 年 `Preshower` 设 `-40/-42 ns` 导致 `Preshower - VetoNu` 的 `triggertime` 差值反而跳变至 `+18.3 / +24.3 ns`）。
+   - 因此，对正穿光速 muon（$\beta \simeq 1$），任意下游参考站 $R$ 与 `VetoNu` 的 `localtime` 差值由四项叠加决定（其中全局 `NominalTriggerTime` 在 2022 的 `820 ns`、2023 的 `220 ns`、2024–2026 的 `200 ns` 间变化，但在同事件两站相减中**精确抵消**）：
+     $$\Delta t_{\mathrm{local}}(R - \mathrm{VetoNu}) = \frac{z_R - z_{\mathrm{VetoNu}}}{c} + \left(\tau_{\mathrm{PMT+cable}, R} - \tau_{\mathrm{PMT+cable}, \mathrm{VetoNu}}\right) + \left(\delta_{\mathrm{board}, R} - \delta_{\mathrm{board}, \mathrm{VetoNu}}\right) + \delta_{16\,\mathrm{ns}}(\mathrm{bit\,512})$$
+2. **为什么需要 `VetoVetoNuTimeDifference` 区分标准时期（`33.165 ns`）、2024 CaloNu（`35.783 ns`）与 MC24（`27.21 ns`）**：
+   - **标准真实数据**（2022、2023、2024 pre-CaloNu、2024 early-CaloNu `15821–15844`、2024 post-CaloNu、2025、2026）：`VetoNu`（`z = -3112 mm`，`ch 4,5`）与 `Veto St2`（`z = -1610 mm`，`ch 6,7`）均位于第 1 块数字化仪（Board 0，通道 `0–15`），光速飞行时间 `+5.0 ns` 加 PMT/电缆延迟差（`ALLP200.db` 标称 `TriggerOffset`: VetoNu `-35 ns`, Veto2 `0 ns`），实测稳定在 **`33.08–33.23 ns`**。
+   - **2024 CaloNu 时期**（`15845–16927`）：为腾出 Board 0 通道给 CaloNu 触发，`Veto St2` 迁至第 2 块数字化仪（Board 1，`ch 22, 23`），而 `VetoNu` 留在 Board 0（`ch 4, 5`）。双数字化仪引入**两项独立效应**：
+     - **离散 `-16.0 ns` 触发量化跳变**：约 `22.3%` 的事例中两块数字化仪触发时间戳相差 1 个 8-sample 时钟节拍（`wave.trigger_offset() >= 1`），`WaveformReconstructionTool` 将采集窗口前移 8 个点（`-16 ns`）并置位 `xAOD::WaveformStatus::TIMING_SHIFTED`（bit 9 = `512`）。未校正时在 `19.87 ns` 处形成次峰；施加 `if (status & 512) t += 16.0;` 后与 `status == 0` 峰精确重合至 **`0.00 ns`** 以内（见图 `fig02`）。
+     - **固定 `+2.7 ns` 跨板/重接电缆延迟**：即使完成 `+16.0 ns` 校正，Board 1 (`ch 22, 23`) 的 `Veto2 - VetoNu` 峰值仍比 Board 0 (`ch 6, 7`) 晚 **`+2.69 ns`**（`33.18 -> 35.87 ns`，Ben Wilson 参考值 `35.783 ns`）。该固定板间硬件延迟不带状态位标记，必须通过 Python 参数配置。
+   - **MC24（FaserNu 与 CaloNu 几何一致）**：根据 [makeDigiDB.py](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest/Waveform/WaveformConditions/WaveCondUtils/scripts/makeDigiDB.py) 与 `WaveformDigitisationTool.cxx:274-295`，MC 数字化在卷积前**已扣除 `tof = z/c`**，并直接按 Crystal Ball 模板中心 `cb_mean`（VetoNu `800 ns, σ=5.0 ns`；Veto `825 ns, σ=3.35 ns`；Timing `830 ns, σ=3.21 ns`；Preshower `850 ns, σ=4.0 ns`）生成波形。40% 上升沿恒比定时近似为 $t_{40\%} \approx \mu_{\mathrm{CB}} - \sqrt{2\ln 2.5}\,\sigma_{\mathrm{CB}} = \mu_{\mathrm{CB}} - 1.354\,\sigma_{\mathrm{CB}}$，解析给出 $\Delta t_{\mathrm{Veto2-VN}} \approx (825-800) - 1.354(3.35-5.0) = 27.23\ \mathrm{ns}$、$\Delta t_{\mathrm{PS-VN}} \approx (850-800) - 1.354(4.0-5.0) = 51.35\ \mathrm{ns}$，与 MC24 实测（`27.28 / 51.36 ns`）及官方常数（`27.21 / 51.41 ns`）严格自洽！
+3. **为什么需要 `PreshowerVetoNuTimeDifference` 在 2025–2026 降至 `13.27 ns`**：
+   - 在中微子 CC 相互作用中，前向簇射使 **`36%–72%`** 的事例发生 `Veto2` 波形溢出饱和（`status & 4`），从而触发 `Preshower` fallback（`fallback_mode == 2`，占比高达 `29%–66%`）。
+   - 2022–2024 年旧 Preshower（`ch 12, 13`，`TriggerOffset = +18 ns`）实测 `t_PS(Dig1) - t_VN = 53.49–53.62 ns`。
+   - 2025–2026 年 Preshower 升级（更换新 PMT 与更短信号电缆，并增设底部两路 PMT `ch 24, 25`；`ALLP200.db` 中 `TriggerOffset` 由 `+18 ns` 改为 `-40 / -42 ns`），实测 `Preshower0/1`（Dig1 `ch 12, 13`）绝对 `localtime` 由 `201.7 ns` 前移约 `40 ns` 至 `162.8 ns`，导致 `t_PS(Dig1) - t_VN` 从 `53.62 ns` 骤降 **`-40.3 ns`** 至 **`13.27 ns`**（2025 与 2026 一致至 `0.01 ns`）。若沿用旧值 `53.625 ns`，fallback 积分截止点会提前 `40.3 ns`，直接截断 `VetoNu` 正常 muon 脉冲，将 `88%–97%` 的穿行 muon 误判为 `< 40 pC` 假中微子候选！
+4. **为什么 2025–2026 需要 `PreshowerDig2ExtraOffset`（2025: `+3.97 ns`；2026: `+3.64 ns`）**：
+   - 2025–2026 的 4 路 Preshower 跨接在两块数字化仪上：顶部 `Preshower0/1`（`ch 12, 13`）在 Board 0，底部低增益 `Preshower2/3`（`ch 24, 25`）在 Board 1。
+   - 经 `+16.0 ns`（`status & 512`）校正后，`Preshower2/3` 仍比 `Preshower0/1` 晚 **`+4.04 ns`**（2025 核心均值 `+3.97 ± 1.75 ns`）或 **`+3.53 ns`**（2026 核心均值 `+3.64 ± 1.76 ns`，因 2026 runs `22408–23172` 中 `Preshower3` 有效率由 `29.5%` 降至 `1.2%`，以 `ch 24` 为主）。
+   - 若不对齐 Dig2 相对 Dig1 的偏移，4 路平均时间会在 `13.3 ns`（仅 Dig1 命中）、`15.0 ns`（4 路同中）与 `17.3 ns`（仅 Dig2 命中，如 2025 `p0013` 中 `PS0/1` 发生 `84%–92%` `GFIT_FAILED` 时）之间系统漂移并展宽（`core_std` 从 `1.57 ns` 改善至 `1.23 / 1.09 ns`，模式峰值重新严格锚定 `13.21–13.31 ns`，见图 `fig04`）。
 
-1. 直接查询 `/cvmfs/faser.cern.ch/repo/sw/database/DBRelease/current/sqlite200/CABP200.db`（2026-10-28）与 `ALLP200.db`（2026-11-10）的 `/WAVE/DAQ/CableMapping`、`/WAVE/DAQ/TimingOffset` 与 `/WAVE/Digitization`，完整冻结 2022–2026 数据（`CONDBR3`）与 MC（`OFLP200`）全部 IOV。
-2. 编写多核 PHYS 扫描脚本 [measure_scint_timing_diffs.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/scripts/measure_scint_timing_diffs.py)（16 并发扫描 82 个 PHYS 文件）与原生 C++ (`g++ -O2`) xAOD 扫描器 [scan_xaod_waveform.cxx](file:///eos/home-x/xcheng/FASER/geoRotation_test/scripts/scan_xaod_waveform.cxx) + [measure_xaod_timing_diffs.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/scripts/measure_xaod_timing_diffs.py)（12 并发直读 55 个 2022–2026 及 MC xAOD 文件），对所有时期测量穿行 muon 峰值时间差，并分别对比 `status == 0` 与 `status == 512`（加/不加 `+16.0 ns`）。
+### 2.2 去硬编码重构（严格沿用 Calypso / `El9CalypsoForWaveForm` 风格）
 
-### 2.3 代码修改与编译验证
+修改集中在 `/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/` 的 4 个文件（提交 `7729ddf0`，相对 `geoRotation_latestMaster` 仅 `+244/-68` 行）：
 
-修改均位于 `/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/`（仅 3 个文件，`+300/-63` 行）：
-
-- **`src/NtupleDumperAlg.h`**（基于 `official/master` + 保留 `m_rotatedPhysicalAngles`）：
-  - 将 `VetoVetoNuTimeDifference`、`PreshowerVetoNuTimeDifference` 与新增 `PreshowerDig2ExtraOffset` 默认值设为哨兵 `-999.0`（`<= -900.0` 启用自动周期查找，`> -900.0` 立即采用用户显式覆写）。
-  - 声明 `resolveReducedChargeTiming()` 与支持 `dig2ExtraOffset` 的 `get_mean_scintillator_time()`；新增树分支变量 `m_vetonu_reduced_charge_valid[2]`、`m_vetonu_reduced_charge_fallback`、`m_vetonu_expected_localtime`。
-- **`src/NtupleDumperAlg.cxx`**：
-  - 引入 `xAODFaserWaveform/WaveformDefs.h`，使用命名位 `xAOD::WaveformStatus::TIMING_SHIFTED`（`512`）与 `SECONDARY`（`2`）。
-  - `get_mean_scintillator_time()`：接受 `(status & ~512U) == 0U`；对 `status & 512U` 加 `+16.0 ns`；对 `channel >= 16` 扣除 `dig2ExtraOffset`（用于将 2025–2026 Preshower Dig2 `ch 24, 25` 对齐至 Dig1 `ch 12, 13` 参考系），双精度求平均。
-  - `resolveReducedChargeTiming()`：按 `(isMC, run_number, mappedVeto2Channels)` 自动给出 2022–2026 及 MC24 实测标定时间差，首事例输出一条 `ATH_MSG_INFO` 日志记录生效参数。
-  - Reduced VetoNu charge 计算：扩展 Veto2 通道 `{6, 7, 22, 23}` 与 Preshower 通道 `{12, 13, 24, 25}`；通过 `vetoNuChannels`（`4 -> 0, 5 -> 1`）映射 VetoNu 层下标彻底消除越界与对调；保持 primary-first 规则且空 `wave_vector()` 回退至 `m_wave_raw_charge[ch]`；移除提前 `break` 并在 `double` 中积分 `< m_reducedChargeIntegrationTime`；填充 `VetoNu{0,1}_reduced_charge`、`VetoNu{0,1}_reduced_charge_valid`、`VetoNu_reduced_charge_fallback`（`0/1/2`）与 `VetoNu_expected_localtime`。
-  - Blinding 改为按 `m_wave_map` 动态读取 `vetonu`/`veto1`/`veto2` 通道，修复 CaloNu 期间通道错位。
-- **`scripts/faser_ntuple_maker.py`**：移除硬编码 `33.165 / 53.625` 与 `27.21 / 51.41`，新增 `--vetoVetoNuTimeDiff`、`--preshowerVetoNuTimeDiff`、`--preshowerDig2ExtraOffset`、`--reducedChargeWindow` 可选 CLI 覆写参数。
-- 使用 [build_fix_v1_ntuple.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/scripts/build_fix_v1_ntuple.py) 复用 `geoRotation_calypso_latest/run` 依赖编译 `libNtupleDumper.so` 并运行 `listcomponents`、`genconf` 与 `mergeConfdb2.py`，随后用 [validate_reduced_charge_all_periods.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/scripts/validate_reduced_charge_all_periods.py) 并发执行 35 个真实 `faser_ntuple_maker.py` 作业（覆盖 12 个 2022–2026 与 MC 样本的固定自动模式、未改基线对比及 Ben 精确覆写对齐）。
+- **[NtupleDumperAlg.h](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h)**（基于 `official/master` 并保留 `m_rotatedPhysicalAngles`）：
+  - **完全删除 `resolveReducedChargeTiming()`** 及任何 `-999` 哨兵值。
+  - 声明清晰的 Gaudi `DoubleProperty`：`VetoVetoNuTimeDifference`（默认 `33.165`）、`PreshowerVetoNuTimeDifference`（默认 `53.625`）、`PreshowerDig2ExtraOffset`（默认 `0.0`）、`ReducedChargeIntegrationTime`（默认 `35.0`）。
+  - 保留与 `MyWaveformTimeRangeAlg` 对应的诊断分支：`VetoNu{0,1}_reduced_charge_valid`、`VetoNu_reduced_charge_fallback`（`0/1/2`）、`VetoNu_expected_localtime`。
+- **[NtupleDumperAlg.cxx](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx)**（**零 run 编号硬编码**）：
+  - `get_mean_scintillator_time()` 严格仿照 `MyWaveformTimeRangeAlg::get_local_time()`：使用命名位 `kTimingShiftedBit = 1U << xAOD::WaveformStatus::TIMING_SHIFTED`，以 `(status & ~kTimingShiftedBit) != 0U` 筛选好击中；若 `status & kTimingShiftedBit` 则 `t += 16.0`；若配置了 `dig2ExtraOffset != 0.0` 且 `hit->channel() >= 16`（CAEN Board 1），则 `t -= dig2ExtraOffset`。
+  - 直接从 `IWaveformCableMappingTool` 填充的 `m_wave_map["veto2"]`、`m_wave_map["preshower"]` 与 `m_wave_map["vetonu"]` 获取各时期正确通道（COOL 数据库 `CABP200.db` 自动给出 CaloNu `ch 22, 23` 与 2025–2026 `ch 12, 13, 24, 25`，无需在 C++ 硬编码）。
+  - 保留全部程序缺陷修复：`VetoNu` 按 `hit->channel()` 映射至层下标 `0/1` 彻底消除 `size() >= 3` 时数组越界；空 `wave_vector()` 保持 `m_wave_raw_charge[ch]` 回退不归零；容器 `isValid()` 保护；blinding 改用 `m_wave_map` 动态读取 veto 通道；在 `initialize()` 中打印一次当前生效的 Python 配置参数。
+- **[NtupleDumperConfig.py](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/python/NtupleDumperConfig.py)** 与 **[faser_ntuple_maker.py](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/scripts/faser_ntuple_maker.py)**：
+  - 将全部时期/MC 标定值集中管理在 Python 字典 `REDUCED_CHARGE_TIMING_PRESETS`（`data_default`、`data_caloNu`、`data_2025`、`data_2026`、`mc`）和辅助函数 `getReducedChargeTimingKwargs(preset, **overrides)` 中，后续微调无需修改或重编任何 C++。
+  - `faser_ntuple_maker.py` 暴露 `--timingPreset`（默认 `--isMC` 取 `mc`，否则 `data_default`）及 `--vetoVetoNuTimeDiff`、`--preshowerVetoNuTimeDiff`、`--preshowerDig2ExtraOffset`、`--reducedChargeWindow` 四个浮点覆写参数。
 
 ---
 
 ## 3. 详细数据
 
-### 3.1 COOL 数据库 IOV 与 2022–2026 / MC 穿行 Muon 时间差测量
+### 3.1 2022–2026 真实数据与 MC24 站点时间差测量（4,040 万 `GoodTracks` 穿行 Muon，Fig. 13 协议）
 
-所有时间差均定义为 $\Delta t = t_{\mathrm{station,corr}} - t_{\mathrm{VetoNu,corr}}$（单位：ns，局部时间 `localtime` 坐标系；`status & 512` 击中已加 `+16.0 ns`；筛选条件为单长径迹或 VetoNu 两层 `raw_charge > 40 pC` 且 `(status & ~512) == 0`）：
+使用多核 ROOT `RDataFrame` 脚本 [waveform_timing_study.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/analysis/waveform_timing_study.py)（22 并发进程，耗时 `212.3 s`），在 [datasets.json](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/faser_filelists/datasets.json) 对应的官方 2022–2026 PHYS 文件及 MC24 上严格执行 [FASER_DQ_RDF.py](file:///afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/FASER_DQ_RDF.py) 选择：
+- 年度 GRL `GoodTimes && !ExcludedTimes`（2022–2024 v8，2025–2026 v10）
+- `(Timing0..3_status & 4) == 0`、`distanceToCollidingBCID == 0`、`(TAP & 4) != 0`
+- `GoodTracks`：`Track_nLayers >= 7 && (Track_Chi2/Track_nDoF) < 25 && (Track_nDoF+5) >= 12 && Track_pz0 > 20000 && RemoveDuplicates(Track_p0)`，`NGoodTracks >= 1`
+- 闪烁体击中：`VetoNu/Veto2 raw_charge > 40 pC`、`Preshower0/1 raw_charge > 2.5 pC`、`(status & ~512) == 0`（统计文件：[timing_summary.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/timing_summary.json)）。
 
-| 时期 / 样本 | Run 范围 (`CABP200.db` IOV) | Veto St2 通道 | Preshower 通道 | 实测 `Veto2 - VetoNu` [ns] | 自动查找 `Veto2 - VetoNu` [ns] | 实测 `PS Dig1 (12,13) - VetoNu` [ns] | 实测 `PS Dig2 (24,25) - VetoNu` [ns] | 自动查找 `PS(Dig1)` / `Dig2Extra` [ns] |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2022–2023 Data | `6525..13846` | `6, 7` (Dig1) | `12, 13` (Dig1) | `33.03–33.09` (`σ≈0.55`) | `33.055` | `53.46–53.51` | N/A | `53.490` / `0.000` |
-| 2024 pre-CaloNu | `13847..15820` | `6, 7` (Dig1) | `12, 13` (Dig1) | `33.06–33.21` | `33.165` | `53.47–53.61` | N/A | `53.550` / `0.000` |
-| 2024 早期 CaloNu（Veto 仍在 Dig1） | `15821..15844` | `6, 7` (Dig1) | `12, 13` (Dig1) | `33.05–33.07`（4 runs: `15838–15844`） | `33.165` | `53.47–53.49` | N/A | `53.550` / `0.000` |
-| 2024 CaloNu（Veto 移至 Dig2） | `15845..16927` | **`22, 23` (Dig2)** | `12, 13` (Dig1) | `35.78–35.87` (`st0` 与 `st512+16` 差 `<0.02`) | `35.783` | `53.49–53.57` | N/A | `53.512` / `0.000` |
-| 2024 post-CaloNu | `16928..18192` | `6, 7` (Dig1) | `12, 13` (Dig1) | `33.07–33.18` | `33.165` | `53.51–53.60` | N/A | `53.550` / `0.000` |
-| 2025 启动调试（单 run） | `18193` | `22, 23` (Dig2) | `12, 13, 24, 25` | 未测（无公开束流文件；按 `TimingOffset` `-28 vs -40` 推算） | `35.783` | 推算 `25.28` | 推算 `29.25` | `25.280` / `3.970` |
-| 2025 Data | `18194..20701` | `6, 7` (Dig1) | **`12, 13` + `24, 25` (Dig2)** | `33.07–33.21` | `33.165` | `13.22–13.38`（注：`19480–20080` `PS0,1` 多为 `GFIT_FAILED`） | `17.09–17.39` (`st0` 与 `st512+16` 差 `<0.07`) | `13.280` / `3.970` |
-| 2026 Data（质子物理段） | `22126..23176` | `6, 7` (Dig1) | **`12, 13` + `24, 25` (Dig2)** | `33.12–33.19` | `33.165` | `13.23–13.36` | `16.47–17.41`（`ch24≈16.6, ch25≈18.6`） | `13.280` / `3.970` |
-| 2026 末期（`>= 23359`） | `23359..24068` | `6, 7` (Dig1) | `12, 13, 24, 25` | 实测 `VetoNu ch 4,5` 无信号（`q_p95 < 0.8 pC`，HV 关或拆除） | `33.165` | N/A | N/A | `13.280` / `3.970` |
-| MC24（`WAVE-Digitization-02+`） | `isMC = true` (`100012/43/44/49/50`, `210010`) | `6, 7` | `12, 13` | `27.115`（标准）/ `27.314`（CaloNu `s0015`） | `27.210` | `51.33–51.39` | N/A | `51.410` / `0.000` |
-| MC22（历史 `WAVE-Digitization-01`） | `210001` (`r0013`) | `6, 7` | `12, 13` | `2.335`（`cb_mean` 均为 `815 ns`） | 需 CLI 显式覆写 | `32.442` | N/A | 需 CLI 显式覆写 |
+| 时期 / 样本 | 扫描 Run 数 / 文件数 | `GoodTracks` 事例数 | `Veto2 - VetoNu` (+16 ns) 峰值 / 核心均值±σ [ns] | `PS Dig1 (12,13) - VetoNu` 峰值 / 核心均值±σ [ns] | `PS Dig2 (24,25) - VetoNu` (+16 ns) [ns] | `PS Dig2 - Dig1` (+16 ns) [ns] | `Timing - VetoNu` [ns] | `Veto20 st==512` 占比 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **2022 Data** | 11 / 17 | 540,303 | `33.08` (`33.02 ± 0.55`) | `53.49` (`53.46 ± 0.57`) | — | — | `34.70` | `0.0%` |
+| **2023 Data** | 11 / 20 | 1,819,191 | `33.09` (`33.02 ± 0.56`) | `53.51` (`53.48 ± 0.57`) | — | — | `34.70` | `0.0%` |
+| **2024 pre-CaloNu** (`<15821`) | 13 / 24 | 7,126,068 | `33.18` (`33.11 ± 0.56`) | `53.61` (`53.58 ± 0.54`) | — | — | `34.86` | `0.0%` |
+| **2024 early-CaloNu** (`15821–15844`) | 4 / 8 | 1,978,799 | `33.15` (`33.08 ± 0.56`) | `53.59` (`53.55 ± 0.54`) | — | — | `34.84` | `0.0%` |
+| **2024 during-CaloNu** (`15845–16924`) | 17 / 29 | 7,199,520 | **`35.87`** (`35.80 ± 0.56`) | `53.59` (`53.55 ± 0.54`) | — | — | `34.84` | **`22.3%`** |
+| **2024 post-CaloNu** (`>=16925`) | 12 / 23 | 6,578,042 | `33.18` (`33.10 ± 0.56`) | `53.62` (`53.58 ± 0.54`) | — | — | `34.87` | `0.0%` |
+| **2025 Data** (`p0013`+`p0014`) | 21 / 37 | 10,695,828 | `33.21` (`33.13 ± 0.56`) | **`13.27`** (`13.36 ± 1.15`) | **`17.29`** (`17.29 ± 1.60`) | **`+4.04`** (`+3.97 ± 1.75`) | `34.88` | `0.0%` |
+| **2026 Data** (`p0015`) | 17 / 31 | 4,462,527 | `33.23` (`33.16 ± 0.56`) | **`13.27`** (`13.38 ± 1.15`) | **`16.79`** (`16.98 ± 1.61`) | **`+3.53`** (`+3.64 ± 1.76`) | `34.99` | `0.0%` |
+| **MC24 Muon FaserNu** (`100124`) | 1 / 4 | 301,366 | **`27.28`** (`27.25 ± 0.10`) | **`51.36`** (`51.35 ± 0.26`) | — | — | `32.47` | `0.0%` |
+| **MC24 Muon CaloNu** (`100050`) | 1 / 4 | 180,981 | **`27.27`** (`27.23 ± 0.14`) | **`51.36`** (`51.36 ± 0.26`) | — | — | `32.46` | `0.0%` |
+| **MC24 GENIE 22/23** (`200082/83/89`) | 3 / 18 | 16,419 | `22.67` (反向背散射迟到) | `45.55` (反向背散射迟到) | — | — | `28.89` | `0.0%` |
+| **MC24 GENIE 24 FaserNu** (`200093/94/100`) | 3 / 18 | 16,275 | `22.13` (反向背散射迟到) | `45.69` (反向背散射迟到) | — | — | `26.50` | `0.0%` |
+| **MC24 GENIE 24 CaloNu** (`200139/40/46`) | 3 / 18 | 11,292 | `25.49` (近靶背散射迟到) | `46.71` (近靶背散射迟到) | — | — | `27.74` | `0.0%` |
 
-> **Digitizer 2 `TIMING_SHIFTED (512)` `+16.0 ns` 实测闭合验证**：
-> - 2024 CaloNu Run `15849`（Veto2 `ch 22`）：`status == 0` 中位数 **`35.168 ns`**（`N=2057`）；`status == 512` 修正前 **`19.160 ns`**（`N=643`），加 `+16.0 ns` 后 **`35.160 ns`**（差仅 **`0.008 ns`**）。
-> - 2026 Run `22404`（Preshower `ch 24`）：`status == 0` 中位数 **`16.747 ns`**（`N=828`）；`status == 512` 修正前 **`0.739 ns`**（`N=354`），加 `+16.0 ns` 后 **`16.739 ns`**（差仅 **`0.008 ns`**）。
-> - 所有 55 个 xAOD 扫描中，`VetoNuWaveformHits` 的 `wave_vector()` 非空覆盖率均为 **`100.0%`**。
+> **逐 run 巡检定位的两项 2025/2026 生产与硬件现象（见图 `fig06`）**：
+> 1. **2025 `p0013` vs `p0014` 差异**：所有 `p0013` 生产 run（`19415, 19524, 19866, 19923, 19970, 20081`）均出现 `Preshower0 GFIT_FAILED` 达 **`84.4%–92.0%`** 且残余 `PS Dig1 - VN` 跳至 `30–33 ns`；而在同一 run 区间内经 **`p0014`** 重建的 `19336, 19878, 20012` 及全部后续 `p0014` run（`20170–20610`），`PS0 GFIT_FAILED` 降至 **`0.4%–0.7%`** 且 `PS Dig1 - VN` 稳定回归 **`13.24–13.31 ns`**，`PS Dig2` 在全部 `p0013/p0014` run 中始终稳定于 `17.1–17.4 ns`。
+> 2. **2026 `Preshower3` 有效率变化**：runs `22132–22404` 及 `23176–23241` 中 `PS3_ok ≈ 29.4%`、`PS Dig2 - Dig1 = +4.00..+4.42 ns`（与 2025 `p0014` 完全一致）；runs `22408–23172` 中 `PS3_ok` 降至 `1.2%`（仅 `ch 24` 活跃），`PS Dig2 - Dig1` 同步平移 `~0.6 ns` 至 `+3.20..+3.50 ns`，均值对应 Python 预设 `data_2026: PreshowerDig2ExtraOffset = 3.64 ns`。
 
-### 3.2 与 Ben Wilson 参考文件逐事件数值交叉验证
+#### Fig. 13 风格时间差分布主图（完整 6 图见 [timing_study_fig13_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/timing_study_fig13_report.pdf)）
 
-在 5 个参考目录（及 `15838` 早期 CaloNu 过渡 run）的完全相同 xAOD 事例上进行 `(run, eventID)` 逐事件匹配（输出：`validation_v1/validation_summary.json`）：
+![Veto St2 - VetoNu Fig. 13 Style All Periods](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig01_veto2_vetonu_fig13_all_periods.png)
 
-| 验证样本 | Ben 参考目录 | 匹配事例数 / 有效时间窗事例数 | `fallback_mode` 一致率 | 精确覆写模式 `\|Δq0\| < 10⁻³ pC` 比例 | 精确覆写模式 `max \|Δq0\|` [pC] | `valid` 分支一致率 (`< 10⁻³ pC`) | 自动模式 `med \|Δq0\|` [pC] / `< 1 pC` 比例 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `2022_008090` (`r0021`) | `waveforms-2022` | `5000 / 548` | **`100.00%`** (`5000/5000`) | **`100.00%`** | `7.6 × 10⁻⁵` | **`100.00%`** | `0.000` / `99.82%` |
-| `2023_011703` (`r0021`) | `Waveforms-2023` | `5000 / 626` | N/A（旧版无该分支） | **`100.00%`** | `1.22 × 10⁻⁴` | N/A | `0.000` / `99.36%` |
-| `2024_pre_015387` (`r0022`) | `waveforms-5FilesPerChunk` | `5000 / 2714` | N/A | **`100.00%`** | `3.66 × 10⁻⁴` | N/A | `0.000` / `99.82%` |
-| `2024_cn_early_015838` (`r0022`) | `WaveformsCaloNuPeriod` | `5000 / 3036` | N/A | **`100.00%`**（覆写 `35.783`） | `3.81 × 10⁻⁴` | N/A | 注：`15838` 实为 Dig1 Veto (`33.06 ns`)，自动模式 `33.165` 更准确 |
-| `2024_CaloNu_015849` (`r0022`) | `WaveformsCaloNuPeriod` | `8000 / 4837` | N/A | **`99.98%`**（`100% < 1.1×10⁻³`） | `1.10 × 10⁻³` | N/A | **`0.000`** / **`100.00%`** |
-| `2024_post_016929` (`r0022`) | `waveforms_postCaloNu` | `5000 / 3008` | **`100.00%`** (`5000/5000`) | **`100.00%`** | `4.88 × 10⁻⁴` | **`100.00%`** | `0.000` / `99.83%` |
+![2024 CaloNu status==512 Decomposition](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig02_caloNu_status512_decomposition.png)
 
-### 3.3 修复版（`fix_v1` 自动模式）vs 未改基线（`latest 7fd40df8`）关键改进数据
+![Preshower Dig1 - VetoNu All Periods](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig03_preshower_dig1_vetonu_all_periods.png)
 
-| 测试样本与子集 | 事例数 `N` | `Raw` 中位数 [pC] | 基线 `latest` 中位数 [pC] | 修复 `fix_v1` 中位数 [pC] | 基线 `< 40 pC` 误判率 | 修复 `< 40 pC` 误判率 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `2024_CaloNu_015849`：`Veto2 st==512` 且无好 Preshower | `299` | `77.65` | `77.65`（丢弃 `512`，退化为 raw） | **`66.02`**（恢复 Veto2 `+16 ns`） | — | — |
-| `2024_CaloNu_015849`：`Veto2 st==0` muon | `2056` | — | 较修复偏高 `+1.87 pC`（`88.5%` 偏差 `>1 pC`） | 与 Ben 参考 `0.000 pC` 对齐 | — | — |
-| `2025_20012`：Preshower fallback muon（`PS0,1` 失效、仅 `PS2,3`） | `67` | — | `11.30` | **`87.10`** | **`58.21%`** | **`1.49%`** |
-| `2025_20481`：Preshower fallback muon（4-PMT 正常） | `67` | — | `0.18` | **`87.57`** | **`95.52%`** | **`0.00%`** |
-| `2026_22404`：Preshower fallback muon（4-PMT 正常） | `135` | — | `0.33` | **`92.26`** | **`97.04%`** | **`0.00%`** |
-| `2026_23176`：Preshower fallback muon（2026 后期质子束） | `97` | — | `0.23` | **`87.40`** | **`91.75%`** | **`0.00%`** |
-| **2025–2026 Preshower fallback muon 合并** | **`366`** | **`102.82`** | **`0.49`** | **`88.81`** | **`88.25%`**（`323/366`） | **`0.27%`**（`1/366`） |
-| `MC24_PG_100044`（穿行 muon，`fallback > 0`） | `2976` | `103.32` | `87.02` | `87.02` | `0.00%` | `0.00%` |
-| `MC24_Genie_200139`（中微子相互作用，`fallback > 0`） | `718` | `<40 pC: 94.57%` | `<40 pC: 95.82%` | `<40 pC: 95.82%` | — | — |
+![2025-2026 Preshower Dig2 Extra Offset and 4-PMT Alignment](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig04_preshower_dig2_extra_offset_2025_2026.png)
 
-### 3.4 关键验证图表
+![Station Localtime vs Triggertime Evolution](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig05_station_localtime_and_triggertime_evolution.png)
 
-![2022-2026 & MC Scintillator Timing Timeline](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/figures/fig01_timing_diff_timeline_2022_2026_mc.png)
+![Per-Run Stability Timeline 2022-2026](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/figures/fig06_per_run_stability_timeline_2022_2026.png)
 
-![2nd-Digitizer status==512 +16 ns Alignment](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/figures/fig02_status512_16ns_alignment.png)
+---
 
-![Event-by-Event Parity vs Ben Wilson Reference Files](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/figures/fig03_parity_vs_ben_wilson.png)
+### 3.2 端到端编译验证：2022–2026 数据与 Ben Wilson 5 套参考目录对标
 
-![Fix vs Baseline Smoking Guns across 2024 CaloNu, 2025-2026, and MC24](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/figures/fig04_fix_vs_baseline_smoking_guns.png)
+使用 [validate_reduced_charge_all_periods.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/scripts/validate_reduced_charge_all_periods.py)（16 并发运行 41 个真实 `faser_ntuple_maker.py` 作业，全部 `rc = 0`，耗时 `663.0 s`；汇总：[validation_summary_v2.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/validation_summary_v2.json)）：
 
-### 3.5 执行命令、单元测试与产物清单
+| 真实数据样本 | Python `--timingPreset` | 事例数 | vs Ben 参考目录 `\|Δq0\| < 10⁻³ pC` / `fallback` 一致率 | Preshower fallback muon (`N`)：基线 vs 重构中位数 [pC] | Preshower fallback `< 40 pC` 误判率（基线 -> 重构） | `Veto2 st==512` muon (`N`)：基线 vs 重构中位数 [pC] |
+| --- | --- | ---: | --- | --- | --- | --- |
+| `2022_008090` (`r0021`) | `data_default` | 5,000 | **`100.00%`** (`max 7.6e-5`) / **`100.00%`** | `N=0` | — | `N=0` |
+| `2023_011703` (`r0021`) | `data_default` | 5,000 | **`100.00%`** (`max 1.2e-4`) / N/A | `N=9`: `78.01` vs `78.01` | `0.00%` -> `0.00%` | `N=0` |
+| `2024_pre_015387` (`r0022`) | `data_default` | 5,000 | **`100.00%`** (`max 3.7e-4`) / N/A | `N=128`: `97.70` vs `97.70` | `0.00%` -> `0.00%` | `N=0` |
+| `2024_early_015838` (`r0022`) | `data_default` (覆写 `35.783/53.512` 验证 Ben) | 5,000 | 覆写 **`100.00%`** (`max 3.8e-4`)；`data_default` 匹配真实 Dig1 `33.15 ns` | `N=146`: `91.57` vs `91.57` | `0.00%` -> `0.00%` | `N=0` |
+| `2024_CaloNu_015849` (`r0022`) | `data_caloNu` | 8,000 | **`99.98%`** (`100% < 1.1e-3`) / N/A | `N=247`: `91.49` vs `91.49` | `0.00%` -> `0.00%` | **`N=620`**: `89.28` -> **`83.86`**（恢复 `512` +16 ns） |
+| `2024_post_016929` (`r0022`) | `data_default` | 5,000 | **`100.00%`** (`max 4.9e-4`) / **`100.00%`** | `N=101`: `86.88` vs `86.88` | `0.00%` -> `0.00%` | `N=0` |
+| `2025_20012` (`r0023`) | `data_2025` (`13.27 / 3.97`) | 8,000 | 无 Ben 参考 | **`N=67`**: `11.30` -> **`87.78`** | **`58.21%`** -> **`1.49%`** | `N=0` |
+| `2025_20481` (`p0014`) | `data_2025` (`13.27 / 3.97`) | 8,000 | 无 Ben 参考 | **`N=67`**: `0.18` -> **`87.57`** | **`95.52%`** -> **`0.00%`** | `N=0` |
+| `2026_22404` (`p0015`) | `data_2026` (`13.27 / 3.64`) | 8,000 | 无 Ben 参考 | **`N=135`**: `0.33` -> **`92.26`** | **`97.04%`** -> **`0.00%`** | `N=0` |
+| `2026_23176` (`p0015`) | `data_2026` (`13.27 / 3.64`) | 8,000 | 无 Ben 参考 | **`N=97`**: `0.23` -> **`87.40`** | **`91.75%`** -> **`0.00%`** | `N=0` |
+| `MC24_Muon_100044` (`s0013`) | `mc` (`27.21 / 51.41 / 0.0`) | 3,000 | — | `N=165`: `89.52` vs `89.52` | `0.00%` -> `0.00%` | `N=0` |
+
+---
+
+### 3.3 端到端编译验证：`FASER_FaserMC.pdf` 全部 9 个 Official Default-Flux GENIE 中微子 MC Run
+
+在 `/eos/experiment/fasernu-data0/faser/sim/mc24/genie/<run>/rec/{s0014,s0015}/` 中对三类几何/交叉角下的全部 9 个 default flux prediction run 各处理 `3,000` 个完整 xAOD 事例（共 `27,000` 事例，Python `--isMC` 自动选择 `--timingPreset mc`：`Veto2-VN = 27.21 ns`, `PS-VN = 51.41 ns`, `Dig2Extra = 0.0 ns`）。下游中微子事例选择：`longTracks > 0 && Veto20/21_raw_charge > 40 pC && Preshower0/1_raw_charge > 2.5 pC`：
+
+| MC24 GENIE 类别（`FASER_FaserMC.pdf`） | Run 编号与产生模式 | 选中事例 `N_sel` | `Veto2` 饱和占比 (`status & 4`) | Timing 来源 `fb1(Veto2)` / `fb2(PS)` / `fb0` | `raw >= 40 pC` 背散射事例数 | `reduced < 30 pC` 挽救事例数（挽救率） | `pass raw<40` -> `pass red<30` | `max \|q_fix - q_base\|` [pC] |
+| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| **2022/23 Crossing angle** (`s0014`, p. 11) | `200082` (`epos_pi`) | 326 | `35.9%` | `230 / 95 / 1` (`fb2 = 29.1%`) | 64 | `23` (**`35.9%`**) | `262 -> 285` | `0.0001` |
+| **2022/23 Crossing angle** (`s0014`, p. 11) | `200083` (`epos_k`) | 311 | `50.5%` | `167 / 142 / 2` (`fb2 = 45.7%`) | 78 | `25` (**`32.1%`**) | `233 -> 258` | `0.0001` |
+| **2022/23 Crossing angle** (`s0014`, p. 11) | `200089` (`charm_central`) | 186 | `59.7%` | `85 / 101 / 0` (`fb2 = 54.3%`) | 53 | `25` (**`47.2%`**) | `133 -> 158` | `0.0001` |
+| **2024 FaserNu geometry** (`s0014`, p. 13–14) | `200093` (`epos_pi`) | 334 | `38.3%` | `224 / 106 / 4` (`fb2 = 31.7%`) | 54 | `22` (**`40.7%`**) | `280 -> 302` | `0.0002` |
+| **2024 FaserNu geometry** (`s0014`, p. 13–14) | `200094` (`epos_k`) | 277 | `52.7%` | `153 / 124 / 0` (`fb2 = 44.8%`) | 72 | `27` (**`37.5%`**) | `205 -> 232` | `0.0001` |
+| **2024 FaserNu geometry** (`s0014`, p. 13–14) | `200100` (`charm_central`) | 187 | `54.6%` | `96 / 91 / 0` (`fb2 = 48.7%`) | 57 | `26` (**`45.6%`**) | `130 -> 156` | `0.0002` |
+| **2024 CaloNu geometry** (`s0015`, p. 15–16) | `200139` (`epos_pi`) | 238 | `55.0%` | `124 / 114 / 0` (`fb2 = 47.9%`) | 60 | `14` (**`23.3%`**) | `178 -> 192` | `0.0002` |
+| **2024 CaloNu geometry** (`s0015`, p. 15–16) | `200140` (`epos_k`) | 201 | `65.2%` | `83 / 116 / 2` (`fb2 = 57.7%`) | 58 | `9` (**`15.5%`**) | `143 -> 152` | `0.0002` |
+| **2024 CaloNu geometry** (`s0015`, p. 15–16) | `200146` (`charm_central`) | 127 | `72.4%` | `42 / 84 / 1` (`fb2 = 66.1%`) | 37 | `4` (**`10.8%`**) | `90 -> 94` | `0.0002` |
+
+#### 端到端验证主图（完整 3 图见 [validation_v2_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/validation_v2_report.pdf)）
+
+![End-to-End 2024 CaloNu and 2025-2026 Preshower Fallback Recovery](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/figV1_data_caloNu_and_2025_2026_recovery.png)
+
+![Official Default-Flux MC24 GENIE 9-Run Validation](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/figV2_genie_default_flux_9runs_validation.png)
+
+![Per-Run GENIE 9-Run Fallback and Backsplash Summary](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2/figures/figV3_genie_9runs_fallback_and_oob_summary.png)
+
+### 3.4 执行命令、回归测试与产物清单
 
 - **构建命令**：
   ```bash
+  source /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/cached_athena_env.sh
   python3 /eos/home-x/xcheng/FASER/geoRotation_test/scripts/build_fix_v1_ntuple.py \
-    --source /eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1 \
-    --latest /eos/home-x/xcheng/FASER/geoRotation_calypso_latest \
-    --output /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1 \
+    --output /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1_clean \
     --jobs 4
   ```
-- **端到端验证命令**：
+- **Fig. 13 真实数据时间差扫描与绘图**：
+  ```bash
+  source /afs/cern.ch/user/x/xcheng/cernbox/FASER/FASER_DQ_Analyis/setup.sh
+  python3 /eos/home-x/xcheng/FASER/geoRotation_test/analysis/waveform_timing_study.py --workers 22 --files-per-run 2 --runs-per-period 12
+  python3 /eos/home-x/xcheng/FASER/geoRotation_test/analysis/plot_waveform_timing_fig13.py
+  ```
+- **端到端验证与绘图**（自动清理临时 `.root` 输出）：
   ```bash
   python3 /eos/home-x/xcheng/FASER/geoRotation_test/scripts/validate_reduced_charge_all_periods.py \
-    --overlay /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1 \
+    --overlay /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1_clean \
     --env-script /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/cached_athena_env.sh \
-    --outdir /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v1 \
-    --workers 10
+    --outdir /eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v2 \
+    --workers 16
+  python3 /eos/home-x/xcheng/FASER/geoRotation_test/analysis/plot_validation_v2.py
   ```
-- **回归单测**：`python3 -m unittest tests/test_reduced_charge_logic.py -v`（6/6 通过）。
-- **紧凑产物路径**（总计 `20 MB`，已清理临时验证 ROOT）：
-  - [timing_scan_phys.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_scan_phys.json)
-  - [timing_scan_xaod.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_scan_xaod.json)
-  - [validation_summary.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v1/validation_summary.json)
-  - [software.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1/software.json)
-  - [waveform_reduced_charge_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/figures/waveform_reduced_charge_report.pdf)
+- **回归单元测试**：`python3 -m unittest discover -s tests -v`（全部 `121/121` 通过，其中 [test_reduced_charge_logic.py](file:///eos/home-x/xcheng/FASER/geoRotation_test/tests/test_reduced_charge_logic.py) 显式断言 C++ 中零硬编码 run 编号并校验全部 Python 预设与边界条件）。
 
 ---
 
 ## 4. 阶段性结论
 
 ### 已由实测数据证实的事实
-1. 修复后的 `NtupleDumper` 在 `geoRotation_calypso_latest_fix_v1`（`a4ecefea`）中编译通过且在 2022–2026 与 MC24 全部 12 组真实 xAOD 样本上零错误运行。
-2. 在精确时间差覆写下，与 Ben Wilson 5 套参考目录的逐事件数值一致性达到 **`100.00%`**（`< 10⁻³ pC`，2024 CaloNu 15849 为 `99.98% < 10⁻³ pC`、`100.00% < 1.1×10⁻³ pC`），`fallback_mode` 与 `valid` 分支一致率均为 **`100.00%`**。
-3. 在 2024 CaloNu（`15845–16927`），修复版正确恢复全部 `status == 512`（`+16.0 ns`）的 Veto St2（`ch 22, 23`）击中，消除 `status == 0` 事例 `+1.87 pC` 系统偏置及无好 Preshower 时的 raw-charge 退化；同时自动区分 `15821–15844`（Veto 仍在 Dig1 `ch 6, 7`，实测 `33.06 ns`）。
-4. 在 2025–2026 数据中，通过引入 Preshower 新时间差（Dig1 `13.28 ns`）与 Dig2 通道相对偏移（`+3.97 ns`，即 `17.25 ns`），即使在 `19480–20080` 期间 `PS0,1` 发生 `GFIT_FAILED` 仅剩 `PS2,3` 时也能保持无偏；366 个 2025–2026 Preshower-fallback 穿行 muon 的 `< 40 pC` 误判率由基线的 **`88.25%`** 降至 **`0.27%`**，中位数电荷由 `0.49 pC` 恢复至 **`88.81 pC`**。
-5. 通过通道映射（`4 -> 0, 5 -> 1`）与空波形保护，彻底消除了原代码在 `VetoNuWaveformHits->size() >= 3`（实测占比 `0.5%–2.4%`）时的数组越界未定义行为。
+1. **零硬编码 C++ 架构**：`NtupleDumperAlg.{h,cxx}`（`7729ddf0`）不包含任何 run 编号分支，完全依靠 `xAOD::WaveformStatus::TIMING_SHIFTED (512)`、`SECONDARY (2)`、`IWaveformCableMappingTool`（`m_wave_map`）与标准 Gaudi `DoubleProperty` 工作；全部时期和 MC 时间差配置清晰集中于 Python `NtupleDumperConfig.REDUCED_CHARGE_TIMING_PRESETS` 与 `faser_ntuple_maker.py` CLI 参数，代码简洁易维护。
+2. **4,040 万真实 `GoodTracks` 穿行 muon 的 Fig. 13 实测完全解释了三项参数的必要性**：
+   - `VetoVetoNuTimeDifference`：2022–2024 pre/early/post 及 2025–2026（Dig1 `ch 6,7`）稳定在 `33.08–33.23 ns`；2024 CaloNu（Dig2 `ch 22,23`）除 `22.3%` 事例出现 `-16.0 ns`（`status == 512`）跳变外，校正后仍有 **`+2.69 ns`** 跨板固定偏移（`35.87 ns`，对应 `data_caloNu: 35.783 ns`）；MC24 因 `WaveformDigitisationTool` 已扣 TOF 并按 CB 模板中心（`825 vs 800 ns`）数字化而位于 `27.27–27.28 ns`（对应 `mc: 27.21 ns`）。
+   - `PreshowerVetoNuTimeDifference`：2022–2024 稳定于 `53.49–53.62 ns`，MC24 为 `51.36 ns`；2025–2026 升级新 PMT/电缆后整体前移 **`-40.3 ns`** 至 **`13.27 ns`**（Dig1 `ch 12,13`）。
+   - `PreshowerDig2ExtraOffset`：2025–2026 新增底部 Dig2 `ch 24,25` 在 `+16.0 ns` 校正后仍晚于 Dig1 `ch 12,13` 约 **`+3.97 ns`**（2025）与 **`+3.64 ns`**（2026，受 `22408–23172` 中 `PS3_ok` 降至 `1.2%` 影响）；扣除该偏移后 4 路 Preshower 均值峰值重新稳定收敛至 `13.21–13.31 ns`。
+3. **2022–2026 真实数据端到端验收**：与 Ben Wilson 5 套参考目录逐事件一致率达 **`100.00%`**（`15849` 为 `99.98% < 10⁻³ pC`, `100.00% < 1.1×10⁻³ pC`）；2025–2026 的 366 个 Preshower-fallback 穿行 muon 的 `< 40 pC` 误判率从基线的 **`88.25%`** 降至 **`0.27%`**（中位数从 `0.49 pC` 恢复至 **`87.4–92.3 pC`**）。
+4. **9 个官方默认通量 GENIE MC 端到端验收**：`2022/23 Crossing angle`（`200082/83/89`）、`2024 FaserNu`（`200093/94/100`）与 `2024 CaloNu`（`200139/40/46`）共 `27,000` 事例全部零错误运行，与基线在浮点精度内严格闭合（`max |Δq| ≤ 0.0002 pC`）；同时实测揭示 `35.9%–72.4%` 的选中中微子事例因前向簇射使 `Veto2` 饱和而必须依赖 Preshower fallback（`29.1%–66.1%`），并证实 `reduced_charge < 30 pC` 可在 FaserNu 几何挽救 **`32%–47%`**、在 CaloNu 几何挽救 **`11%–23%`** 的 `raw >= 40 pC` 背散射事例。
 
-### 说明与边界条件（非推测，明确标注适用范围）
-1. `run == 18193`（2025 启动单 run 调试期）在 EOS 公开 `phys`/`rec` 中无含穿行 muon 的文件，其自动查找值（`Veto2 = 35.783 ns`, `PS = 25.28 ns`）系依据 `CABP200.db` 与 `ALLP200.db` 中 `TriggerOffset` 跳变（`-28 ns` vs `-40 ns`）推导，标注为未直接测量项。
-2. `MC22` 旧数字化（`WAVE-Digitization-01`，`cb_mean = 815/815/846 ns`）的实测时间差为 `2.34 / 32.44 ns`，与 `MC24`（`27.21 / 51.41 ns`）不同；当前自动模式默认对应 `MC24`，若处理历史 `MC22` 样本可通过 `--vetoVetoNuTimeDiff 2.34 --preshowerVetoNuTimeDiff 32.44` 显式指定。
-3. 2026 末期 `run >= 23359` 实测 `VetoNu ch 4, 5` 无束流信号（`q_p95 < 0.8 pC`，疑似 VetoNu 断高压或移除），不属于软件缺陷。
+### 适用边界说明
+- `2025 p0013` 早期生产文件中 `Preshower0/1` 存在 `84%–92%` 的 `GFIT_FAILED`（重建配置缺陷，已在 `p0014` 中完全消除）；若在旧 `p0013` xAOD 上运行，因 `PS2/3`（Dig2 `ch 24,25`）保持正常且通过 `PreshowerDig2ExtraOffset = 3.97 ns` 对齐，fallback 仍保持无偏。
+- 历史 `MC22`（`WAVE-Digitization-01`，`cb_mean` 均为 `815 ns`）不适用 `MC24` 预设，可通过 `--vetoVetoNuTimeDiff 2.34 --preshowerVetoNuTimeDiff 32.44` 从 Python 显式传入。
 
 ---
 
 ## 5. 下一步计划
 
-1. 若将 `fix/latest-seed-and-momentum-v1` 的 `FaserActsKalmanFilter` 与 `NtupleDumper` 变更合并至主干生产构建，可在完整 `geoRotation_calypso_latest_fix_v1` worktree 中执行一次全量 `build_local.sh` 与 `verify_local.sh` 集成验收。
-2. 如需对 2025–2026 全年大规模样本批量生成带新 `VetoNu{0,1}_reduced_charge` 与 `VetoNu_reduced_charge_fallback` 分支的 PHYS ntuple，可直接通过 HTCondor 调用 `software_ntuple_fix_v1`（无需任何手工时间差参数）。
+1. 在批量生产（HTCondor）调用 `faser_ntuple_maker.py` 时，按数据时期在提交脚本中显式传入 `--timingPreset`（`data_default` / `data_caloNu` / `data_2025` / `data_2026`，MC 自动使用 `mc`），与 `El9CalypsoForWaveForm/submit_waveform_time_range_cfg.py` 的提交方式保持完全一致。
+2. 若将 `fix/latest-seed-and-momentum-v1` 的跟踪修复（`e47b85fd`）与本次 `NtupleDumper` 改进（`7729ddf0`）合并进入主干构建，可在完整 worktree 中执行一次 `build_local.sh` 与 `verify_local.sh` 集成验收。

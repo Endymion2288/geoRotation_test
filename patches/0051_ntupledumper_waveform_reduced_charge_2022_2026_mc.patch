@@ -1,36 +1,127 @@
+diff --git a/PhysicsAnalysis/NtupleDumper/python/NtupleDumperConfig.py b/PhysicsAnalysis/NtupleDumper/python/NtupleDumperConfig.py
+index af643226..3bc84b4c 100644
+--- a/PhysicsAnalysis/NtupleDumper/python/NtupleDumperConfig.py
++++ b/PhysicsAnalysis/NtupleDumper/python/NtupleDumperConfig.py
+@@ -7,7 +7,58 @@ from MagFieldServices.MagFieldServicesConfig import MagneticFieldSvcCfg
+ from FaserActsGeometry.ActsGeometryConfig import ActsTrackingGeometryToolCfg
+ from WaveformConditionsTools.WaveformCableMappingConfig import WaveformCableMappingCfg
+ 
+-def NtupleDumperAlgCfg(flags, OutName, **kwargs):
++# Measured throughgoing-muon station localtime differences (in ns) for reduced VetoNu charge.
++# Period- and MC-specific timing offsets live in Python configuration rather than C++ so they
++# can be updated or overridden via CLI / job options without recompiling C++.
++REDUCED_CHARGE_TIMING_PRESETS = {
++    # 2022, 2023, 2024 pre-CaloNu (including 15821-15844), and 2024 post-CaloNu
++    "data_default": {
++        "VetoVetoNuTimeDifference": 33.165,
++        "PreshowerVetoNuTimeDifference": 53.625,
++        "PreshowerDig2ExtraOffset": 0.0,
++    },
++    # 2024 CaloNu period (runs 15845-16927): Veto St2 moved to Digitizer 2 (ch 22, 23)
++    "data_caloNu": {
++        "VetoVetoNuTimeDifference": 35.783,
++        "PreshowerVetoNuTimeDifference": 53.512,
++        "PreshowerDig2ExtraOffset": 0.0,
++    },
++    # 2025 upgraded 4-PMT Preshower: Dig1 (ch 12,13) at 13.27 ns; Dig2 (ch 24,25) +3.97 ns later
++    "data_2025": {
++        "VetoVetoNuTimeDifference": 33.165,
++        "PreshowerVetoNuTimeDifference": 13.27,
++        "PreshowerDig2ExtraOffset": 3.97,
++    },
++    # 2026 upgraded 4-PMT Preshower: Dig1 (ch 12,13) at 13.27 ns; Dig2 (ch 24,25) +3.64 ns later
++    "data_2026": {
++        "VetoVetoNuTimeDifference": 33.165,
++        "PreshowerVetoNuTimeDifference": 13.27,
++        "PreshowerDig2ExtraOffset": 3.64,
++    },
++    # MC24 (2022/23, 2024 FaserNu, and 2024 CaloNu geometries; WaveformDigitisationTool)
++    "mc": {
++        "VetoVetoNuTimeDifference": 27.21,
++        "PreshowerVetoNuTimeDifference": 51.41,
++        "PreshowerDig2ExtraOffset": 0.0,
++    },
++}
++
++
++def getReducedChargeTimingKwargs(preset=None, **overrides):
++    """Return NtupleDumperAlg timing kwargs from a named preset plus optional float overrides."""
++    resolved = {}
++    if preset is not None:
++        if preset not in REDUCED_CHARGE_TIMING_PRESETS:
++            valid = ", ".join(sorted(REDUCED_CHARGE_TIMING_PRESETS))
++            raise ValueError(f"Unknown timingPreset '{preset}'. Valid presets: {valid}")
++        resolved.update(REDUCED_CHARGE_TIMING_PRESETS[preset])
++    for key, value in overrides.items():
++        if value is not None:
++            resolved[key] = value
++    return resolved
++
++
++def NtupleDumperAlgCfg(flags, OutName, timingPreset=None, **kwargs):
+     # Initialize GeoModel
+     from FaserGeoModel.FaserGeoModelConfig import FaserGeometryCfg
+     acc = FaserGeometryCfg(flags)
+@@ -22,9 +73,12 @@ def NtupleDumperAlgCfg(flags, OutName, **kwargs):
+ 
+     actsExtrapolationTool = CompFactory.FaserActsExtrapolationTool("FaserActsExtrapolationTool")
+     actsExtrapolationTool.MaxSteps = 10000
+-    actsExtrapolationTool.TrackingGeometryTool = actsTrackingGeometryTool 
+-    
+-    NtupleDumperAlg = CompFactory.NtupleDumperAlg("NtupleDumperAlg",**kwargs)
++    actsExtrapolationTool.TrackingGeometryTool = actsTrackingGeometryTool
++
++    alg_kwargs = getReducedChargeTimingKwargs(timingPreset)
++    alg_kwargs.update(kwargs)
++
++    NtupleDumperAlg = CompFactory.NtupleDumperAlg("NtupleDumperAlg", **alg_kwargs)
+     NtupleDumperAlg.ExtrapolationTool = actsExtrapolationTool
+     acc.addEventAlgo(NtupleDumperAlg)
+ 
+@@ -33,4 +87,3 @@ def NtupleDumperAlgCfg(flags, OutName, **kwargs):
+     acc.addService(thistSvc)
+ 
+     return acc
+-
 diff --git a/PhysicsAnalysis/NtupleDumper/scripts/faser_ntuple_maker.py b/PhysicsAnalysis/NtupleDumper/scripts/faser_ntuple_maker.py
-index f2ee364c..f32e1206 100755
+index f2ee364c..ee4d298c 100755
 --- a/PhysicsAnalysis/NtupleDumper/scripts/faser_ntuple_maker.py
 +++ b/PhysicsAnalysis/NtupleDumper/scripts/faser_ntuple_maker.py
-@@ -87,6 +87,15 @@ parser.add_argument("--fluka", action='store_true',
+@@ -87,6 +87,18 @@ parser.add_argument("--fluka", action='store_true',
  parser.add_argument("--genie", action='store_true',
                      help="Add Genie weights to ntuple")
  
++parser.add_argument("--timingPreset", default="",
++                    choices=["", "data_default", "data_caloNu", "data_2025", "data_2026", "mc"],
++                    help="Reduced VetoNu charge timing preset (default: 'mc' if --isMC else 'data_default')")
 +parser.add_argument("--vetoVetoNuTimeDiff", type=float, default=None,
-+                    help="Override auto run/MC Veto St2 - VetoNu time difference (ns)")
++                    help="Override Veto St2 - VetoNu localtime difference (ns)")
 +parser.add_argument("--preshowerVetoNuTimeDiff", type=float, default=None,
-+                    help="Override auto run/MC Preshower (Dig1) - VetoNu time difference (ns)")
++                    help="Override Preshower (Dig1) - VetoNu localtime difference (ns)")
 +parser.add_argument("--preshowerDig2ExtraOffset", type=float, default=None,
-+                    help="Override auto Dig2 Preshower extra localtime offset relative to Dig1 (ns)")
++                    help="Override 2nd-digitizer Preshower extra localtime offset relative to Dig1 (ns)")
 +parser.add_argument("--reducedChargeWindow", type=float, default=None,
 +                    help="Override reduced VetoNu charge integration window (default: 35.0 ns)")
 +
  
  args = parser.parse_args()
  
-@@ -380,10 +389,20 @@ else:
+@@ -379,11 +391,22 @@ else:
+     grl_kwargs['UseIFT'] = args.useIFT
      
  # algorithm
- from NtupleDumper.NtupleDumperConfig import NtupleDumperAlgCfg
-+timing_kwargs = {}
-+if args.vetoVetoNuTimeDiff is not None:
-+    timing_kwargs['VetoVetoNuTimeDifference'] = args.vetoVetoNuTimeDiff
-+if args.preshowerVetoNuTimeDiff is not None:
-+    timing_kwargs['PreshowerVetoNuTimeDifference'] = args.preshowerVetoNuTimeDiff
-+if args.preshowerDig2ExtraOffset is not None:
-+    timing_kwargs['PreshowerDig2ExtraOffset'] = args.preshowerDig2ExtraOffset
-+if args.reducedChargeWindow is not None:
-+    timing_kwargs['ReducedChargeIntegrationTime'] = args.reducedChargeWindow
+-from NtupleDumper.NtupleDumperConfig import NtupleDumperAlgCfg
++from NtupleDumper.NtupleDumperConfig import NtupleDumperAlgCfg, getReducedChargeTimingKwargs
++timing_preset = args.timingPreset if args.timingPreset else ("mc" if args.isMC else "data_default")
++timing_kwargs = getReducedChargeTimingKwargs(
++    timing_preset,
++    VetoVetoNuTimeDifference=args.vetoVetoNuTimeDiff,
++    PreshowerVetoNuTimeDifference=args.preshowerVetoNuTimeDiff,
++    PreshowerDig2ExtraOffset=args.preshowerDig2ExtraOffset,
++    ReducedChargeIntegrationTime=args.reducedChargeWindow,
++)
++print(f"Reduced-Charge Timing Preset = {timing_preset}")
++print(f"Reduced-Charge Timing Kwargs = {timing_kwargs}")
 +
  if args.isMC:
 -    acc.merge(NtupleDumperAlgCfg(configFlags, outfile, VetoVetoNuTimeDifference=27.21, PreshowerVetoNuTimeDifference=51.41, **mc_kwargs))
@@ -42,7 +133,7 @@ index f2ee364c..f32e1206 100755
  from AthenaConfiguration.ComponentFactory import CompFactory
  AthenaEventLoopMgr = CompFactory.AthenaEventLoopMgr()
 diff --git a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
-index d5594078..e0432019 100644
+index d5594078..3ecd0bda 100644
 --- a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
 +++ b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx
 @@ -24,7 +24,9 @@
@@ -55,7 +146,7 @@ index d5594078..e0432019 100644
  #include <cmath>
  #include <TH1F.h>
  #include <numeric>
-@@ -439,6 +441,10 @@ StatusCode NtupleDumperAlg::initialize()
+@@ -439,8 +441,18 @@ StatusCode NtupleDumperAlg::initialize()
    // Now defined on first event so we can use cable mapping tool
    m_tree->Branch("VetoNu0_reduced_charge", &m_vetonu_reduced_charge[0]);
    m_tree->Branch("VetoNu1_reduced_charge", &m_vetonu_reduced_charge[1]);
@@ -65,8 +156,16 @@ index d5594078..e0432019 100644
 +  m_tree->Branch("VetoNu_expected_localtime", &m_vetonu_expected_localtime, "VetoNu_expected_localtime/F");
    m_tree->Branch("ScintHit", &m_scintHit);
  
++  ATH_MSG_INFO("Reduced VetoNu charge configuration: "
++               << "VetoVetoNuTimeDifference=" << m_veto_vetoNu_timeDiff.value()
++               << " ns, PreshowerVetoNuTimeDifference=" << m_preshower_vetoNu_timeDiff.value()
++               << " ns, PreshowerDig2ExtraOffset=" << m_preshower_dig2_extraOffset.value()
++               << " ns, ReducedChargeIntegrationTime=" << m_reducedChargeIntegrationTime.value() << " ns");
++
  
-@@ -1544,11 +1550,38 @@ StatusCode NtupleDumperAlg::execute(const EventContext &ctx) const
+   //TRACKER
+   addBranch("nClusters0",&m_station0Clusters);
+@@ -1544,11 +1556,38 @@ StatusCode NtupleDumperAlg::execute(const EventContext &ctx) const
    // Also blind events with two tracks that don't leave signal in the veto signals.
    // Only blind colliding BCIDs (+/- 1)
  
@@ -108,34 +207,26 @@ index d5594078..e0432019 100644
          blinded_event = true;
        }
      }
-@@ -1583,61 +1616,139 @@ StatusCode NtupleDumperAlg::execute(const EventContext &ctx) const
-     }
+@@ -1584,60 +1623,97 @@ StatusCode NtupleDumperAlg::execute(const EventContext &ctx) const
    }
  
--  // Calculation of the reduced VetoNu charge
--  float vetoLocalTime = NaN;
-+  // Calculation of the reduced VetoNu charge (supports 2022-2026 data including CaloNu & 4-PMT Preshower, and MC)
-+  std::list<int> mappedVeto2Channels;
-   if (m_wave_map.contains(std::string("veto2"))) {
+   // Calculation of the reduced VetoNu charge
++  // Channel lists come from IWaveformCableMappingTool (m_wave_map) with no hardcoded run numbers;
++  // period/MC timing differences are supplied via Python job options.
+   float vetoLocalTime = NaN;
+-  if (m_wave_map.contains(std::string("veto2"))) {
 -    std::list<int> vetoChannels = m_wave_map[std::string("veto2")];
 -    vetoLocalTime = get_mean_scintillator_time(vetoChannels, *vetoContainer);
-+    mappedVeto2Channels = m_wave_map[std::string("veto2")];
++  if (vetoContainer.isValid() && m_wave_map.contains(std::string("veto2"))) {
++    const std::list<int> &veto2Channels = m_wave_map[std::string("veto2")];
++    vetoLocalTime = get_mean_scintillator_time(veto2Channels, *vetoContainer, 0.0);
    }
 -  // Veto time might be nan if the waveform amplitude overflows (e.g. if there is a neutrino
 -  //  interaction just before). Use preshower time instead.
--  float preshowerLocalTime = NaN;
-+  std::list<int> veto2Channels = mappedVeto2Channels;
-+  if (!veto2Channels.empty() || !m_wave_map.contains(std::string("veto"))) {
-+    // Expand Veto St2 channel list across 2022-2026 (Dig1: 6,7; CaloNu/Dig2: 22,23)
-+    for (int ch : {6, 7, 22, 23}) {
-+      if (std::find(veto2Channels.begin(), veto2Channels.end(), ch) == veto2Channels.end()) {
-+        veto2Channels.push_back(ch);
-+      }
-+    }
-+  }
-+
-+  std::list<int> preshowerChannels;
-   if (m_wave_map.contains(std::string("preshower"))) {
++  // Veto time might be NaN if the waveform amplitude overflows (e.g. if there is a neutrino
++  // interaction just before). Fall back to Preshower time instead.
+   float preshowerLocalTime = NaN;
+-  if (m_wave_map.contains(std::string("preshower"))) {
 -    std::list<int> preshowerChannels = m_wave_map[std::string("preshower")];
 -    preshowerLocalTime = get_mean_scintillator_time(preshowerChannels, *preshowerContainer);
 -  }
@@ -156,17 +247,10 @@ index d5594078..e0432019 100644
 -      expVetoNuLocalTime = vetoLocalTime - m_veto_vetoNu_timeDiff;
 -    } else {
 -      expVetoNuLocalTime = preshowerLocalTime - m_preshower_vetoNu_timeDiff;
-+    preshowerChannels = m_wave_map[std::string("preshower")];
-+  }
-+  if (preshowerChannels.empty() ||
-+      std::find(preshowerChannels.begin(), preshowerChannels.end(), 12) != preshowerChannels.end() ||
-+      std::find(preshowerChannels.begin(), preshowerChannels.end(), 13) != preshowerChannels.end()) {
-+    // Expand Preshower channel list across 2022-2026 (Dig1 top: 12,13; 2025-2026 Dig2 bottom: 24,25)
-+    for (int ch : {12, 13, 24, 25}) {
-+      if (std::find(preshowerChannels.begin(), preshowerChannels.end(), ch) == preshowerChannels.end()) {
-+        preshowerChannels.push_back(ch);
-+      }
-+    }
++  if (preshowerContainer.isValid() && m_wave_map.contains(std::string("preshower"))) {
++    const std::list<int> &preshowerChannels = m_wave_map[std::string("preshower")];
++    preshowerLocalTime = get_mean_scintillator_time(
++        preshowerChannels, *preshowerContainer, m_preshower_dig2_extraOffset);
 +  }
 +
 +  std::vector<int> vetoNuChannels;
@@ -181,42 +265,14 @@ index d5594078..e0432019 100644
 +    vetoNuChannels = {4, 5};
 +  }
 +
-+  double vetoVetoNuDiff = 0.0;
-+  double preshowerVetoNuDiff = 0.0;
-+  double preshowerDig2Extra = 0.0;
-+  resolveReducedChargeTiming(
-+      isMC, m_run_number, mappedVeto2Channels,
-+      vetoVetoNuDiff, preshowerVetoNuDiff, preshowerDig2Extra);
-+
-+  if (!m_logged_reduced_charge_timing) {
-+    ATH_MSG_INFO("Reduced VetoNu charge timing config (isMC=" << isMC
-+                 << ", run=" << m_run_number
-+                 << "): Veto2-VetoNu=" << vetoVetoNuDiff
-+                 << " ns, Preshower(Dig1)-VetoNu=" << preshowerVetoNuDiff
-+                 << " ns, PreshowerDig2Extra=" << preshowerDig2Extra
-+                 << " ns, integrationWindow=" << m_reducedChargeIntegrationTime.value() << " ns");
-+    m_logged_reduced_charge_timing = true;
-+  }
-+
-+  float vetoLocalTime = NaN;
-+  if (vetoContainer.isValid() && !veto2Channels.empty()) {
-+    vetoLocalTime = get_mean_scintillator_time(veto2Channels, *vetoContainer, 0.0);
-+  }
-+  // Veto time might be NaN if the waveform amplitude overflows (e.g. if there is a neutrino
-+  // interaction just before). Fall back to Preshower time instead.
-+  float preshowerLocalTime = NaN;
-+  if (preshowerContainer.isValid() && !preshowerChannels.empty()) {
-+    preshowerLocalTime = get_mean_scintillator_time(preshowerChannels, *preshowerContainer, preshowerDig2Extra);
-+  }
-+
 +  double expVetoNuLocalTime = NaN;
 +  m_vetonu_reduced_charge_fallback = 0;
 +  if (!std::isnan(vetoLocalTime)) {
 +    m_vetonu_reduced_charge_fallback = 1;
-+    expVetoNuLocalTime = static_cast<double>(vetoLocalTime) - vetoVetoNuDiff;
++    expVetoNuLocalTime = static_cast<double>(vetoLocalTime) - m_veto_vetoNu_timeDiff;
 +  } else if (!std::isnan(preshowerLocalTime)) {
 +    m_vetonu_reduced_charge_fallback = 2;
-+    expVetoNuLocalTime = static_cast<double>(preshowerLocalTime) - preshowerVetoNuDiff;
++    expVetoNuLocalTime = static_cast<double>(preshowerLocalTime) - m_preshower_vetoNu_timeDiff;
 +  }
 +
 +  // Default fallback to total raw charge for each VetoNu layer (safe if timing or raw waveform is unavailable)
@@ -292,7 +348,7 @@ index d5594078..e0432019 100644
        }
      }
    }
-@@ -2333,8 +2444,11 @@ NtupleDumperAlg::clearTree() const
+@@ -2333,8 +2409,11 @@ NtupleDumperAlg::clearTree() const
        m_calibrated_E_EM[ii]=0;
    }
    for (unsigned int ii=0; ii<2; ii++) {
@@ -305,89 +361,14 @@ index d5594078..e0432019 100644
  
    m_scintHit = 0;
  
-@@ -2628,21 +2742,111 @@ double NtupleDumperAlg::radius(const Acts::Vector3 &position) const {
+@@ -2628,21 +2707,36 @@ double NtupleDumperAlg::radius(const Acts::Vector3 &position) const {
    return std::sqrt(position.x() * position.x() + position.y() * position.y());
  }
  
 -// Calculate the mean time of all scintillators/channels in a station
-+// Resolve run- and MC-aware scintillator localtime differences (in ns) for reduced VetoNu charge.
-+// Any property explicitly configured above -900 ns overrides the automatic period lookup.
-+void NtupleDumperAlg::resolveReducedChargeTiming(
-+    bool isMC,
-+    unsigned int runNumber,
-+    const std::list<int> &veto2Channels,
-+    double &vetoVetoNuDiff,
-+    double &preshowerVetoNuDiff,
-+    double &preshowerDig2Extra) const {
-+  double defaultVetoDiff = 33.165;
-+  double defaultPreshowerDiff = 53.550;
-+  double defaultPreshowerDig2Extra = 0.0;
-+
-+  if (isMC) {
-+    // MC24 (WAVE-Digitization-02+): throughgoing-muon peaks 27.12-27.31 ns (Veto2-VetoNu)
-+    // and 51.33-51.39 ns (Preshower-VetoNu); keep exact canonical 27.21 / 51.41 ns.
-+    defaultVetoDiff = 27.21;
-+    defaultPreshowerDiff = 51.41;
-+    defaultPreshowerDig2Extra = 0.0;
-+  } else {
-+    const bool veto2OnDig2 =
-+        ((runNumber >= 15845U) && (runNumber < 16928U)) ||
-+        (runNumber == 18193U) ||
-+        (std::find(veto2Channels.begin(), veto2Channels.end(), 22) != veto2Channels.end()) ||
-+        (std::find(veto2Channels.begin(), veto2Channels.end(), 23) != veto2Channels.end());
-+
-+    if (veto2OnDig2) {
-+      // CaloNu period (runs 15845-16927) and 2025 startup run 18193: Veto St2 on Dig2 ch 22, 23
-+      defaultVetoDiff = 35.783;
-+    } else if (runNumber < 13847U) {
-+      // 2022-2023 data (single digitizer)
-+      defaultVetoDiff = 33.055;
-+    } else {
-+      // 2024 pre-CaloNu (incl. 15821-15844), 2024 post-CaloNu (16928-18192), 2025-2026 (18194+)
-+      defaultVetoDiff = 33.165;
-+    }
-+
-+    if (runNumber < 13847U) {
-+      // 2022-2023 data
-+      defaultPreshowerDiff = 53.490;
-+      defaultPreshowerDig2Extra = 0.0;
-+    } else if (runNumber < 15845U) {
-+      // 2024 pre-CaloNu & early-CaloNu (15821-15844)
-+      defaultPreshowerDiff = 53.550;
-+      defaultPreshowerDig2Extra = 0.0;
-+    } else if (runNumber < 16928U) {
-+      // 2024 CaloNu period (runs 15845-16927)
-+      defaultPreshowerDiff = 53.512;
-+      defaultPreshowerDig2Extra = 0.0;
-+    } else if (runNumber < 18193U) {
-+      // 2024 post-CaloNu
-+      defaultPreshowerDiff = 53.550;
-+      defaultPreshowerDig2Extra = 0.0;
-+    } else if (runNumber == 18193U) {
-+      // 2025 startup commissioning run (TriggerOffset -28 ns vs -40 ns)
-+      defaultPreshowerDiff = 25.280;
-+      defaultPreshowerDig2Extra = 3.970;
-+    } else {
-+      // 2025-2026 data (4-PMT Preshower: Dig1 top ch 12,13 at 13.28 ns; Dig2 bottom ch 24,25 at 17.25 ns)
-+      defaultPreshowerDiff = 13.280;
-+      defaultPreshowerDig2Extra = 3.970;
-+    }
-+  }
-+
-+  vetoVetoNuDiff = (m_veto_vetoNu_timeDiff.value() > -900.0)
-+      ? m_veto_vetoNu_timeDiff.value()
-+      : defaultVetoDiff;
-+  preshowerVetoNuDiff = (m_preshower_vetoNu_timeDiff.value() > -900.0)
-+      ? m_preshower_vetoNu_timeDiff.value()
-+      : defaultPreshowerDiff;
-+  preshowerDig2Extra = (m_preshower_dig2_extraOffset.value() > -900.0)
-+      ? m_preshower_dig2_extraOffset.value()
-+      : defaultPreshowerDig2Extra;
-+}
-+
 +// Calculate the mean corrected localtime of all good scintillator channels in a station.
 +// Accepts status == 0 and status == TIMING_SHIFTED (512), applying +16.0 ns for 2nd-digitizer
-+// shifted hits and optional Dig2 channel extra offset (used to align 2025-2026 Preshower ch 24,25 to ch 12,13).
++// shifted hits and optional Dig2 channel extra offset (configured via Python for 2025-2026 Preshower).
  float NtupleDumperAlg::get_mean_scintillator_time(
      const std::list<int> &channels,
 -    const xAOD::WaveformHitContainer &waveformContainer) const {
@@ -413,7 +394,7 @@ index d5594078..e0432019 100644
 +    if ((status & kTimingShiftedBit) != 0U) {
 +      t += 16.0;  // Required +16 ns correction for 2nd-digitizer TIMING_SHIFTED hits
 +    }
-+    if (hit->channel() >= 16) {
++    if (dig2ExtraOffset != 0.0 && hit->channel() >= 16) {
 +      t -= dig2ExtraOffset;
      }
 +    localTimeSum += t;
@@ -426,51 +407,45 @@ index d5594078..e0432019 100644
      return NaN;
    }
 diff --git a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h
-index 35d1174c..e38963dd 100644
+index 35d1174c..9b4797ca 100644
 --- a/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h
 +++ b/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h
-@@ -72,7 +72,15 @@ private:
+@@ -72,7 +72,8 @@ private:
    double radius(const Acts::Vector3 &position) const;
    float get_mean_scintillator_time(
        const std::list<int> &channels,
 -      const xAOD::WaveformHitContainer &waveformContainer) const;
 +      const xAOD::WaveformHitContainer &waveformContainer,
 +      double dig2ExtraOffset = 0.0) const;
-+  void resolveReducedChargeTiming(
-+      bool isMC,
-+      unsigned int runNumber,
-+      const std::list<int> &veto2Channels,
-+      double &vetoVetoNuDiff,
-+      double &preshowerVetoNuDiff,
-+      double &preshowerDig2Extra) const;
  
    // Return map with string as key and list<int> as value
    void initializeChannelMap() const;
-@@ -164,10 +172,12 @@ private:
+@@ -164,12 +165,14 @@ private:
    UnsignedIntegerProperty m_minHits{this, "minHits", 12, "Miminimum number of hits of a track."};
    DoubleProperty m_maxChi2NDOF{this, "maxChi2NDOF", 25, "Maximum chi2 per degree of freedom."};
    BooleanProperty m_runVertexing{ this, "RunVertexing", true, "Run the vertexing, defaults to true." };
 -  DoubleProperty m_veto_vetoNu_timeDiff{this, "VetoVetoNuTimeDifference", 33.2,
 -      "Time difference between Veto and VetoNu station in ns. Data: 33.2 ns, MC: 27.21 ns"};
--  DoubleProperty m_preshower_vetoNu_timeDiff{this, "PreshowerVetoNuTimeDifference", 53.625,
++  DoubleProperty m_veto_vetoNu_timeDiff{this, "VetoVetoNuTimeDifference", 33.165,
++      "Time difference (Veto St2 - VetoNu) in ns. Configured in Python per period/MC (Data: 33.165, CaloNu: 35.783, MC: 27.21)."};
+   DoubleProperty m_preshower_vetoNu_timeDiff{this, "PreshowerVetoNuTimeDifference", 53.625,
 -      "Time difference between Preshower and VetoNu station in ns. Data: 53.625 ns, MC: 51.41 ns"};
-+  DoubleProperty m_veto_vetoNu_timeDiff{this, "VetoVetoNuTimeDifference", -999.0,
-+      "Time difference (Veto St2 - VetoNu) in ns; values <= -900 use automatic run/MC period lookup."};
-+  DoubleProperty m_preshower_vetoNu_timeDiff{this, "PreshowerVetoNuTimeDifference", -999.0,
-+      "Time difference (Preshower Dig1 - VetoNu) in ns; values <= -900 use automatic run/MC period lookup."};
-+  DoubleProperty m_preshower_dig2_extraOffset{this, "PreshowerDig2ExtraOffset", -999.0,
-+      "Extra localtime offset (ns) of 2nd-digitizer Preshower channels (ch >= 16) relative to Dig1 Preshower; values <= -900 use automatic run/MC period lookup."};
++      "Time difference (Preshower Dig1 - VetoNu) in ns. Configured in Python per period/MC (2022-24: 53.625, 2025-26: 13.27, MC: 51.41)."};
++  DoubleProperty m_preshower_dig2_extraOffset{this, "PreshowerDig2ExtraOffset", 0.0,
++      "Extra localtime offset (ns) of 2nd-digitizer Preshower channels (ch >= 16) relative to Dig1 Preshower (2025-26: ~3.8-4.0 ns)."};
    DoubleProperty m_reducedChargeIntegrationTime{this, "ReducedChargeIntegrationTime", 35.0,
-       "Time window for reduced charge integration to cover tail of Crystall Ball function."};
+-      "Time window for reduced charge integration to cover tail of Crystall Ball function."};
++      "Time window for reduced charge integration to cover tail of Crystal Ball function (ns)."};
  
-@@ -279,6 +289,10 @@ private:
+   // json object to hold data read from GRL file (or empty if not)
+   nlohmann::json m_grl;
+@@ -279,6 +282,9 @@ private:
    mutable float m_preshower_total_E_dep;
  
    mutable float m_vetonu_reduced_charge[2];
 +  mutable float m_vetonu_reduced_charge_valid[2];
 +  mutable int   m_vetonu_reduced_charge_fallback;
 +  mutable float m_vetonu_expected_localtime;
-+  mutable bool  m_logged_reduced_charge_timing {false};
  
    mutable float m_clock_phase;
  
