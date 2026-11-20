@@ -3,7 +3,7 @@
 - **日期**：2026-11-19
 - **主机与环境**：`lxplus901.cern.ch`（28 cores），Athena `24.0.41`（`x86_64-el9-gcc13-opt`）与 LCG_107（ROOT RDataFrame）
 - **基线源码（未改动）**：`/eos/home-x/xcheng/FASER/geoRotation_calypso_latest`，HEAD `7fd40df8cd3b60e81b4095a4f84310c4a54700a0`
-- **工作树源码与提交**：`/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1`（分支 `fix/latest-seed-and-momentum-v1`，提交 `7729ddf043fa4efdaaedbb224db67c46f1c4dfd5`）
+- **工作树源码与提交**：`/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1`（分支 `fix/latest-seed-and-momentum-v1`，提交 `7729ddf0` -> 两级 Dig1/Dig2 升级 `1c0f3f45`）
 - **可复用补丁**：[0051_ntupledumper_waveform_reduced_charge_2022_2026_mc.patch](file:///eos/home-x/xcheng/FASER/geoRotation_test/patches/0051_ntupledumper_waveform_reduced_charge_2022_2026_mc.patch)
 - **编译产物（Overlay）**：`/eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/software_ntuple_fix_v1_clean/`
 - **严格仿 Fig. 13 全年份时间差图集（11 页，PNG + 单图 PDF + 汇总 PDF）**：[fig13_all_timing_diffs_report.pdf](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/fig13_all_timing_diffs_report.pdf)（索引：[figure_index.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/timing_study_fig13/fig13_exact/figure_index.json)）
@@ -52,14 +52,15 @@
 
 ### 2.2 去硬编码重构（严格沿用 Calypso / `El9CalypsoForWaveForm` 风格）
 
-修改集中在 `/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/` 的 4 个文件（提交 `7729ddf0`，相对 `geoRotation_latestMaster` 仅 `+244/-68` 行）：
+修改集中在 `/eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/` 的 4 个文件（提交 `7729ddf0` + 两级回退升级 `1c0f3f45`，相对 `geoRotation_latestMaster` 仅 `+267/-68` 行）：
 
 - **[NtupleDumperAlg.h](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.h)**（基于 `official/master` 并保留 `m_rotatedPhysicalAngles`）：
   - **完全删除 `resolveReducedChargeTiming()`** 及任何 `-999` 哨兵值。
   - 声明清晰的 Gaudi `DoubleProperty`：`VetoVetoNuTimeDifference`（默认 `33.165`）、`PreshowerVetoNuTimeDifference`（默认 `53.625`）、`PreshowerDig2ExtraOffset`（默认 `0.0`）、`ReducedChargeIntegrationTime`（默认 `35.0`）。
-  - 保留与 `MyWaveformTimeRangeAlg` 对应的诊断分支：`VetoNu{0,1}_reduced_charge_valid`、`VetoNu_reduced_charge_fallback`（`0/1/2`）、`VetoNu_expected_localtime`。
+  - 保留与 `MyWaveformTimeRangeAlg` 对应的诊断分支：`VetoNu{0,1}_reduced_charge_valid`、`VetoNu_reduced_charge_fallback`（`0` = 无有效定时/回退 `raw_charge`，`1` = `Veto2`，`2` = `Preshower Dig1 (ch < 16)`，`3` = 对齐后的 `Preshower Dig2 (ch >= 16)`）、`VetoNu_expected_localtime`。
 - **[NtupleDumperAlg.cxx](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/src/NtupleDumperAlg.cxx)**（**零 run 编号硬编码**）：
-  - `get_mean_scintillator_time()` 严格仿照 `MyWaveformTimeRangeAlg::get_local_time()`：使用命名位 `kTimingShiftedBit = 1U << xAOD::WaveformStatus::TIMING_SHIFTED`，以 `(status & ~kTimingShiftedBit) != 0U` 筛选好击中；若 `status & kTimingShiftedBit` 则 `t += 16.0`；若配置了 `dig2ExtraOffset != 0.0` 且 `hit->channel() >= 16`（CAEN Board 1），则 `t -= dig2ExtraOffset`。
+  - `get_mean_scintillator_time()` 严格仿照 `MyWaveformTimeRangeAlg::get_local_time()`：使用命名位 `kTimingShiftedBit = 1U << xAOD::WaveformStatus::TIMING_SHIFTED`，以 `(status & ~kTimingShiftedBit) != 0U` 筛选好击中；若 `status & kTimingShiftedBit` 则 `t += 16.0`；若配置了 `dig2ExtraOffset != 0.0` 且 `hit->channel() >= kDig2ChannelStart (16)`（CAEN Board 1），则 `t -= dig2ExtraOffset`。
+  - **两级 Preshower 回退逻辑（`1c0f3f45`）**：当 `vetoLocalTime` 为 `NaN` 时，按板卡边界 `kDig2ChannelStart = 16` 将 `m_wave_map["preshower"]` 分为 `Dig1 (ch < 16)` 与 `Dig2 (ch >= 16)`；**优先仅使用同板、定时更锐利的 `Dig1`（`fallback = 2`）**，避免正常事例混入 `Dig2` 较宽抖动或额外偏移误差；**仅当 `Dig1` 全部失效（如大簇射饱和或 2025 `p0013` `GFIT_FAILED`）时，才回退到施加 `+16 ns`（bit 512）与 `-PreshowerDig2ExtraOffset` 对齐后的 `Dig2`（`fallback = 3`）**。同时正常 `Veto2` 有效事例不再多余遍历 `preshowerContainer`。
   - 直接从 `IWaveformCableMappingTool` 填充的 `m_wave_map["veto2"]`、`m_wave_map["preshower"]` 与 `m_wave_map["vetonu"]` 获取各时期正确通道（COOL 数据库 `CABP200.db` 自动给出 CaloNu `ch 22, 23` 与 2025–2026 `ch 12, 13, 24, 25`，无需在 C++ 硬编码）。
   - 保留全部程序缺陷修复：`VetoNu` 按 `hit->channel()` 映射至层下标 `0/1` 彻底消除 `size() >= 3` 时数组越界；空 `wave_vector()` 保持 `m_wave_raw_charge[ch]` 回退不归零；容器 `isValid()` 保护；blinding 改用 `m_wave_map` 动态读取 veto 通道；在 `initialize()` 中打印一次当前生效的 Python 配置参数。
 - **[NtupleDumperConfig.py](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/python/NtupleDumperConfig.py)** 与 **[faser_ntuple_maker.py](file:///eos/home-x/xcheng/FASER/geoRotation_calypso_latest_fix_v1/PhysicsAnalysis/NtupleDumper/scripts/faser_ntuple_maker.py)**：
@@ -160,6 +161,16 @@
 | `2026_22404` (`p0015`) | `data_2026` (`13.27 / 3.64`) | 8,000 | 无 Ben 参考 | **`N=135`**: `0.33` -> **`92.26`** | **`97.04%`** -> **`0.00%`** | `N=0` |
 | `2026_23176` (`p0015`) | `data_2026` (`13.27 / 3.64`) | 8,000 | 无 Ben 参考 | **`N=97`**: `0.23` -> **`87.40`** | **`91.75%`** -> **`0.00%`** | `N=0` |
 | `MC24_Muon_100044` (`s0013`) | `mc` (`27.21 / 51.41 / 0.0`) | 3,000 | — | `N=165`: `89.52` vs `89.52` | `0.00%` -> `0.00%` | `N=0` |
+
+#### 两级 Preshower 回退（`1c0f3f45`：优先 `Dig1 fb=2`，失效再回退对齐 `Dig2 fb=3`）复测结果
+
+重新编译 `software_ntuple_fix_v1_clean` 后对 11 组代表样本（22 个真实 `faser_ntuple_maker.py` 作业，16 并发耗时 `330.9 s`，全部 `rc = 0`；汇总：[validation_summary_v2.json](file:///eos/home-x/xcheng/FASER/geoRotation_test_results/stage04_waveform_reduced_charge/validation_v3_twotier/validation_summary_v2.json)）执行端到端复测：
+- **2022–2024 数据与 MC24（Muon + 3 几何代表 GENIE `200082/200093/200139`）**：`fb == 3` 恒为 `0`，Ben Wilson 对标（`2022: 100.00%`, `2024_post: 100.00%`, `2024_CaloNu: 99.98%`）与 GENIE 挽救率（`35.94% / 40.74% / 23.33%`）与之前逐事例完全一致。
+- **2025–2026 4-PMT Preshower 实测 `fb=2`（Dig1）vs `fb=3`（Dig2）分工**：
+  - `2025_20481` (`p0014`)：`fb = {0: 3529, 1: 3956, 2: 509, 3: 6}`；穿行 muon 中 `66/67`（`98.5%`）走纯 Dig1（`fb=2`，中位数 `87.68 pC`，`<40 pC = 0.00%`），`1` 个 Dig1 失效事例由对齐 Dig2 兜底（`fb=3`，`92.68 pC`）。
+  - `2026_22404` (`p0015`)：`fb = {0: 2178, 1: 5130, 2: 689, 3: 3}`；穿行 muon 中 `134/135`（`99.3%`）走纯 Dig1（`fb=2`，中位数 `91.79 pC`，`<40 pC = 0.00%`），`1` 个 Dig1 失效事例由对齐 Dig2 兜底（`fb=3`，`104.01 pC`）。
+  - `2026_23176` (`p0015`)：`fb = {0: 2131, 1: 5244, 2: 620, 3: 5}`；穿行 muon 中 `92/97`（`94.8%`）走纯 Dig1（`fb=2`，中位数 `87.61 pC`，`<40 pC = 0.00%`），`5` 个 Dig1 失效事例全部由对齐 Dig2 兜底（`fb=3`，中位数 `84.42 pC`，`<40 pC = 0.00%`）。
+  - `2025_20012` (`r0023`，`PS0/1` 高失效率样本)：`fb = {0: 2270, 1: 5314, 2: 69, 3: 347}`；`7` 个 Dig1 正常 muon 走 `fb=2`（`<40 pC = 0.00%`），`60` 个 Dig1 失效 muon 自动落入对齐 Dig2 `fb=3`（中位数 `85.65 pC`，`<40 pC` 由基线 `58.21%` 降至 `1.67%`）。
 
 ---
 

@@ -450,7 +450,9 @@ def analyze_fix_vs_base(fix_path: str, base_path: str, is_genie: bool = False) -
             & ((af["Veto20_status"] & ~512) == 0)
             & ((af["Veto21_status"] & ~512) == 0)
         )
-    ps_fb = af["VetoNu_reduced_charge_fallback"] == 2
+    ps_fb = (af["VetoNu_reduced_charge_fallback"] == 2) | (af["VetoNu_reduced_charge_fallback"] == 3)
+    ps_fb_dig1 = af["VetoNu_reduced_charge_fallback"] == 2
+    ps_fb_dig2 = af["VetoNu_reduced_charge_fallback"] == 3
 
     def summarize_q(mask: np.ndarray) -> dict[str, Any]:
         m = mask & mu
@@ -531,6 +533,8 @@ def analyze_fix_vs_base(fix_path: str, base_path: str, is_genie: bool = False) -
         "mu_all": summarize_q(np.ones(n, dtype=bool)),
         "mu_v2_status512": summarize_q(v2_512),
         "mu_preshower_fallback": summarize_q(ps_fb),
+        "mu_preshower_dig1_fallback": summarize_q(ps_fb_dig1),
+        "mu_preshower_dig2_fallback": summarize_q(ps_fb_dig2),
         "genie_stats": genie_stats,
         "hists": hists,
     }

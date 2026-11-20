@@ -111,14 +111,25 @@ def compute_reduced_charge(
     vn_ch = mapped_vetonu if mapped_vetonu and len(mapped_vetonu) >= 2 else [4, 5]
 
     t_v2 = mean_scintillator_time(mapped_veto2, veto_hits, 0.0) if mapped_veto2 else float("nan")
-    t_ps = mean_scintillator_time(mapped_preshower, ps_hits, ddig2) if mapped_preshower else float("nan")
+    t_ps_dig1 = float("nan")
+    t_ps_dig2 = float("nan")
+    if math.isnan(t_v2) and mapped_preshower:
+        ps_dig1 = [ch for ch in mapped_preshower if ch < 16]
+        ps_dig2 = [ch for ch in mapped_preshower if ch >= 16]
+        if ps_dig1:
+            t_ps_dig1 = mean_scintillator_time(ps_dig1, ps_hits, 0.0)
+        if math.isnan(t_ps_dig1) and ps_dig2:
+            t_ps_dig2 = mean_scintillator_time(ps_dig2, ps_hits, ddig2)
 
     if not math.isnan(t_v2):
         fb = 1
         exp_t = t_v2 - dv
-    elif not math.isnan(t_ps):
+    elif not math.isnan(t_ps_dig1):
         fb = 2
-        exp_t = t_ps - dps
+        exp_t = t_ps_dig1 - dps
+    elif not math.isnan(t_ps_dig2):
+        fb = 3
+        exp_t = t_ps_dig2 - dps
     else:
         fb = 0
         exp_t = float("nan")
@@ -173,22 +184,80 @@ class TestReducedChargeLogic(unittest.TestCase):
         for name, expected in EXPECTED_PRESETS.items():
             self.assertEqual(presets[name], expected)
 
-    def test_2025_2026_preshower_dig1_dig2_alignment(self):
+    def test_2025_2026_preshower_two_tier_dig1_prefer_dig2_fallback(self):
         cfg = EXPECTED_PRESETS["data_2025"]
-        dps = cfg["PreshowerVetoNuTimeDifference"]
-        ddig2 = cfg["PreshowerDig2ExtraOffset"]
-        # True t_VN = 150.0 ns -> ch12/13 at 163.27 ns, ch24/25 at 167.24 ns (or 151.24 ns with status=512)
-        h_top = [
+        tv = [140.0, 150.0, 180.0, 200.0]
+        vn_hits = [
+            {"channel": 4, "status": 0, "time_vector": tv, "wave_vector": [100.0, 200.0, 300.0, 500.0]},
+            {"channel": 5, "status": 0, "time_vector": tv, "wave_vector": [50.0, 100.0, 150.0, 400.0]},
+        ]
+        # Saturated Veto2 forces Preshower fallback
+        veto_ovf = [
+            {"channel": 6, "status": STATUS_OVERFLOW, "localtime": 183.0},
+            {"channel": 7, "status": STATUS_OVERFLOW, "localtime": 183.0},
+        ]
+
+        # Case 1: Both Dig1 (ch 12,13) and Dig2 (ch 24,25) valid -> MUST prefer Dig1 (fb=2) and ignore Dig2 jitter!
+        ps_both = [
             {"channel": 12, "status": 0, "localtime": 163.27},
             {"channel": 13, "status": 0, "localtime": 163.27},
+            {"channel": 24, "status": 0, "localtime": 175.0},  # intentionally jittered Dig2
+            {"channel": 25, "status": STATUS_TIMING_SHIFTED, "localtime": 159.0},
         ]
-        h_bot = [
+        q_red, q_val, fb = compute_reduced_charge(
+            timing_cfg=cfg,
+            mapped_veto2=[6, 7],
+            mapped_preshower=[12, 13, 24, 25],
+            veto_hits=veto_ovf,
+            ps_hits=ps_both,
+            vn_hits=vn_hits,
+            raw_charge_by_ch={4: 99.0, 5: 88.0},
+        )
+        self.assertEqual(fb, 2)
+        # exp_t = 163.27 - 13.27 = 150.0 -> includes 140, 150, 180 (< 185), excludes 200
+        self.assertAlmostEqual(q_red[0], (100.0 + 200.0 + 300.0) * INT_TO_CHARGE, places=5)
+        self.assertAlmostEqual(q_val[0], q_red[0], places=5)
+
+        # Case 2: Dig1 fails (GFIT_FAILED like 2025 p0013 or shower saturation), Dig2 valid (incl. status==512) -> fb=3 with alignment!
+        ps_dig1_fail = [
+            {"channel": 12, "status": STATUS_GFIT_FAILED, "localtime": 0.0},
+            {"channel": 13, "status": STATUS_OVERFLOW, "localtime": 180.0},
             {"channel": 24, "status": 0, "localtime": 167.24},
             {"channel": 25, "status": STATUS_TIMING_SHIFTED, "localtime": 151.24},
         ]
-        for subset in (h_top, h_bot, h_top + h_bot):
-            t_ps = mean_scintillator_time([12, 13, 24, 25], subset, ddig2)
-            self.assertAlmostEqual(t_ps - dps, 150.0, places=3)
+        q_red2, q_val2, fb2 = compute_reduced_charge(
+            timing_cfg=cfg,
+            mapped_veto2=[6, 7],
+            mapped_preshower=[12, 13, 24, 25],
+            veto_hits=veto_ovf,
+            ps_hits=ps_dig1_fail,
+            vn_hits=vn_hits,
+            raw_charge_by_ch={4: 99.0, 5: 88.0},
+        )
+        self.assertEqual(fb2, 3)
+        # Dig2 aligned: (167.24 - 3.97) == 163.27 and (151.24 + 16.0 - 3.97) == 163.27 -> exp_t = 150.0
+        self.assertAlmostEqual(q_red2[0], (100.0 + 200.0 + 300.0) * INT_TO_CHARGE, places=5)
+        self.assertAlmostEqual(q_val2[0], q_red2[0], places=5)
+
+        # Case 3: Both Dig1 and Dig2 fail -> fb=0, preserve raw_charge fallback
+        ps_all_fail = [
+            {"channel": 12, "status": STATUS_GFIT_FAILED, "localtime": 0.0},
+            {"channel": 13, "status": STATUS_GFIT_FAILED, "localtime": 0.0},
+            {"channel": 24, "status": STATUS_THRESHOLD_FAILED, "localtime": 0.0},
+            {"channel": 25, "status": STATUS_OVERFLOW, "localtime": 0.0},
+        ]
+        q_red3, q_val3, fb3 = compute_reduced_charge(
+            timing_cfg=cfg,
+            mapped_veto2=[6, 7],
+            mapped_preshower=[12, 13, 24, 25],
+            veto_hits=veto_ovf,
+            ps_hits=ps_all_fail,
+            vn_hits=vn_hits,
+            raw_charge_by_ch={4: 99.0, 5: 88.0},
+        )
+        self.assertEqual(fb3, 0)
+        self.assertAlmostEqual(q_red3[0], 99.0, places=5)
+        self.assertAlmostEqual(q_val3[0], 0.0, places=5)
 
     def test_vetonu_channel_indexing_secondary_and_swapped_order(self):
         tv = [140.0, 150.0, 170.0, 200.0]
@@ -255,6 +324,11 @@ class TestReducedChargeLogic(unittest.TestCase):
         self.assertIn("t += 16.0;", cxx)
         self.assertIn("(status & ~kTimingShiftedBit) != 0U", cxx)
         self.assertIn("VetoNu_reduced_charge_fallback", cxx)
+        self.assertIn("kDig2ChannelStart", cxx)
+        self.assertIn("preshowerDig1Channels", cxx)
+        self.assertIn("preshowerDig2Channels", cxx)
+        self.assertIn("m_vetonu_reduced_charge_fallback = 2;", cxx)
+        self.assertIn("m_vetonu_reduced_charge_fallback = 3;", cxx)
         self.assertNotIn("m_vetonu_reduced_charge[idx] = 0;", cxx)
         self.assertIn("RotatedPhysicalAngles", hdr)
         self.assertIn("PreshowerDig2ExtraOffset", hdr)
