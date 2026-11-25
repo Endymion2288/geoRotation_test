@@ -54,6 +54,8 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 
 [完整前向states定位](../workbook/2026-11-14_stage06_forward_covariance.md)已覆盖14,157对P/F/S，包括9,259个被动states；5,081对有材料的surface查询raw slab相同，所有共同路径hits/signature一致。μ−极端例约134→1194 mm段的方向差从4.79×10⁻¹²增至2.86×10⁻⁶，保存J差异项同时增加；随后update的scaled C差增约27倍，但绝对C差仅增约6%。三页图和133页汇编已验收，完整固定mean/C/surface的原生transport实验继续执行；未将矩阵余额当作实测Q或宣布posterior闭合。
 
+[S08 双径迹 Overlay 验证与旋转种子 covPhi 缺陷定位](../workbook/2026-11-25_stage08_overlay_2track.md)已完成最新旋转版 Calypso（`fix/latest-seed-momentum-for-sazhang`，`218813c2`）在全量 323 文件（6,354,483 事件；共同配对 322 文件、6,339,599 事件）与真实信号 `110038`（`A' 100 MeV, ε=1e-5`，20,000 事件）上的单步零 xAOD 重建、坐标闭合与配对分析：默认 `218813c2` 在 `110038` 效率大幅提升 `+10.71 pp`（`52.04% → 62.75%`），全量 `All3Data` `+0.46 pp`、`10004X` `-1.35 pp`，同时暴露 $|\Delta Y_0|\approx 16\text{ mm}$ 深坑（`-20.9 pp` Data / `-27.2 pp` MC）。Tier-2 排查将其唯一定位于 `CKF2Config.py:52,67`（旋转系中仍保留未旋转 $1/\sin\theta_F$ 极点遗留方差 `covPhi = 0.1089 rad²`），最小修复补丁（[stage08_ckf2_rotated_seed_covphi.patch](../patches/stage08_ckf2_rotated_seed_covphi.patch)，将非 `legacySwappedCovLoc` 旋转分支 `sigma_phi_rotated` 对齐至 `sigma_theta`，即 `covPhi = 8.41e-6`）在 36 shards / 908,731 事件四路对照中彻底消除深坑，使 Data（`+2.35 pp`）与 MC（`+0.36 pp`）在全 7 个相空间区域全面超越未旋转基线（小 $\Delta R_1<5\text{ mm}$ 分别 `+4.26` / `+1.54 pp`），[22 页统一汇报图集](/eos/home-x/xcheng/FASER/geoRotation_test_results/stage08_overlay_2track/run_20261125_v1/figures/stage08_overlay_2track_report.pdf)已交付；全量 323 shards 及单径迹 MC24 回归留待补丁合入验收。
+
 | 文档 | 内容 |
 | --- | --- |
 | [00 材料与源码](00_materials_and_source.md) | PDF 页码、历史数值、输入样本、源码检查点及尚缺信息 |
@@ -91,6 +93,7 @@ S05成因定位及A1–A5交付已完成，见[最终结论](../workbook/2026-11
 | S05 角度结构定位 | S02–S03；共享 S04 的误差与材料观察 | [角度实验 A1–A5](03_slope_structure.md)，完整500k/版、固定候选最小控制与独立full-G4 | 主要来源、固定窗口余量及效率/pull副作用已量化；[最终结论与图集](../workbook/2026-11-13_stage05_angle_structure_conclusions.md)、[A1–A5审计](../workbook/2026-11-12_stage05_acceptance.md)；完整生产修复另在S07验收 |
 | S06 电荷与正负差异 | S02–S03；共享 S04 的 curvature trace | [电荷实验 Q1–Q5](04_charge_misidentification.md)；先 pilot，再扩至每电荷至少约 100k 有效选中粒子或所需精度 | before/after 配对表、误判率/效率/差值区间、谱匹配结果、首次符号翻转与解释；无显著差异时给可排除范围 |
 | S07 修复与独立验收 | S04–S06 各分支形成可检验解释 | 每次一个修改；保留未调参文件作验证；覆盖μ±、A′两样本、forward/backward、3/4 station；补齐实际Calypso内T5统计closure | 物理指标、效率、失败率与资源回归；中文最终报告、配置、最小patch、测试和各阶段commits |
+| S08 双径迹 Overlay 与旋转种子验证 | 最新旋转版 (`218813c2`) 复现 Pawan 双径迹报告并对比未旋转基线 | 全量 323 overlay 文件（6.35M 事件）+ 20k `110038` `A'` 单步零 xAOD 重建，Tier-2 四路 36 shards（908,731 事件）归因对照 | 坐标系闭合、`CKF2Config.py` `covPhi` 最小修复补丁、22 页英文图集与中文报告，见[S08报告](../workbook/2026-11-25_stage08_overlay_2track.md)；全量 323 shards 与单径迹 MC24 回归待补丁合入验收 |
 
 S04、S05、S06 在公共定义与诊断闭合后可以独立推进，结果互相反馈。某一分支暂未找到原因时，记录具体未解类别并继续其他分支；少量离群事件不足以否定整条研究路线。
 
