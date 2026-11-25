@@ -1,0 +1,63 @@
+From: Stage 08 Two-Track Overlay Attribution Study
+Subject: [PATCH] fix(kalman): remove unrotated 1/sin(theta) sigma_phi relic in rotated CKF2 seed covariance
+
+In the rotated ACTS coordinate frame (x_A = z_F, y_A = y_F, z_A = -x_F),
+tracks propagate along +x_A so sin(theta_A) ~= 1 and phi_A ~= dy_F/dz_F is
+the fine vertical bending slope rather than the azimuth around the beam axis.
+
+CKF2Config.py retained the unrotated sigma_phi = 3.3e-2 rad (a 1/sin(theta_F)
+polar-singularity relic), producing covPhi = 100 * (3.3e-2)^2 = 0.1089 rad^2
+(sigma_phi = 330 mrad = 18.9 deg). Once covLoc0/covLoc1 were corrected to
+match the rotated seed plane (covLoc0 = 0.0361 mm^2 along y_F), this 12,950x
+oversized covPhi allowed CKF to pull a second track at |Delta y_0| ~= 15-17 mm
+onto a neighbor's Station 1 cluster with Kalman gain K_phi ~= 1/L ~= 0.10 rad/mm,
+kicking phi_flt past +/-pi/2 (reversing px_A <= 0) and aborting the seed at
+nStates = 1, nMeas = 1.
+
+Setting rotated sigma_phi = 2.9e-4 rad (matching sigma_theta, giving
+covPhi = 100 * (2.9e-4)^2 = 8.41e-6 rad^2) while retaining legacy sigma_phi
+when legacySwappedCovLoc=True eliminates the |Delta y_0| ~= 15.75 mm crater
+and lt=2 -> lt=0 crashes while preserving full rotated efficiency gains.
+
+Base commit: 218813c2bcfc656fb8c395a167affcc033250867 (fix/latest-seed-momentum-for-sazhang)
+---
+ Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py b/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py
+index 00000000..11111111 100644
+--- a/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py
++++ b/Tracking/Acts/FaserActsKalmanFilter/python/CKF2Config.py
+@@ -49,22 +49,28 @@ def CKF2Cfg(flags, actsOutputTag, **kwargs):
+ 
+     sigma_loc0 = 1.9e-2
+     sigma_loc1 = 9e-1
+-    sigma_phi = 3.3e-2
++    sigma_phi_legacy = 3.3e-2
+     sigma_theta = 2.9e-4
++    # In rotated ACTS frame (x_A = z_F), sin(theta_A) ~= 1 and phi_A ~= dy_F/dz_F
++    # is the fine vertical bending slope (free of the unrotated 1/sin(theta_F)
++    # singularity); match sigma_theta instead of keeping sigma_phi = 3.3e-2 rad.
++    sigma_phi_rotated = sigma_theta
+     p = 1000
+     sigma_p = 0.1 * p
+     sigma_qop = sigma_p / (p * p)
+     # In rotated geometry, seed PlaneSurface has col(0)=+y_F (fine 0.019 mm) and col(1)=+x_F (coarse 0.9 mm).
+     if legacy_swapped_cov_loc:
+         default_cov_loc0 = initial_variance_inflation[0] * sigma_loc1 * sigma_loc1
+         default_cov_loc1 = initial_variance_inflation[1] * sigma_loc0 * sigma_loc0
++        default_cov_phi = initial_variance_inflation[2] * sigma_phi_legacy * sigma_phi_legacy
+     else:
+         default_cov_loc0 = initial_variance_inflation[0] * sigma_loc0 * sigma_loc0
+         default_cov_loc1 = initial_variance_inflation[1] * sigma_loc1 * sigma_loc1
++        default_cov_phi = initial_variance_inflation[2] * sigma_phi_rotated * sigma_phi_rotated
+ 
+     seed_tool_kwargs.setdefault("covLoc0", default_cov_loc0)
+     seed_tool_kwargs.setdefault("covLoc1", default_cov_loc1)
+-    seed_tool_kwargs.setdefault("covPhi", initial_variance_inflation[2] * sigma_phi * sigma_phi)
++    seed_tool_kwargs.setdefault("covPhi", default_cov_phi)
+     seed_tool_kwargs.setdefault("covTheta", initial_variance_inflation[3] * sigma_theta * sigma_theta)
+     seed_tool_kwargs.setdefault("covQOverP", initial_variance_inflation[4] * sigma_qop * sigma_qop)
+     seed_tool_kwargs.setdefault("std_cluster", 0.0231)
+-- 
+2.43.5
